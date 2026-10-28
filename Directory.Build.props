@@ -1,0 +1,14 @@
+<Project>
+  <!--
+    Shared build settings for every Kalo project.
+    HrekRoot points at your Halo Reach Editing Kit. Override it per machine with
+      dotnet build -p:HrekRoot="E:\Games\HREK"
+    or by setting the KALO_HREK environment variable.
+  -->
+  <PropertyGroup>
+    <HrekRoot Condition="'$(HrekRoot)' == '' and '$(KALO_HREK)' != ''">$(KALO_HREK)</HrekRoot>
+    <HrekRoot Condition="'$(HrekRoot)' == ''">D:\SteamLibrary\steamapps\common\HREK</HrekRoot>
+    <Deterministic>true</Deterministic>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

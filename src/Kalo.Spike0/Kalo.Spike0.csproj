@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Spike 0: prove that Kalo can drive ManagedBlam (tags) and tool.exe (jobs)
+    from its own process, inside a Kalo workspace, without writing to HREK.
+
+    ManagedBlam.dll is a mixed-mode C++/CLI assembly built for .NET Framework 4.x x64,
+    so this probe (and later the Blam Host) must target net48 and run as x64.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>kalo-spike</AssemblyName>
+    <RootNamespace>Kalo.Spike0</RootNamespace>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Compile-time reference only: at runtime the DLL is loaded from the workspace's bin folder
+         (see BlamLoader.cs), never copied next to our exe. -->
+    <Reference Include="ManagedBlam">
+      <HintPath>$(HrekRoot)\bin\ManagedBlam.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
