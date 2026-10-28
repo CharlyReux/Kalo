@@ -10,6 +10,7 @@
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
       <DockPanel Margin="10,5">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="outline" Content="Frame all" Command="{Binding FrameAllCommand}" ToolTip.Tip="Put the camera back over the play space (Home)" />
           <Button Classes="outline" Content="Fields" Command="{Binding OpenFieldsCommand}" ToolTip.Tip="Open the scenario in the tag editor" />
           <Button Classes="outline" Content="Play this map" Command="{Binding PlayHereCommand}" ToolTip.Tip="Save first: the game loads the saved scenario" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />

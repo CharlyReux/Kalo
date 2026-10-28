@@ -41,6 +41,10 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public event Action? SceneChanged;
     public event Action<Vector3, float>? FocusRequested;
+    public event Action? FrameAllRequested;
+
+    [RelayCommand]
+    private void FrameAll() => FrameAllRequested?.Invoke();
 
     [ObservableProperty] private PlacementItem? _selected;
     [ObservableProperty] private string _filter = "";

@@ -102,18 +102,26 @@ void main() {
         {
             _subscribed.SceneChanged -= OnSceneChanged;
             _subscribed.FocusRequested -= OnFocusRequested;
+            _subscribed.FrameAllRequested -= OnFrameAll;
         }
         _subscribed = Map;
         if (_subscribed != null)
         {
             _subscribed.SceneChanged += OnSceneChanged;
             _subscribed.FocusRequested += OnFocusRequested;
+            _subscribed.FrameAllRequested += OnFrameAll;
             _cameraPlaced = false;
         }
         RequestNextFrameRendering();
     }
 
     private void OnSceneChanged() => RequestNextFrameRendering();
+
+    private void OnFrameAll()
+    {
+        _cameraPlaced = false;
+        RequestNextFrameRendering();
+    }
 
     private void OnFocusRequested(Vector3 target, float radius)
     {
@@ -298,17 +306,21 @@ void main() {
         Vector3 center;
         float size;
         // Frame the objects (the playable space); level geometry often includes a huge sky.
-        // Percentiles, so a few far-away objects (sky props, kill volumes) do not shrink the map to a dot.
-        if (map.Items.Count > 0)
+        // Frame where players are: respawn points if the map has them, else the middle half of all objects.
+        // (Maps keep hidden areas and sky props far away; a plain bounding box would shrink the level to a dot.)
+        var spawns = map.Items.Where(i => i.Tag.Contains("respawn_point", StringComparison.OrdinalIgnoreCase)).ToList();
+        var basis = spawns.Count >= 3 ? spawns : map.Items.ToList();
+        if (basis.Count > 0)
         {
             float P(Func<PlacementItem, float> axis, double q)
             {
-                var v = map.Items.Select(axis).OrderBy(x => x).ToList();
+                var v = basis.Select(axis).OrderBy(x => x).ToList();
                 return v[(int)Math.Clamp(Math.Round(q * (v.Count - 1)), 0, v.Count - 1)];
             }
-            var lo = new Vector3(P(i => i.Position.X, 0.1), P(i => i.Position.Y, 0.1), P(i => i.Position.Z, 0.1));
-            var hi = new Vector3(P(i => i.Position.X, 0.9), P(i => i.Position.Y, 0.9), P(i => i.Position.Z, 0.9));
-            center = (lo + hi) / 2; size = (hi - lo).Length() * 1.2f;
+            double lo = spawns.Count >= 3 ? 0.0 : 0.25, hi = spawns.Count >= 3 ? 1.0 : 0.75;
+            var min = new Vector3(P(i => i.Position.X, lo), P(i => i.Position.Y, lo), P(i => i.Position.Z, lo));
+            var max = new Vector3(P(i => i.Position.X, hi), P(i => i.Position.Y, hi), P(i => i.Position.Z, hi));
+            center = (min + max) / 2; size = Math.Max((max - min).Length() * 1.3f, 15f);
         }
         else if (map.Bsp != null) { center = map.Bsp.Center; size = (map.Bsp.Max - map.Bsp.Min).Length(); }
         else return;
@@ -520,6 +532,10 @@ void main() {
             case Key.R when map?.Selected != null:
                 e.Handled = true;
                 await map.RotateSelectedAsync(shift ? -15f : 15f);
+                return;
+            case Key.Home:
+                OnFrameAll();
+                e.Handled = true;
                 return;
             case Key.Escape when map != null:
                 map.Selected = null;
