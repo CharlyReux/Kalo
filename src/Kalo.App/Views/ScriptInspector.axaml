@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             xmlns:p="using:Kalo.Protocol"
+             xmlns:sys="using:System"
+             x:Class="Kalo.App.Views.ScriptInspector"
+             x:DataType="vm:ScriptEditorViewModel">
+  <StackPanel Spacing="8">
+    <TextBlock Text="BUDGET" Classes="header" />
+    <TextBlock Text="Compile to see how much of the gametype budget the script uses." Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
+    <ItemsControl ItemsSource="{Binding Stats}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate DataType="vm:StatRow">
+          <DockPanel Margin="0,1">
+            <TextBlock DockPanel.Dock="Right" Text="{Binding Value}" FontFamily="{StaticResource KMono}" FontSize="12" />
+            <TextBlock Text="{Binding Label}" Foreground="{StaticResource KMuted}" FontSize="12" />
+          </DockPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <TextBlock Text="ACTIONS AND CONDITIONS" Classes="header" Margin="0,8,0,0" />
+    <TextBox Classes="compact" Watermark="Search (e.g. score, timer, weapon)" Text="{Binding CatalogQuery}" />
+    <ListBox x:Name="Catalog" Height="320" ItemsSource="{Binding CatalogResults}" DoubleTapped="Catalog_DoubleTapped"
+             Background="{StaticResource KBg}" BorderBrush="{StaticResource KBorder}" BorderThickness="1">
+      <ListBox.ItemTemplate>
+        <DataTemplate DataType="p:MegaloEntry">
+          <StackPanel Spacing="1" ToolTip.Tip="{Binding Description}">
+            <TextBlock Text="{Binding Name}" FontFamily="{StaticResource KMono}" FontSize="12" />
+            <TextBlock Text="{Binding Description}" FontSize="11" Foreground="{StaticResource KMuted}" TextWrapping="Wrap" MaxHeight="44" />
+          </StackPanel>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+    <Button Classes="outline" Content="Insert at cursor" HorizontalAlignment="Left"
+            Command="{Binding InsertCommand}" CommandParameter="{Binding #Catalog.SelectedItem}" />
+
+    <TextBlock Text="VARIABLES" Classes="header" Margin="0,8,0,0" />
+    <ItemsControl ItemsSource="{Binding Variables}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="sys:String">
+          <TextBlock Text="{Binding}" FontFamily="{StaticResource KMono}" FontSize="11.5" TextWrapping="Wrap" Margin="0,1" />
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </StackPanel>
+</UserControl>

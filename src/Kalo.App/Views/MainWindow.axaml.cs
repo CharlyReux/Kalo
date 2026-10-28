@@ -47,9 +47,20 @@ public partial class MainWindow : Window
         if (e.Key == Key.Enter && Vm != null && SearchList.SelectedItem is SearchResult r) await Vm.OpenNodeCommand.ExecuteAsync(r);
     }
 
+    private async void Scripts_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (Vm != null && ScriptList.SelectedItem is ScriptFile s) await Vm.OpenScriptAsync(s.RelativePath);
+    }
+
     private async void Changes_DoubleTapped(object? sender, TappedEventArgs e)
     {
         if (Vm != null && ChangesList.SelectedItem is ChangeItem c) await Vm.OpenNodeCommand.ExecuteAsync(c);
+    }
+
+    private async void Reference_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (Vm?.ActiveTab != null && ReferenceList.SelectedItem is string tag)
+            await Vm.ActiveTab.PickReferenceCommand.ExecuteAsync(tag);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -67,9 +78,9 @@ public partial class MainWindow : Window
     private async void OnOpened(object? sender, EventArgs e)
     {
         var args = AppArgs.Current;
-        if (!string.IsNullOrEmpty(args.SelfTest) && Vm != null)
+        if ((!string.IsNullOrEmpty(args.SelfTest) || !string.IsNullOrEmpty(args.Tour)) && Vm != null)
         {
-            int code = await new SelfTest(this, Vm, args).RunAsync();
+            int code = !string.IsNullOrEmpty(args.Tour) ? await new Tour(this, Vm, args).RunAsync() : await new SelfTest(this, Vm, args).RunAsync();
             if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime life)
                 life.Shutdown(code);
             return;

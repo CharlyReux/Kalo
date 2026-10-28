@@ -7,38 +7,44 @@ using Kalo.Protocol;
 namespace Kalo.App.ViewModels;
 
 /// <summary>An open tag in an editor tab.</summary>
-public partial class TagEditorViewModel : ObservableObject
+public partial class TagEditorViewModel : DocumentViewModel
 {
     private readonly MainViewModel _main;
 
-    public string Path { get; }
-    public string Title => System.IO.Path.GetFileName(Path);
-    public string Breadcrumb => "tags › " + string.Join(" › ", Path.Split('\\'));
     public string Group => System.IO.Path.GetExtension(Path).TrimStart('.');
     public ObservableCollection<FieldViewModel> Fields { get; } = new();
 
     [ObservableProperty] private bool _isLoading = true;
-    [ObservableProperty] private bool _isDirty;
-    [ObservableProperty] private bool _isActive;
     [ObservableProperty] private bool _showRaw;
     [ObservableProperty] private string _filter = "";
     [ObservableProperty] private bool _changedOnly;
-    [ObservableProperty] private bool _differsFromVanilla;
-    [ObservableProperty] private string _status = "Loading…";
     [ObservableProperty] private object? _selectedItem;
+    [ObservableProperty] private string _referenceQuery = "";
+    public ObservableCollection<string> ReferenceResults { get; } = new();
+    /// <summary>Blocks were added to or removed from since the last save.</summary>
+    private bool _structureChanged;
 
     public FieldViewModel? SelectedField => SelectedItem as FieldViewModel;
     public bool ShowLabeled { get => !ShowRaw; set => ShowRaw = !value; }
 
-    public TagEditorViewModel(MainViewModel main, string path)
+    public TagEditorViewModel(MainViewModel main, string path) : base(path)
     {
         _main = main;
-        Path = path;
+        Status = "Loading…";
+    }
+
+    public override Task SaveDocumentAsync() => SaveCommand.ExecuteAsync(null);
+
+    public override async Task CloseAsync()
+    {
+        try { if (_main.Host != null) await _main.Host.CloseTagAsync(Path); } catch { }
     }
 
     public void Load(TagDocument doc)
     {
         Fields.Clear();
+        _structureChanged = false;
+        IsDirty = false;
         foreach (var node in doc.Fields ?? new List<FieldNode>()) Fields.Add(new FieldViewModel(this, node, null));
         // Open the first level of structs so the important fields are visible.
         foreach (var f in Fields.Where(f => f.Kind == ValueKinds.Struct)) f.IsExpanded = true;
@@ -53,7 +59,75 @@ public partial class TagEditorViewModel : ObservableObject
         Status = "Could not open: " + message;
     }
 
-    partial void OnSelectedItemChanged(object? value) => OnPropertyChanged(nameof(SelectedField));
+    partial void OnSelectedItemChanged(object? value)
+    {
+        OnPropertyChanged(nameof(SelectedField));
+        ReferenceQuery = "";
+        UpdateReferenceResults();
+    }
+
+    partial void OnReferenceQueryChanged(string value) => UpdateReferenceResults();
+
+    /// <summary>Tags the selected reference field can point to, filtered by the query words.</summary>
+    private void UpdateReferenceResults()
+    {
+        ReferenceResults.Clear();
+        if (SelectedField is not { IsReference: true } f) return;
+        string[] words = ReferenceQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var allowed = f.Allowed.Select(a => "." + a).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (string p in _main.TagIndex)
+        {
+            if (allowed.Count > 0 && !allowed.Contains(System.IO.Path.GetExtension(p))) continue;
+            if (words.Length > 0 && !words.All(w => p.Contains(w, StringComparison.OrdinalIgnoreCase))) continue;
+            ReferenceResults.Add(p);
+            if (ReferenceResults.Count >= 150) break;
+        }
+    }
+
+    [RelayCommand]
+    private async Task PickReference(string? tagPath)
+    {
+        if (SelectedField is not { IsReference: true } f || tagPath == null) return;
+        await CommitAsync(f, tagPath);
+    }
+
+    [RelayCommand]
+    private async Task ClearReference()
+    {
+        if (SelectedField is { IsReference: true } f) await CommitAsync(f, "");
+    }
+
+    [RelayCommand]
+    private async Task OpenReference()
+    {
+        if (SelectedField is { HasReferenceTarget: true } f) await _main.OpenTagAsync(f.Value!);
+    }
+
+    /// <summary>Adds, inserts, duplicates or removes block elements, then rebuilds that block's rows.</summary>
+    public async Task BlockOpAsync(FieldViewModel block, string op, int index)
+    {
+        if (_main.Host == null) return;
+        try
+        {
+            BlockOpResult r = await _main.Host.BlockOpAsync(Path, block.Path, op, index);
+            if (r.Block == null) return;
+            var fresh = new FieldViewModel(this, r.Block, block.Parent) { IsExpanded = true };
+            var siblings = block.Parent?.Children ?? Fields;
+            int at = siblings.IndexOf(block);
+            if (at >= 0) siblings[at] = fresh;
+            _structureChanged = true;
+            IsDirty = true;
+            ApplyFilter();
+            var target = r.SelectIndex >= 0 && r.SelectIndex < fresh.Children.Count ? fresh.Children[r.SelectIndex] : fresh;
+            Reveal(target);
+            _main.Log($"{Title}: {block.Label} {op} → {r.Block.Value}");
+        }
+        catch (HostException ex)
+        {
+            _main.AddProblem("error", $"{block.Label}: {ex.Message}", Path);
+            if (ex.EngineHalted) await _main.RestartHostAsync();
+        }
+    }
     partial void OnShowRawChanged(bool value)
     {
         OnPropertyChanged(nameof(ShowLabeled));
@@ -70,7 +144,7 @@ public partial class TagEditorViewModel : ObservableObject
         {
             SetFieldResult result = await _main.Host.SetFieldAsync(Path, field.Path, value);
             field.Accept(result.Value ?? value);
-            IsDirty = AllFields().Any(f => f.IsDirty);
+            IsDirty = _structureChanged || AllFields().Any(f => f.IsDirty);
             _main.Log($"{Title}: {field.Label} = {result.Value}");
         }
         catch (HostException ex)
@@ -89,6 +163,7 @@ public partial class TagEditorViewModel : ObservableObject
         {
             SaveResult r = await _main.Host.SaveTagAsync(Path);
             foreach (var f in Fields) f.MarkSaved();
+            _structureChanged = false;
             IsDirty = false;
             Status = $"Saved in {r.Ms} ms";
             _main.OnTagSaved(this);

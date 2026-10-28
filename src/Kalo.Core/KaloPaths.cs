@@ -11,6 +11,10 @@ public sealed class KaloPaths
 
     public string WorkspaceTags => Path.Combine(Workspace, "tags");
     public string HrekTags => Path.Combine(Hrek, "tags");
+    public string MegaloSource => Path.Combine(Workspace, "data", "multiplayer", "megalo");
+    public string MegaloObjectLists => Path.Combine(MegaloSource, "object_lists");
+    /// <summary>Kalo's own scratch and cache folder (repo\.kalo), never inside the workspace.</summary>
+    public string KaloData => Path.Combine(Repo, ".kalo");
     public string? Mcc
     {
         get

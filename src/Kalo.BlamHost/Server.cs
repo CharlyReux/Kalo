@@ -31,6 +31,7 @@ namespace Kalo.BlamHost
             Log("ManagedBlam started in " + startMs + " ms, tag root " + tagRoot);
 
             var tags = new TagService(tagRoot);
+            var scenarios = new ScenarioService(tags);
             try
             {
                 string line;
@@ -49,7 +50,7 @@ namespace Kalo.BlamHost
                     _halted = false;
                     try
                     {
-                        object result = Dispatch(request, workspace, tagRoot, startMs, tags);
+                        object result = Dispatch(request, workspace, tagRoot, startMs, tags, scenarios);
                         response.Result = JsonSerializer.SerializeToElement(result, Wire.Options);
                     }
                     catch (Exception ex)
@@ -72,7 +73,7 @@ namespace Kalo.BlamHost
             return 0;
         }
 
-        private static object Dispatch(RpcRequest r, string workspace, string tagRoot, long startMs, TagService tags)
+        private static object Dispatch(RpcRequest r, string workspace, string tagRoot, long startMs, TagService tags, ScenarioService scenarios)
         {
             switch (r.Method)
             {
@@ -88,7 +89,8 @@ namespace Kalo.BlamHost
                         ProcessId = Process.GetCurrentProcess().Id
                     };
                 case Methods.OpenTag:
-                    return tags.Open(Params<TagPathParams>(r).Path);
+                    var open = Params<TagPathParams>(r);
+                    return tags.Open(open.Path, open.MaxElements ?? 64);
                 case Methods.SetField:
                     var set = Params<SetFieldParams>(r);
                     return tags.SetField(set.Path, set.FieldPath, set.Value);
@@ -100,6 +102,25 @@ namespace Kalo.BlamHost
                 case Methods.CloseTag:
                     tags.Close(Params<TagPathParams>(r).Path);
                     return true;
+                case Methods.BlockOp:
+                    var op = Params<BlockOpParams>(r);
+                    return tags.BlockOp(op.Path, op.FieldPath, op.Op, op.Index);
+                case Methods.MegaloCatalog:
+                    return MegaloService.Catalog(Params<MegaloCatalogParams>(r).ObjectLists);
+                case Methods.MegaloCompile:
+                    return MegaloService.Compile(Params<MegaloCompileParams>(r));
+                case Methods.GetPlacements:
+                    return scenarios.Get(Params<TagPathParams>(r).Path);
+                case Methods.SetPlacement:
+                    return scenarios.Set(Params<SetPlacementParams>(r));
+                case Methods.PlacementOp:
+                    return scenarios.Op(Params<PlacementOpParams>(r));
+                case Methods.ExportLevelMesh:
+                    var mesh = Params<ExportLevelMeshParams>(r);
+                    return LevelMeshService.Export(tags, mesh.Scenario, mesh.OutputFile);
+                case Methods.ExportModelMeshes:
+                    var models = Params<ExportModelMeshesParams>(r);
+                    return LevelMeshService.ExportModels(models.RenderModels, models.OutputFolder);
                 case Methods.Shutdown:
                     return true;
                 default:

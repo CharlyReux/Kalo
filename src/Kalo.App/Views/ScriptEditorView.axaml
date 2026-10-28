@@ -1,0 +1,45 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             xmlns:ae="using:AvaloniaEdit"
+             x:Class="Kalo.App.Views.ScriptEditorView"
+             x:DataType="vm:ScriptEditorViewModel">
+  <UserControl.KeyBindings>
+    <KeyBinding Gesture="F7" Command="{Binding CompileCommand}" />
+  </UserControl.KeyBindings>
+
+  <DockPanel>
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="10,5">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="outline" Content="Compile (F7)" Command="{Binding CompileCommand}" />
+          <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+          <Ellipse Width="8" Height="8" Fill="{StaticResource KSuccess}" IsVisible="{Binding CompileOk}" />
+          <TextBlock Text="{Binding CompileSummary}" Foreground="{StaticResource KMuted}" FontSize="12" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Border DockPanel.Dock="Bottom" MaxHeight="160" BorderBrush="{StaticResource KBorder}" BorderThickness="0,1,0,0" Background="{StaticResource KPanel}"
+            IsVisible="{Binding HasMessages}">
+      <ListBox ItemsSource="{Binding Messages}" SelectedItem="{Binding SelectedMessage}" Background="Transparent">
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="vm:ScriptMessage">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="✕" Foreground="{StaticResource KError}" IsVisible="{Binding IsError}" />
+              <TextBlock Text="!" Foreground="{StaticResource KWarning}" IsVisible="{Binding !IsError}" />
+              <TextBlock Text="{Binding Where}" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" FontSize="11.5" MinWidth="60" />
+              <TextBlock Text="{Binding Display}" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontFamily="{StaticResource KMono}" FontSize="13"
+                   Background="{StaticResource KBg}" Foreground="{StaticResource KText}" LineNumbersForeground="{StaticResource KFaint}"
+                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4" />
+  </DockPanel>
+</UserControl>

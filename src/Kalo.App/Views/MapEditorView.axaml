@@ -1,0 +1,68 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             xmlns:vp="using:Kalo.App.Viewport"
+             x:Class="Kalo.App.Views.MapEditorView"
+             x:DataType="vm:MapEditorViewModel">
+
+  <DockPanel>
+    <!-- Toolbar -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="10,5">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="outline" Content="Fields" Command="{Binding OpenFieldsCommand}" ToolTip.Tip="Open the scenario in the tag editor" />
+          <Button Classes="outline" Content="Play this map" Command="{Binding PlayHereCommand}" ToolTip.Tip="Save first: the game loads the saved scenario" />
+          <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
+        </StackPanel>
+        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <TextBlock Text="Show" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <ToggleButton Classes="chip" Content="Level" IsChecked="{Binding ShowGeometry}" />
+          <ToggleButton Classes="chip" Content="Scenery" IsChecked="{Binding ShowScenery}" />
+          <ToggleButton Classes="chip" Content="Items" IsChecked="{Binding ShowItems}" />
+          <ToggleButton Classes="chip" Content="Vehicles" IsChecked="{Binding ShowVehicles}" />
+          <ToggleButton Classes="chip" Content="Devices" IsChecked="{Binding ShowDevices}" />
+          <ToggleButton Classes="chip" Content="Sound/FX" IsChecked="{Binding ShowSoundAndEffects}" />
+        </WrapPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- Status line -->
+    <Border DockPanel.Dock="Bottom" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,1,0,0" Height="24">
+      <StackPanel Orientation="Horizontal" Spacing="14" Margin="10,0" VerticalAlignment="Center">
+        <TextBlock Text="{Binding GeometryStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+        <TextBlock Text="{Binding RendererStatus}" FontSize="11.5" Foreground="{StaticResource KFaint}" />
+        <TextBlock Text="Right-drag look · WASD/QE fly (Shift faster) · click select · drag move (Shift up/down, Ctrl snap) · R turn · Ctrl+D duplicate · Del delete · F frame"
+                   FontSize="11.5" Foreground="{StaticResource KFaint}" />
+      </StackPanel>
+    </Border>
+
+    <Grid ColumnDefinitions="250,4,*">
+      <!-- Outliner -->
+      <DockPanel Grid.Column="0" Background="{StaticResource KPanel}">
+        <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Filter objects" Text="{Binding Filter}" />
+        <ListBox ItemsSource="{Binding OutlinerItems}" SelectedItem="{Binding Selected}" Background="Transparent">
+          <ListBox.ItemTemplate>
+            <DataTemplate DataType="vm:PlacementItem">
+              <StackPanel Spacing="0">
+                <TextBlock Text="{Binding Display}" FontSize="12.5" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+      <GridSplitter Grid.Column="1" Background="{StaticResource KBorder}" ResizeDirection="Columns" />
+      <vp:MapViewport Grid.Column="2" x:Name="Viewport" />
+    </Grid>
+  </DockPanel>
+
+  <UserControl.Styles>
+    <Style Selector="ToggleButton.chip">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="8,2" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Margin" Value="0,0,4,0" />
+      <Setter Property="CornerRadius" Value="12" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

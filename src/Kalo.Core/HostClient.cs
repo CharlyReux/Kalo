@@ -97,12 +97,24 @@ public sealed class HostClient : IAsyncDisposable
         return result.Deserialize<T>(Wire.Options)!;
     }
 
-    public Task<TagDocument> OpenTagAsync(string path) => CallAsync<TagDocument>(Methods.OpenTag, new TagPathParams { Path = path });
+    public Task<TagDocument> OpenTagAsync(string path, int? maxElements = null) => CallAsync<TagDocument>(Methods.OpenTag, new TagPathParams { Path = path, MaxElements = maxElements });
     public Task<SetFieldResult> SetFieldAsync(string path, string fieldPath, string value) =>
         CallAsync<SetFieldResult>(Methods.SetField, new SetFieldParams { Path = path, FieldPath = fieldPath, Value = value });
     public Task<SaveResult> SaveTagAsync(string path) => CallAsync<SaveResult>(Methods.SaveTag, new TagPathParams { Path = path });
     public Task<SaveResult> SaveTagAsAsync(string path, string newPath) => CallAsync<SaveResult>(Methods.SaveTagAs, new SaveAsParams { Path = path, NewPath = newPath });
     public Task<bool> CloseTagAsync(string path) => CallAsync<bool>(Methods.CloseTag, new TagPathParams { Path = path });
+    public Task<BlockOpResult> BlockOpAsync(string path, string blockPath, string op, int index = 0) =>
+        CallAsync<BlockOpResult>(Methods.BlockOp, new BlockOpParams { Path = path, FieldPath = blockPath, Op = op, Index = index });
+    public Task<ScenarioPlacements> GetPlacementsAsync(string scenario) =>
+        CallAsync<ScenarioPlacements>(Methods.GetPlacements, new TagPathParams { Path = scenario }, TimeSpan.FromMinutes(3));
+    public Task<Placement> SetPlacementAsync(SetPlacementParams p) => CallAsync<Placement>(Methods.SetPlacement, p);
+    public Task<PlacementOpResult> PlacementOpAsync(PlacementOpParams p) => CallAsync<PlacementOpResult>(Methods.PlacementOp, p);
+    public Task<ExportLevelMeshResult> ExportLevelMeshAsync(string scenario, string outputFile) =>
+        CallAsync<ExportLevelMeshResult>(Methods.ExportLevelMesh, new ExportLevelMeshParams { Scenario = scenario, OutputFile = outputFile }, TimeSpan.FromMinutes(10));
+    public Task<MegaloCatalog> MegaloCatalogAsync(string objectLists) =>
+        CallAsync<MegaloCatalog>(Methods.MegaloCatalog, new MegaloCatalogParams { ObjectLists = objectLists }, TimeSpan.FromMinutes(2));
+    public Task<MegaloCompileResult> MegaloCompileAsync(MegaloCompileParams p) =>
+        CallAsync<MegaloCompileResult>(Methods.MegaloCompile, p, TimeSpan.FromMinutes(2));
 
     private async Task ReadLoop()
     {

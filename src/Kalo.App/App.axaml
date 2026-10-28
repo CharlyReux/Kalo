@@ -37,6 +37,7 @@
 
   <Application.Styles>
     <FluentTheme DensityStyle="Compact" />
+    <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
 
     <Style Selector="Window">
       <Setter Property="FontSize" Value="13" />

@@ -5,7 +5,8 @@ A modern modding workbench for Halo: Reach (MCC), built on top of the official H
 - Design doc: https://claude.ai/artifact/Fsh4bt9uP1xP8H7CMdWGQ8
 - UI mockup: https://claude.ai/artifact/7PetLn2NLhZ1LxxBweqAe6
 
-Status: **first working draft** of the app (tag editor + Play with hot reload). The spikes before it were
+Status: **working draft** of the app: tag editor with blocks and references, 3D map editor, gametype script
+editor, mod projects, Play with hot reload. The spikes before it were
 throwaway command-line probes:
 
 - Spike 0 (passed): can Kalo drive ManagedBlam (tags) and tool.exe (builds) from its own process, inside a
@@ -31,7 +32,22 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
 - The Changes panel (second icon on the left) lists every file that differs from vanilla HREK and puts any
   of them back. "Revert to vanilla" in the editor does the same for the open tag.
 
-Self-test, used through the runner: `kalo.exe --self-test .kalo\shots\selftest` opens the assault rifle,
+- Blocks: right-click a block row (or use the inspector) to add, insert, duplicate or delete elements.
+  References: select one and pick a tag of an allowed type in the inspector, or open the referenced tag.
+- Maps: double-click a .scenario (or search for one). The map view shows the level (read from the
+  structure_bsp tags, cached in .kalo\cache\geometry) and every object placement as a coloured box.
+  Right-drag looks around, WASD/QE fly (Shift faster), click selects, drag moves (Shift: up/down, Ctrl: snap
+  to 0.25), R turns 15°, Ctrl+D duplicates, Delete removes, F frames. The inspector edits exact position and
+  rotation and adds new objects from the scenario's palettes where you last clicked the level.
+- Gametypes (third icon on the left): the Megalo scripts from data\multiplayer\megalo. F7 compiles with
+  HREK's own compiler: errors with line numbers, the gametype budget, declared variables, and a searchable list
+  of every action and condition with its description (double-click inserts it).
+- Mod projects (fourth icon): a project is a small folder in Kalo\projects holding only the files your mod
+  changes. Every save is recorded in the active project; switching projects puts the shared workspace back to
+  vanilla and loads the other project's files; Export zips a project into Kalo\exports.
+
+Self-tests, used through the runner: `kalo.exe --tour .kalo\shots\tour` walks through blocks, references, the
+map view, the script editor and projects (nothing is saved). `kalo.exe --self-test .kalo\shots\selftest` opens the assault rifle,
 sets the magazine size, saves, starts the game, changes it again while the game runs, waits for the game
 to reload it, stops the game, reverts, and checks HREK was not touched. It prints `SELFTEST PASS` or the
 failed checks and saves screenshots of the Kalo window.

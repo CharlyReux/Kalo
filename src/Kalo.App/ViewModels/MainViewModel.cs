@@ -14,20 +14,33 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     private const int MaxOutputLines = 4000;
     private readonly AppArgs _args;
     private List<string> _tagIndex = new();
+    /// <summary>Every tag in the workspace, relative to tags\ (filled in the background at start).</summary>
+    public IReadOnlyList<string> TagIndex => _tagIndex;
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public KaloPaths? Paths { get; }
     public HostClient? Host { get; private set; }
     public Baseline? Baseline { get; private set; }
     public GameSession? Game { get; }
+    public Kalo.Core.Geometry.LevelGeometry Geometry { get; private set; } = null!;
+    public Kalo.Core.Geometry.ModelLibrary Models { get; private set; } = null!;
 
     public ObservableCollection<ExplorerNode> ExplorerRoots { get; } = new();
     public ObservableCollection<SearchResult> SearchResults { get; } = new();
-    public ObservableCollection<TagEditorViewModel> Tabs { get; } = new();
+    public ObservableCollection<DocumentViewModel> Tabs { get; } = new();
     public ObservableCollection<string> OutputLines { get; } = new();
     public ObservableCollection<ProblemItem> Problems { get; } = new();
     public ObservableCollection<ChangeItem> Changes { get; } = new();
     public ObservableCollection<string> Scenarios { get; } = new();
+    public ObservableCollection<ScriptFile> Scripts { get; } = new();
+    public ObservableCollection<ProjectItem> Projects { get; } = new();
+    public ModProjects? ModProjects { get; private set; }
+    [ObservableProperty] private string _newProjectName = "";
+    [ObservableProperty] private string _newProjectDescription = "";
+    [ObservableProperty] private string _activeProjectText = "No project: edits stay in the workspace until you create one.";
+    [ObservableProperty] private bool _isSwitching;
+    /// <summary>Megalo actions, conditions and value lists (loaded once from ManagedMegalo).</summary>
+    public Kalo.Protocol.MegaloCatalog? MegaloCatalog { get; private set; }
     public ObservableCollection<string> QuickOpen { get; } = new()
     {
         @"objects\weapons\rifle\assault_rifle\assault_rifle.weapon",
@@ -41,7 +54,11 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Completes once the host is up and the --open tag (if any) is loaded; used for screenshots.</summary>
     public Task Ready => _ready.Task;
 
-    [ObservableProperty] private TagEditorViewModel? _activeTab;
+    [ObservableProperty] private DocumentViewModel? _activeDocument;
+    /// <summary>The active tab when it is a tag editor (the field inspector binds to it).</summary>
+    public TagEditorViewModel? ActiveTab => ActiveDocument as TagEditorViewModel;
+    public MapEditorViewModel? ActiveMap => ActiveDocument as MapEditorViewModel;
+    public ScriptEditorViewModel? ActiveScript => ActiveDocument as ScriptEditorViewModel;
     [ObservableProperty] private string _searchText = "";
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private string _sidePanel = "explorer";
@@ -62,14 +79,20 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private int _warningCount;
 
     public bool HasTab => ActiveTab != null;
-    public bool NoTab => ActiveTab == null;
+    public bool HasMap => ActiveMap != null;
+    public bool HasScript => ActiveScript != null;
+    public bool HasDocument => ActiveDocument != null;
+    public string InspectorTitle => HasMap ? "OBJECT" : HasScript ? "GAMETYPE SCRIPT" : "FIELD";
+    public bool NoTab => ActiveDocument == null;
     public bool IsExplorer => SidePanel == "explorer";
     public bool IsChangesPanel => SidePanel == "changes";
+    public bool IsGametypesPanel => SidePanel == "gametypes";
+    public bool IsProjectsPanel => SidePanel == "projects";
     public bool IsOutput => BottomPanel == "output";
     public bool IsProblems => BottomPanel == "problems";
     public bool NotSearching => !IsSearching;
     public string WorkspaceText => Paths == null ? "no workspace" : Paths.Workspace;
-    public string SidePanelTitle => IsExplorer ? "PROJECT" : "CHANGES";
+    public string SidePanelTitle => SidePanel switch { "explorer" => "PROJECT", "gametypes" => "GAMETYPES", "projects" => "MOD PROJECTS", _ => "CHANGES" };
 
     public MainViewModel(AppArgs args)
     {
@@ -88,6 +111,18 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         Game = new GameSession(Paths);
+        Geometry = new Kalo.Core.Geometry.LevelGeometry(Paths);
+        Models = new Kalo.Core.Geometry.ModelLibrary(Paths);
+        Geometry.TagSource = async (scenario, bsps) =>
+        {
+            if (Host == null) return null;
+            string file = Geometry.CacheFile(scenario) + ".host";
+            var r = await Host.ExportLevelMeshAsync(scenario, file);
+            Post(() => Log($"Level geometry for {scenario}: {r.Triangles:N0} triangles ({r.Clusters} clusters, {r.Instances} instances) in {r.Ms} ms" + (string.IsNullOrEmpty(r.Notes) ? "" : " — " + r.Notes)));
+            var mesh = Kalo.Core.Geometry.Mesh.TryLoad(file);
+            try { File.Delete(file); } catch { }
+            return mesh;
+        };
         Game.Output += line => Post(() => AppendOutput("[game] " + line));
         Game.Loaded += () => Post(() => { GameStatus = "Game running · map loaded"; GameBrush = Brushes.LimeGreen; Log("Map loaded in the game."); });
         Game.TagReloaded += tag => Post(() => { StatusMessage = "Game reloaded " + System.IO.Path.GetFileName(tag); Log("Game hot-reloaded " + tag); });
@@ -99,6 +134,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             foreach (string d in Directory.GetDirectories(tagsRoot).OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
                 ExplorerRoots.Add(new ExplorerNode(d, tagsRoot, true, IsChangedSafe));
             FindScenarios(tagsRoot);
+            FindScripts();
         }
         else
         {
@@ -113,6 +149,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             Baseline = await Task.Run(() => Kalo.Core.Baseline.Load(Paths!));
+            ModProjects = new ModProjects(Paths!, Baseline);
+            RefreshProjects();
             await RefreshChangesAsync();
         }
         catch (Exception ex)
@@ -162,7 +200,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (Host != null) await Host.DisposeAsync();
         Host = null;
         await StartHostAsync();
-        foreach (var tab in Tabs.ToList()) await ReloadTabAsync(tab);
+        foreach (var tab in Tabs.OfType<TagEditorViewModel>().ToList()) await ReloadTabAsync(tab);
+        foreach (var map in Tabs.OfType<MapEditorViewModel>().ToList()) await map.ReloadAsync();
     }
 
     // ---- tags ------------------------------------------------------------------------------
@@ -170,15 +209,15 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task<TagEditorViewModel?> OpenTagAsync(string tagPath)
     {
         tagPath = tagPath.Replace('/', '\\').TrimStart('\\');
-        var existing = Tabs.FirstOrDefault(t => t.Path.Equals(tagPath, StringComparison.OrdinalIgnoreCase));
+        var existing = Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.Equals(tagPath, StringComparison.OrdinalIgnoreCase));
         if (existing != null)
         {
-            ActiveTab = existing;
+            ActiveDocument = existing;
             return existing;
         }
         var tab = new TagEditorViewModel(this, tagPath);
         Tabs.Add(tab);
-        ActiveTab = tab;
+        ActiveDocument = tab;
         await ReloadTabAsync(tab);
         return tab;
     }
@@ -207,28 +246,133 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private async Task OpenNode(object? item)
     {
-        if (item is ExplorerNode { IsFolder: false, TagPath: not null } node) await OpenTagAsync(node.TagPath);
-        else if (item is SearchResult r) await OpenTagAsync(r.TagPath);
-        else if (item is ChangeItem { TagPath: not null } c) await OpenTagAsync(c.TagPath);
+        if (item is ExplorerNode { IsFolder: false, TagPath: not null } node) await OpenAnyAsync(node.TagPath);
+        else if (item is SearchResult r) await OpenAnyAsync(r.TagPath);
+        else if (item is ChangeItem { TagPath: not null } c) await OpenAnyAsync(c.TagPath);
+        else if (item is ChangeItem ch && ch.Path.StartsWith(@"data\multiplayer\megalo\", StringComparison.OrdinalIgnoreCase)) await OpenScriptAsync(ch.Path);
+        else if (item is ScriptFile sf) await OpenScriptAsync(sf.RelativePath);
         else if (item is string s) await OpenTagAsync(s);
     }
 
     [RelayCommand]
-    private void ActivateTab(TagEditorViewModel tab) => ActiveTab = tab;
+    private void ActivateTab(DocumentViewModel tab) => ActiveDocument = tab;
 
     [RelayCommand]
-    private async Task CloseTab(TagEditorViewModel tab)
+    private async Task CloseTab(DocumentViewModel tab)
     {
         int index = Tabs.IndexOf(tab);
         Tabs.Remove(tab);
-        if (ActiveTab == tab) ActiveTab = Tabs.Count == 0 ? null : Tabs[Math.Max(0, index - 1)];
-        try { if (Host != null) await Host.CloseTagAsync(tab.Path); } catch { }
+        if (ActiveDocument == tab) ActiveDocument = Tabs.Count == 0 ? null : Tabs[Math.Max(0, index - 1)];
+        // A map and a tag editor can share one open scenario in the Blam Host: close it only when the last one goes.
+        if (!Tabs.Any(t => t.Path.Equals(tab.Path, StringComparison.OrdinalIgnoreCase))) await tab.CloseAsync();
     }
 
     [RelayCommand]
     private async Task SaveActive()
     {
-        if (ActiveTab != null) await ActiveTab.SaveCommand.ExecuteAsync(null);
+        if (ActiveDocument != null) await ActiveDocument.SaveDocumentAsync();
+    }
+
+    /// <summary>Scenarios open as maps; everything else in the tag editor.</summary>
+    public async Task OpenAnyAsync(string tagPath)
+    {
+        if (tagPath.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) await OpenMapAsync(tagPath);
+        else await OpenTagAsync(tagPath);
+    }
+
+    public async Task<MapEditorViewModel> OpenMapAsync(string scenarioPath)
+    {
+        scenarioPath = scenarioPath.Replace('/', '\\').TrimStart('\\');
+        var existing = Tabs.OfType<MapEditorViewModel>().FirstOrDefault(t => t.Path.Equals(scenarioPath, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) { ActiveDocument = existing; return existing; }
+        var map = new MapEditorViewModel(this, scenarioPath);
+        Tabs.Add(map);
+        ActiveDocument = map;
+        map.DiffersFromVanilla = Baseline?.IsChanged("tags\\" + scenarioPath) ?? false;
+        await map.ReloadAsync();
+        Log($"Opened map {scenarioPath}: {map.Status}");
+        return map;
+    }
+
+    private void FindScripts()
+    {
+        string root = Paths!.MegaloSource;
+        if (!Directory.Exists(root)) return;
+        string ws = Paths.Workspace;
+        IEnumerable<string> files = Directory.EnumerateFiles(root, "*.txt", SearchOption.TopDirectoryOnly)
+            .Concat(Directory.Exists(System.IO.Path.Combine(root, "simple")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "simple"), "*.txt", SearchOption.AllDirectories) : Array.Empty<string>())
+            .Concat(Directory.Exists(System.IO.Path.Combine(root, "includes")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "includes"), "*.txt") : Array.Empty<string>());
+        foreach (string f in files.OrderBy(f => f.Contains("includes") ? 1 : 0).ThenBy(f => f, StringComparer.OrdinalIgnoreCase))
+        {
+            string rel = f.Substring(ws.Length + 1);
+            string folder = System.IO.Path.GetDirectoryName(f.Substring(root.Length + 1)) ?? "";
+            Scripts.Add(new ScriptFile(System.IO.Path.GetFileNameWithoutExtension(f), rel, folder.Length == 0 ? "gametype" : folder));
+        }
+    }
+
+    public async Task<ScriptEditorViewModel?> OpenScriptAsync(string relativePath)
+    {
+        var existing = Tabs.OfType<ScriptEditorViewModel>().FirstOrDefault(t => t.Path.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) { ActiveDocument = existing; return existing; }
+        var script = new ScriptEditorViewModel(this, relativePath);
+        try
+        {
+            await script.LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            AddProblem("error", "Could not open " + relativePath + ": " + ex.Message, relativePath);
+            return null;
+        }
+        script.DiffersFromVanilla = Baseline?.IsChanged(relativePath) ?? false;
+        Tabs.Add(script);
+        ActiveDocument = script;
+        await EnsureMegaloCatalogAsync();
+        script.UpdateCatalog();
+        return script;
+    }
+
+    public async Task EnsureMegaloCatalogAsync()
+    {
+        if (MegaloCatalog != null || Host == null || Paths == null) return;
+        try
+        {
+            MegaloCatalog = await Host.MegaloCatalogAsync(Paths.MegaloObjectLists);
+            Log($"Gametype compiler ready: {MegaloCatalog.Actions?.Count} actions, {MegaloCatalog.Conditions?.Count} conditions.");
+        }
+        catch (Exception ex)
+        {
+            AddProblem("warning", "Gametype compiler unavailable: " + ex.Message, "Megalo");
+        }
+    }
+
+    /// <summary>Replaces the Problems entries of one script with its latest compile messages.</summary>
+    public void ReportScriptProblems(ScriptEditorViewModel script, IEnumerable<ScriptMessage> messages)
+    {
+        foreach (var p in Problems.Where(p => p.Source == script.Path).ToList()) Problems.Remove(p);
+        foreach (var m in messages)
+            Problems.Insert(0, new ProblemItem(m.IsError ? "error" : "warning", $"{m.Where}: {m.Display}", script.Path, DateTime.Now.ToString("HH:mm:ss")));
+        ErrorCount = Problems.Count(p => p.Severity == "error");
+        WarningCount = Problems.Count(p => p.Severity == "warning");
+        if (messages.Any(m => m.IsError)) BottomPanel = "problems";
+    }
+
+    public void PlayScenario(string scenario)
+    {
+        if (!Scenarios.Contains(scenario)) Scenarios.Add(scenario);
+        SelectedScenario = scenario;
+        if (IsGameRunning) Game?.Stop();
+        PlayCommand.Execute(null);
+    }
+
+    /// <summary>Any document saved: refresh the vanilla markers and the Changes panel.</summary>
+    public void OnDocumentSaved(DocumentViewModel doc)
+    {
+        doc.DiffersFromVanilla = Baseline?.IsChanged(doc.BaselinePath) ?? true;
+        Log($"Saved {doc.Path}." + (IsGameRunning ? " The running game should reload it." : ""));
+        StatusMessage = "Saved " + doc.Title;
+        _ = RefreshChangesAsync();
+        _ = AutoCaptureAsync();
     }
 
     public void OnTagSaved(TagEditorViewModel tab)
@@ -237,6 +381,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Log($"Saved {tab.Path}." + (IsGameRunning ? " The running game should reload it." : ""));
         StatusMessage = "Saved " + tab.Title;
         _ = RefreshChangesAsync();
+        _ = AutoCaptureAsync();
     }
 
     public async Task RevertTagAsync(TagEditorViewModel tab)
@@ -260,7 +405,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task RevertChange(ChangeItem change)
     {
         if (Baseline == null) return;
-        var tab = Tabs.FirstOrDefault(t => change.TagPath != null && t.Path.Equals(change.TagPath, StringComparison.OrdinalIgnoreCase));
+        var tab = Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => change.TagPath != null && t.Path.Equals(change.TagPath, StringComparison.OrdinalIgnoreCase));
         if (tab != null) { await RevertTagAsync(tab); return; }
         try
         {
@@ -365,6 +510,105 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [RelayCommand] private void ShowExplorer() => SidePanel = "explorer";
     [RelayCommand] private void ShowChanges() { SidePanel = "changes"; _ = RefreshChangesAsync(); }
+    [RelayCommand] private void ShowGametypes() => SidePanel = "gametypes";
+    [RelayCommand] private void ShowProjects() { SidePanel = "projects"; RefreshProjects(); }
+
+    // ---- mod projects ------------------------------------------------------------------------
+
+    public void RefreshProjects()
+    {
+        Projects.Clear();
+        if (ModProjects == null) return;
+        string? active = ModProjects.ActiveName;
+        foreach (var p in ModProjects.List())
+            Projects.Add(new ProjectItem(p.Name, p.Manifest.Description, p.Manifest.Files.Count, p.Name.Equals(active, StringComparison.OrdinalIgnoreCase), p.Manifest.Updated));
+        ActiveProjectText = active == null
+            ? "No project: edits stay in the workspace until you create one."
+            : $"Working on {active}. Every save is recorded in the project.";
+    }
+
+    [RelayCommand]
+    private async Task CreateProject()
+    {
+        if (ModProjects == null) return;
+        try
+        {
+            string name = NewProjectName.Trim();
+            bool adopt = ModProjects.ActiveName == null;
+            var p = await Task.Run(() => ModProjects.Create(name, Environment.UserName, NewProjectDescription.Trim()));
+            Log(adopt ? $"Created project {p.Name} with the workspace's {p.Manifest.Files.Count} changed file(s)." : $"Created project {p.Name}. Switch to it to start working on it.");
+            NewProjectName = "";
+            NewProjectDescription = "";
+            RefreshProjects();
+        }
+        catch (Exception ex)
+        {
+            AddProblem("error", ex.Message, "Projects");
+        }
+    }
+
+    [RelayCommand]
+    private async Task SwitchProject(ProjectItem? item)
+    {
+        if (ModProjects == null || IsSwitching) return;
+        if (Tabs.Any(t => t.IsDirty)) { AddProblem("warning", "Save or close the edited tabs before switching projects.", "Projects"); return; }
+        if (IsGameRunning) Game?.Stop();
+        IsSwitching = true;
+        try
+        {
+            foreach (var t in Tabs.ToList()) await CloseTab(t);
+            var target = item == null ? null : ModProjects.Find(item.Name);
+            await Task.Run(() => ModProjects.Switch(target, msg => Post(() => StatusMessage = msg)));
+            Log(target == null ? "Workspace is back to vanilla (no project)." : $"Switched to project {target.Name} ({target.Manifest.Files.Count} files).");
+            StatusMessage = target == null ? "Vanilla workspace" : "Project " + target.Name;
+        }
+        catch (Exception ex)
+        {
+            AddProblem("error", "Switch failed: " + ex.Message, "Projects");
+        }
+        finally
+        {
+            IsSwitching = false;
+            RefreshProjects();
+            await RefreshChangesAsync();
+        }
+    }
+
+    [RelayCommand]
+    private async Task CaptureProject()
+    {
+        var p = ModProjects?.ActiveName is { } n ? ModProjects.Find(n) : null;
+        if (p == null) return;
+        var r = await Task.Run(() => ModProjects!.Capture(p));
+        Log($"Project {p.Name}: {r.Files} file(s), {r.Copied} updated, {r.Removed} back to vanilla.");
+        RefreshProjects();
+    }
+
+    [RelayCommand]
+    private async Task ExportProject(ProjectItem? item)
+    {
+        if (ModProjects == null) return;
+        var p = item != null ? ModProjects.Find(item.Name) : ModProjects.ActiveName is { } n ? ModProjects.Find(n) : null;
+        if (p == null) { AddProblem("warning", "Create a project first: the export packs a project's files.", "Projects"); return; }
+        try
+        {
+            string zip = await Task.Run(() => ModProjects.Export(p));
+            Log($"Exported {p.Name} to {zip}");
+            StatusMessage = "Exported " + System.IO.Path.GetFileName(zip);
+            RefreshProjects();
+        }
+        catch (Exception ex)
+        {
+            AddProblem("error", "Export failed: " + ex.Message, "Projects");
+        }
+    }
+
+    private async Task AutoCaptureAsync()
+    {
+        if (ModProjects?.ActiveName is not { } n || ModProjects.Find(n) is not { } p) return;
+        try { await Task.Run(() => ModProjects.Capture(p)); } catch (Exception ex) { Log("Could not record the save in the project: " + ex.Message); }
+        Post(RefreshProjects);
+    }
     [RelayCommand] private void ShowOutput() => BottomPanel = "output";
     [RelayCommand] private void ShowProblems() => BottomPanel = "problems";
     [RelayCommand] private void ClearOutput() => OutputLines.Clear();
@@ -373,6 +617,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         OnPropertyChanged(nameof(IsExplorer));
         OnPropertyChanged(nameof(IsChangesPanel));
+        OnPropertyChanged(nameof(IsGametypesPanel));
+        OnPropertyChanged(nameof(IsProjectsPanel));
         OnPropertyChanged(nameof(SidePanelTitle));
     }
 
@@ -382,11 +628,18 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(IsProblems));
     }
 
-    partial void OnActiveTabChanged(TagEditorViewModel? oldValue, TagEditorViewModel? newValue)
+    partial void OnActiveDocumentChanged(DocumentViewModel? oldValue, DocumentViewModel? newValue)
     {
         if (oldValue != null) oldValue.IsActive = false;
         if (newValue != null) newValue.IsActive = true;
+        OnPropertyChanged(nameof(ActiveTab));
+        OnPropertyChanged(nameof(ActiveMap));
+        OnPropertyChanged(nameof(ActiveScript));
         OnPropertyChanged(nameof(HasTab));
+        OnPropertyChanged(nameof(HasMap));
+        OnPropertyChanged(nameof(HasScript));
+        OnPropertyChanged(nameof(HasDocument));
+        OnPropertyChanged(nameof(InspectorTitle));
         OnPropertyChanged(nameof(NoTab));
     }
 
@@ -422,4 +675,9 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Game?.Dispose();
         if (Host != null) await Host.DisposeAsync();
     }
+}
+
+public sealed record ProjectItem(string Name, string Description, int FileCount, bool IsActive, DateTime Updated)
+{
+    public string Detail => $"{FileCount} file{(FileCount == 1 ? "" : "s")} · updated {Updated:g}";
 }

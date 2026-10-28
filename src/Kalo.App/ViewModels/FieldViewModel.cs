@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Kalo.Protocol;
 
 namespace Kalo.App.ViewModels;
@@ -30,6 +31,23 @@ public partial class FieldViewModel : ObservableObject
     public string Range { get; }
     public string? Description => string.IsNullOrWhiteSpace(Node.Description) ? null : Node.Description;
     public IReadOnlyList<string> Options => Node.Options ?? (IReadOnlyList<string>)Array.Empty<string>();
+
+    public bool IsBlock => Kind == ValueKinds.Block;
+    public bool IsBlockElement => Kind == ValueKinds.Element && Parent?.Kind == ValueKinds.Block;
+    public bool IsReference => Kind == ValueKinds.Reference;
+    public bool HasReferenceTarget => IsReference && !string.IsNullOrWhiteSpace(Value);
+    public IReadOnlyList<string> Allowed => Node.Allowed ?? (IReadOnlyList<string>)Array.Empty<string>();
+    public string AllowedText => Allowed.Count == 0 ? "any tag" : string.Join(", ", Allowed.Select(a => "." + a));
+    /// <summary>Index of this element in its block ("[3]" → 3), or -1.</summary>
+    public int ElementIndex => Kind == ValueKinds.Element && RawName.StartsWith('[') && int.TryParse(RawName.Trim('[', ']'), out int i) ? i : -1;
+    public bool IsTruncated => Node.Truncated;
+    public string TruncatedText => Node.Truncated ? $"Showing the first {Children.Count} of {Node.ElementCount} elements." : "";
+
+    [RelayCommand] private Task AddElement() => _owner.BlockOpAsync(this, BlockOps.Add, 0);
+    [RelayCommand] private Task ClearElements() => _owner.BlockOpAsync(this, BlockOps.Clear, 0);
+    [RelayCommand] private Task InsertBefore() => Parent == null ? Task.CompletedTask : _owner.BlockOpAsync(Parent, BlockOps.Insert, ElementIndex);
+    [RelayCommand] private Task DuplicateElement() => Parent == null ? Task.CompletedTask : _owner.BlockOpAsync(Parent, BlockOps.Duplicate, ElementIndex);
+    [RelayCommand] private Task DeleteElement() => Parent == null ? Task.CompletedTask : _owner.BlockOpAsync(Parent, BlockOps.Remove, ElementIndex);
 
     public bool IsContainer => Kind is ValueKinds.Block or ValueKinds.Struct or ValueKinds.Array or ValueKinds.Element;
     public bool IsExplanation => Kind == ValueKinds.Explanation;
@@ -79,6 +97,7 @@ public partial class FieldViewModel : ObservableObject
 
     partial void OnValueChanged(string? value)
     {
+        OnPropertyChanged(nameof(HasReferenceTarget));
         if (_suppress || !IsTextEditor || value == _committed) return;
         _ = _owner.CommitAsync(this, value ?? "");
     }

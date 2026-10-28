@@ -44,7 +44,7 @@
 
     <Grid>
       <TextBlock Text="Loading…" Foreground="{StaticResource KMuted}" Margin="16" IsVisible="{Binding IsLoading}" />
-      <TreeView x:Name="FieldTree" ItemsSource="{Binding Fields}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" IsVisible="{Binding !IsLoading}">
+      <TreeView x:Name="FieldTree" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ItemsSource="{Binding Fields}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" IsVisible="{Binding !IsLoading}">
         <TreeView.Styles>
           <Style Selector="TreeViewItem" x:DataType="vm:FieldViewModel">
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
@@ -80,7 +80,17 @@
         </TreeView.Styles>
         <TreeView.ItemTemplate>
           <TreeDataTemplate DataType="vm:FieldViewModel" ItemsSource="{Binding Children}">
-            <Grid ColumnDefinitions="*,260,110,130" MinHeight="24" Margin="0,0,4,0">
+            <Grid ColumnDefinitions="*,260,110,130" MinHeight="24" Margin="0,0,4,0" Background="Transparent">
+              <Grid.ContextMenu>
+                <ContextMenu>
+                  <MenuItem Header="Add element" Command="{Binding AddElementCommand}" IsVisible="{Binding IsBlock}" />
+                  <MenuItem Header="Delete all elements" Command="{Binding ClearElementsCommand}" IsVisible="{Binding IsBlock}" />
+                  <MenuItem Header="Insert element before" Command="{Binding InsertBeforeCommand}" IsVisible="{Binding IsBlockElement}" />
+                  <MenuItem Header="Duplicate element" Command="{Binding DuplicateElementCommand}" IsVisible="{Binding IsBlockElement}" />
+                  <MenuItem Header="Delete element" Command="{Binding DeleteElementCommand}" IsVisible="{Binding IsBlockElement}" />
+                  <MenuItem Header="Copy field path" Click="CopyPath_Click" />
+                </ContextMenu>
+              </Grid.ContextMenu>
               <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" ToolTip.Tip="{Binding Description}">
                 <Border Width="3" Height="16" Background="{StaticResource KWarning}" IsVisible="{Binding IsDirty}" />
                 <TextBlock Text="{Binding DisplayText}" FontSize="12.5" VerticalAlignment="Center" Classes.section="{Binding IsContainer}" Classes.note="{Binding IsExplanation}" TextTrimming="CharacterEllipsis" />

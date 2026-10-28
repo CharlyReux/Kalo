@@ -11,3 +11,7 @@ obj/
 
 # Screenshots and large probe outputs
 spike-results/*.png
+
+# Mod projects and exported mods are user data
+projects/
+exports/

@@ -27,6 +27,12 @@
       <HintPath>$(HrekRoot)\bin\ManagedBlam.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- ManagedMegalo defines its own copies of some Bungie.* types, so it gets an alias. -->
+    <Reference Include="ManagedMegalo">
+      <HintPath>$(HrekRoot)\bin\ManagedMegalo.dll</HintPath>
+      <Private>false</Private>
+      <Aliases>megalo</Aliases>
+    </Reference>
   </ItemGroup>
 
 </Project>
