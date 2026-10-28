@@ -80,7 +80,7 @@ public partial class MainWindow : Window
         var args = AppArgs.Current;
         if ((!string.IsNullOrEmpty(args.SelfTest) || !string.IsNullOrEmpty(args.Tour)) && Vm != null)
         {
-            int code = !string.IsNullOrEmpty(args.Tour) ? await new Tour(this, Vm, args).RunAsync() : await new SelfTest(this, Vm, args).RunAsync();
+            int code = args.MapPlay ? await new Tour(this, Vm, args).MapPlayAsync() : !string.IsNullOrEmpty(args.Tour) ? await new Tour(this, Vm, args).RunAsync() : await new SelfTest(this, Vm, args).RunAsync();
             if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime life)
                 life.Shutdown(code);
             return;

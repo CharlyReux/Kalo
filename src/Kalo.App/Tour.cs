@@ -58,6 +58,69 @@ public sealed class Tour
         catch (Exception ex) { Check(false, name + " threw: " + ex.Message); }
     }
 
+    /// <summary>--map-play-test: edit Sword Slayer in the map view, save, play it, try a live edit, stop, revert.</summary>
+    public async Task<int> MapPlayAsync()
+    {
+        Say("map play test started");
+        const string scenario = @"levels\multi\20_sword_slayer\20_sword_slayer.scenario";
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            var map = await _vm.OpenMapAsync(scenario);
+            var weapon = map.Items.FirstOrDefault(i => i.Category == "weapons" && i.Name.Contains("rifle"))
+                         ?? map.Items.FirstOrDefault(i => i.Category == "weapons");
+            if (!Check(weapon != null, "found a weapon to copy")) return 1;
+            map.Selected = weapon;
+            await map.DuplicateSelectedCommand.ExecuteAsync(null);
+            var copy = map.Selected;
+            Check(copy != null && copy != weapon, $"placed a copy of {weapon!.Name} next to the original");
+            await map.SaveCommand.ExecuteAsync(null);
+            Check(!map.IsDirty && map.DiffersFromVanilla, "saved the scenario (now differs from vanilla)");
+
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource<string>? reloaded = null;
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            _vm.Game.Exited += _ => { exited.TrySetResult(); loaded.TrySetException(new Exception("the game exited while loading")); };
+            _vm.Game.TagReloaded += t => { if (t.Contains("20_sword_slayer", StringComparison.OrdinalIgnoreCase)) reloaded?.TrySetResult(t); };
+            var sw = Stopwatch.StartNew();
+            map.PlayHereCommand.Execute(null);
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, $"the game loaded the edited map ({sw.Elapsed.TotalSeconds:F0} s)");
+            await Task.Delay(TimeSpan.FromSeconds(8));
+
+            // Live edit: move the copy and save while the game runs.
+            if (copy != null)
+            {
+                reloaded = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+                map.MoveLocal(copy, copy.Position + new Vector3(0, 0, 1f));
+                await map.CommitMoveAsync(copy);
+                await map.SaveCommand.ExecuteAsync(null);
+                var r = await Task.WhenAny(reloaded.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+                Say(r == reloaded.Task ? "the running game reloaded the scenario after the save" : "the running game did not report a scenario reload within 30 s (placements may need a restart)");
+            }
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+            Check(!_vm.Game.IsRunning, "stopped the game");
+        }
+        catch (Exception ex)
+        {
+            Check(false, "unexpected error: " + ex.Message);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+            try { _vm.Baseline?.Revert(@"tags\" + scenario); } catch (Exception ex) { Say("revert failed: " + ex.Message); }
+            await _vm.RefreshChangesAsync();
+            Check(_vm.Baseline?.IsChanged(@"tags\" + scenario) == false, "scenario back to vanilla");
+        }
+        Say(_failures == 0 ? "MAPPLAY PASS" : $"MAPPLAY FAIL ({_failures})");
+        return _failures == 0 ? 0 : 1;
+    }
+
     // ---- blocks and references -------------------------------------------------------------------
 
     private async Task Blocks()

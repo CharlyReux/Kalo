@@ -285,7 +285,9 @@ public partial class MapEditorViewModel : DocumentViewModel
         {
             var r = await _main.Host.SaveTagAsync(Path);
             IsDirty = false;
-            Status = $"Saved in {r.Ms} ms";
+            Status = _main.IsGameRunning
+                ? $"Saved in {r.Ms} ms. The running game keeps the old placements: press Play this map to restart it."
+                : $"Saved in {r.Ms} ms";
             _main.OnDocumentSaved(this);
         }
         catch (HostException ex)

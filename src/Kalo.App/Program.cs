@@ -40,6 +40,7 @@ public sealed class AppArgs
     public bool Exit { get; private set; }
     public string? SelfTest { get; private set; }
     public string? Tour { get; private set; }
+    public bool MapPlay { get; private set; }
     public double SelfTestHold { get; private set; } = 30;
     public string? Workspace { get; private set; }
     public string? Hrek { get; private set; }
@@ -59,6 +60,7 @@ public sealed class AppArgs
                 case "--exit": a.Exit = true; break;
                 case "--self-test": a.SelfTest = next; i++; break;
                 case "--tour": a.Tour = next; i++; break;
+                case "--map-play-test": a.Tour = next; a.MapPlay = true; i++; break;
                 case "--self-test-hold": a.SelfTestHold = double.Parse(next, System.Globalization.CultureInfo.InvariantCulture); i++; break;
                 case "--workspace": a.Workspace = next; i++; break;
                 case "--hrek": a.Hrek = next; i++; break;
