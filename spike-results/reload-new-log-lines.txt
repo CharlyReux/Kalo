@@ -1,0 +1,35 @@
+bandwidth_debug.txt: 10.28.26 21:02:57.439 0000994 g000000 f0000000  message networking:bandwidth: resetting congestion bandwidth going into a game
+debug.txt: 10.28.26 21:02:57.441 0000997 g000000 f0000000  WARNING sound paused : NO
+debug.txt: 10.28.26 21:02:57.499 0001002 g000002 f0000000  WARNING cluster transparents: cluster transparent not using plane designator
+debug.txt: 10.28.26 21:02:57.917 0001007 g000002 f0000001  WARNING player_rewards:persistence: User timezone changed from 0 to -3600.
+debug.txt: 10.28.26 21:02:57.918 0001008 g000002 f0000001  WARNING player_rewards:persistence: User daily rewards tracking reset because day index went from 0 to 9797 (timezone -3600 seconds offset from UTC)
+debug_full.txt: 10.28.26 21:02:57.222 0000991 g000000 f0000000  message tags:xsync: reloaded objects\weapons\rifle\assault_rifle\assault_rifle.weapon...
+debug_full.txt: 10.28.26 21:02:57.438 0000992 g000000 f0000000  message networking:logic:session: local user 0 set player identifier=35:05:00:00:00:00:00:00
+debug_full.txt: 10.28.26 21:02:57.438 0000993 g000000 f0000000  message networking:logic:session: local user 0 set player xuid=535, live=0, online=0, free=0, user_content=1, friend_content=0
+debug_full.txt: 10.28.26 21:02:57.439 0000994 g000000 f0000000  message networking:bandwidth: resetting congestion bandwidth going into a game
+debug_full.txt: 10.28.26 21:02:57.439 0000995 g000000 f0000000  message networking:simulation:world: change_state_active() called.
+debug_full.txt: 10.28.26 21:02:57.441 0000996 g000000 f0000000  message networking:simulation:world: player 0 going active
+debug_full.txt: 10.28.26 21:02:57.441 0000997 g000000 f0000000  WARNING sound paused : NO
+debug_full.txt: 10.28.26 21:02:57.444 0000998 g000000 f0000000  message player_rewards:incident:---------------INCIDENT BUCKET DISPATCH-------------
+debug_full.txt: 10.28.26 21:02:57.445 0000999 g000000 f0000000  message player_rewards:incident:suppressing networking player_spawn, cause object 0xE38E011F (), effect object 0xFFFFFFFF (), damage: unknown , special kill flags:
+debug_full.txt: 10.28.26 21:02:57.446 0001000 g000000 f0000000  message player_rewards:incident:
+debug_full.txt: 10.28.26 21:02:57.457 0001001 g000002 f0000000  message networking:observer:status: est1536.0kb(r0.00 v0.00) max-tp0.0kb con-0.0kb tx0.0/0.0kb 0/0
+debug_full.txt: 10.28.26 21:02:57.499 0001002 g000002 f0000000  WARNING cluster transparents: cluster transparent not using plane designator
+debug_full.txt: 10.28.26 21:02:57.915 0001003 g000002 f0000001  message networking:controller: controller 0 signed in, notifying handlers [start]
+debug_full.txt: 10.28.26 21:02:57.916 0001004 g000002 f0000001  message networking:achievements: controller 0 being tracked for achievements
+debug_full.txt: 10.28.26 21:02:57.916 0001005 g000002 f0000001  message player_rewards:persistence: controller 0 being tracked
+debug_full.txt: 10.28.26 21:02:57.917 0001006 g000002 f0000001  message networking:controller: handlers notified
+debug_full.txt: 10.28.26 21:02:57.917 0001007 g000002 f0000001  WARNING player_rewards:persistence: User timezone changed from 0 to -3600.
+debug_full.txt: 10.28.26 21:02:57.918 0001008 g000002 f0000001  WARNING player_rewards:persistence: User daily rewards tracking reset because day index went from 0 to 9797 (timezone -3600 seconds offset from UTC)
+debug_full.txt: 10.28.26 21:02:58.054 0001009 g000009 f0000007  message player_rewards:incident:---------------INCIDENT BUCKET DISPLAY-------------
+debug_full.txt: 10.28.26 21:02:58.055 0001010 g000009 f0000007  message player_rewards:incident:displaying player_spawn, cause object 0xE38E011F (), effect object 0xFFFFFFFF (), damage: unknown , special kill flags:
+debug_full.txt: 10.28.26 21:02:58.055 0001011 g000009 f0000007  message player_rewards:incident:
+networking_debug.txt: 10.28.26 21:02:57.391 0000992 g000000 f0000000 networking info                                                    message networking:logic:session: local user 0 set player identifier=35:05:00:00:00:00:00:00
+networking_debug.txt: 10.28.26 21:02:57.438 0000993 g000000 f0000000 networking info                                                    message networking:logic:session: local user 0 set player xuid=535, live=0, online=0, free=0, user_content=1, friend_content=0
+networking_debug.txt: 10.28.26 21:02:57.439 0000995 g000000 f0000000 networking info                                                    message networking:simulation:world: change_state_active() called.
+networking_debug.txt: 10.28.26 21:02:57.439 0000996 g000000 f0000000 networking info                                                    message networking:simulation:world: player 0 going active
+networking_debug.txt: 10.28.26 21:02:57.457 0001001 g000002 f0000000 networking info                                                    message networking:observer:status: est1536.0kb(r0.00 v0.00) max-tp0.0kb con-0.0kb tx0.0/0.0kb 0/0
+networking_debug.txt: 10.28.26 21:02:57.913 0001003 g000002 f0000001 networking info                                                    message networking:controller: controller 0 signed in, notifying handlers [start]
+networking_debug.txt: 10.28.26 21:02:57.915 0001004 g000002 f0000001 networking info                                                    message networking:achievements: controller 0 being tracked for achievements
+networking_debug.txt: 10.28.26 21:02:57.916 0001006 g000002 f0000001 networking info                                                    message networking:controller: handlers notified
+tag_debug.txt: 10.28.26 21:02:57.222 0000991 g000000 f0000000  message tags:xsync: reloaded objects\weapons\rifle\assault_rifle\assault_rifle.weapon...

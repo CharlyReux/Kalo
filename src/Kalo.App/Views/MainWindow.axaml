@@ -1,0 +1,342 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Kalo.App.ViewModels"
+        xmlns:views="using:Kalo.App.Views"
+        x:Class="Kalo.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="Kalo"
+        Width="1440" Height="900" MinWidth="900" MinHeight="560"
+        Background="{StaticResource KBg}">
+
+  <Window.Resources>
+    <FontFamily x:Key="KIcons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+  </Window.Resources>
+
+  <Window.KeyBindings>
+    <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveActiveCommand}" />
+    <KeyBinding Gesture="F5" Command="{Binding PlayCommand}" />
+    <KeyBinding Gesture="Shift+F5" Command="{Binding StopGameCommand}" />
+  </Window.KeyBindings>
+
+  <DockPanel>
+
+    <!-- ===== Title and menu bar ===== -->
+    <Border DockPanel.Dock="Top" Height="40" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="8,0">
+        <Border Width="22" Height="22" CornerRadius="4" Background="{StaticResource KAccent}" VerticalAlignment="Center">
+          <TextBlock Text="K" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+        <Menu VerticalAlignment="Center" Margin="6,0,0,0">
+          <MenuItem Header="_File">
+            <MenuItem Header="Save" InputGesture="Ctrl+S" Command="{Binding SaveActiveCommand}" />
+            <MenuItem Header="Refresh changes" Command="{Binding RefreshChangesCommand}" />
+          </MenuItem>
+          <MenuItem Header="_View">
+            <MenuItem Header="Project" Command="{Binding ShowExplorerCommand}" />
+            <MenuItem Header="Changes" Command="{Binding ShowChangesCommand}" />
+            <MenuItem Header="Output" Command="{Binding ShowOutputCommand}" />
+            <MenuItem Header="Problems" Command="{Binding ShowProblemsCommand}" />
+          </MenuItem>
+          <MenuItem Header="_Play">
+            <MenuItem Header="Play test" InputGesture="F5" Command="{Binding PlayCommand}" />
+            <MenuItem Header="Stop" InputGesture="Shift+F5" Command="{Binding StopGameCommand}" />
+          </MenuItem>
+        </Menu>
+
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <TextBlock Text="Map" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" />
+          <ComboBox ItemsSource="{Binding Scenarios}" SelectedItem="{Binding SelectedScenario}" Width="330" MinHeight="26" FontSize="12" />
+          <Button Classes="tool" Command="{Binding PlayCommand}" ToolTip.Tip="Play test in reach_tag_test (F5)">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" Foreground="{StaticResource KSuccess}" VerticalAlignment="Center" />
+              <TextBlock Text="Play" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Command="{Binding StopGameCommand}" ToolTip.Tip="Stop the game (Shift+F5)">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE71A;" Foreground="{StaticResource KError}" />
+          </Button>
+        </StackPanel>
+        <Border />
+      </DockPanel>
+    </Border>
+
+    <!-- ===== Status bar ===== -->
+    <Border DockPanel.Dock="Bottom" Height="24" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,1,0,0">
+      <DockPanel Margin="10,0">
+        <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <Ellipse Width="7" Height="7" Fill="{Binding HostBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding HostStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="5">
+            <Ellipse Width="7" Height="7" Fill="{Binding GameBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding GameStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+          </StackPanel>
+          <TextBlock Text="{Binding ChangesSummary}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+          <TextBlock Text="{Binding IndexStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+          <TextBlock Text="{Binding StatusMessage}" FontSize="11.5" Foreground="{StaticResource KAccentText}" />
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="12" HorizontalAlignment="Right" VerticalAlignment="Center">
+          <TextBlock FontSize="11.5" Foreground="{StaticResource KError}" Text="{Binding ErrorCount, StringFormat='✕ {0}'}" />
+          <TextBlock FontSize="11.5" Foreground="{StaticResource KWarning}" Text="{Binding WarningCount, StringFormat='! {0}'}" />
+          <TextBlock FontSize="11.5" Foreground="{StaticResource KMuted}" Text="{Binding WorkspaceText}" />
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- ===== Body ===== -->
+    <Grid ColumnDefinitions="44,280,4,*,4,290">
+
+      <!-- Activity bar -->
+      <Border Grid.Column="0" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,1,0">
+        <StackPanel Margin="0,6,0,0" Spacing="2">
+          <Button Classes="activity" Classes.active="{Binding IsExplorer}" Command="{Binding ShowExplorerCommand}" ToolTip.Tip="Project">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE8B7;" FontSize="18" />
+          </Button>
+          <Button Classes="activity" Classes.active="{Binding IsChangesPanel}" Command="{Binding ShowChangesCommand}" ToolTip.Tip="Changes from vanilla">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE81C;" FontSize="18" />
+          </Button>
+          <Button Classes="activity" Command="{Binding PlayCommand}" ToolTip.Tip="Play test (F5)">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" FontSize="18" />
+          </Button>
+        </StackPanel>
+      </Border>
+
+      <!-- Side panel -->
+      <Border Grid.Column="1" Background="{StaticResource KPanel}">
+        <DockPanel>
+          <Border DockPanel.Dock="Top" Height="34" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+            <TextBlock Text="{Binding SidePanelTitle}" Classes="header" Margin="10,0" VerticalAlignment="Center" />
+          </Border>
+
+          <!-- Project explorer + search -->
+          <DockPanel IsVisible="{Binding IsExplorer}">
+            <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Search tags (e.g. assault weapon)" Text="{Binding SearchText}" x:Name="SearchBox" />
+            <Grid>
+              <TreeView x:Name="ExplorerTree" ItemsSource="{Binding ExplorerRoots}" IsVisible="{Binding NotSearching}" DoubleTapped="Explorer_DoubleTapped">
+                <TreeView.Styles>
+                  <Style Selector="TreeViewItem" x:DataType="vm:ExplorerNode">
+                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                  </Style>
+                </TreeView.Styles>
+                <TreeView.ItemTemplate>
+                  <TreeDataTemplate DataType="vm:ExplorerNode" ItemsSource="{Binding Children}">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Height="22">
+                      <Border Width="8" Height="8" CornerRadius="2" Background="{Binding Dot}" VerticalAlignment="Center" />
+                      <TextBlock Text="{Binding Name}" FontSize="12.5" VerticalAlignment="Center" />
+                      <TextBlock Text="M" FontSize="11" Foreground="{StaticResource KWarning}" FontFamily="{StaticResource KMono}" IsVisible="{Binding IsChanged}" VerticalAlignment="Center" />
+                    </StackPanel>
+                  </TreeDataTemplate>
+                </TreeView.ItemTemplate>
+              </TreeView>
+              <ListBox x:Name="SearchList" ItemsSource="{Binding SearchResults}" IsVisible="{Binding IsSearching}" Background="Transparent" DoubleTapped="Search_DoubleTapped" KeyDown="Search_KeyDown">
+                <ListBox.ItemTemplate>
+                  <DataTemplate DataType="vm:SearchResult">
+                    <StackPanel Spacing="0">
+                      <TextBlock Text="{Binding Name}" FontSize="12.5" />
+                      <TextBlock Text="{Binding Folder}" FontSize="11" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Grid>
+          </DockPanel>
+
+          <!-- Changes (the project overlay) -->
+          <DockPanel IsVisible="{Binding IsChangesPanel}">
+            <StackPanel DockPanel.Dock="Top" Margin="10,8" Spacing="6">
+              <TextBlock Text="{Binding ChangesSummary}" Foreground="{StaticResource KMuted}" FontSize="12" />
+              <Button Classes="outline" Content="Refresh" Command="{Binding RefreshChangesCommand}" HorizontalAlignment="Left" />
+            </StackPanel>
+            <ListBox ItemsSource="{Binding Changes}" Background="Transparent" DoubleTapped="Changes_DoubleTapped" x:Name="ChangesList">
+              <ListBox.ItemTemplate>
+                <DataTemplate DataType="vm:ChangeItem">
+                  <DockPanel>
+                    <Button DockPanel.Dock="Right" Classes="tool" Content="Revert" FontSize="11.5"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RevertChangeCommand}" CommandParameter="{Binding}" />
+                    <StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding Kind}" FontSize="11" Foreground="{StaticResource KWarning}" />
+                        <TextBlock Text="{Binding Name}" FontSize="12.5" />
+                      </StackPanel>
+                      <TextBlock Text="{Binding Folder}" FontSize="11" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </DockPanel>
+        </DockPanel>
+      </Border>
+
+      <GridSplitter Grid.Column="2" Background="{StaticResource KBorder}" ResizeDirection="Columns" />
+
+      <!-- Center: tabs, editor, bottom panel -->
+      <Grid Grid.Column="3" RowDefinitions="34,28,*,4,210">
+
+        <Border Grid.Row="0" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding Tabs}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:TagEditorViewModel">
+                  <Border Classes="tab" Classes.active="{Binding IsActive}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,1,0">
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="tool" Padding="12,0,4,0" MinHeight="32" CornerRadius="0"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActivateTabCommand}" CommandParameter="{Binding}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="{Binding Title}" FontSize="12.5" VerticalAlignment="Center" />
+                          <TextBlock Text="●" FontSize="10" Foreground="{StaticResource KWarning}" IsVisible="{Binding IsDirty}" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
+                      <Button Classes="tool" Padding="6,0" MinHeight="32" CornerRadius="0" Content="×" Foreground="{StaticResource KFaint}"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseTabCommand}" CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+              <ItemsControl.Styles>
+                <Style Selector="Border.tab">
+                  <Setter Property="Background" Value="Transparent" />
+                </Style>
+                <Style Selector="Border.tab.active">
+                  <Setter Property="Background" Value="{StaticResource KBg}" />
+                </Style>
+              </ItemsControl.Styles>
+            </ItemsControl>
+          </ScrollViewer>
+        </Border>
+
+        <Border Grid.Row="1" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+          <DockPanel Margin="12,0">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" IsVisible="{Binding HasTab}">
+              <TextBlock Text="{Binding ActiveTab.Status, FallbackValue=''}" Foreground="{StaticResource KMuted}" FontSize="12" />
+              <TextBlock Text="  · changed from vanilla" Foreground="{StaticResource KWarning}" FontSize="12" IsVisible="{Binding ActiveTab.DiffersFromVanilla, FallbackValue=False}" />
+            </StackPanel>
+            <TextBlock VerticalAlignment="Center" Classes="mono" Foreground="{StaticResource KMuted}" TextTrimming="CharacterEllipsis" Text="{Binding ActiveTab.Breadcrumb, FallbackValue='Kalo › Start'}" />
+          </DockPanel>
+        </Border>
+
+        <!-- Editor or start page -->
+        <views:TagEditorView Grid.Row="2" DataContext="{Binding ActiveTab}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasTab}" />
+        <ScrollViewer Grid.Row="2" IsVisible="{Binding NoTab}">
+          <StackPanel Margin="32,28" Spacing="18" MaxWidth="720" HorizontalAlignment="Left">
+            <StackPanel>
+              <TextBlock Text="Kalo" FontSize="20" FontWeight="SemiBold" />
+              <TextBlock Text="Halo Reach mod workbench. Open a tag from the project tree or search for one." Foreground="{StaticResource KMuted}" />
+            </StackPanel>
+            <StackPanel Spacing="4">
+              <TextBlock Text="QUICK OPEN" Classes="header" />
+              <ItemsControl ItemsSource="{Binding QuickOpen}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="x:String">
+                    <Button Classes="tool" HorizontalAlignment="Left" Content="{Binding}" FontFamily="{StaticResource KMono}" Foreground="{StaticResource KBlue}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).OpenNodeCommand}" CommandParameter="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </StackPanel>
+            <StackPanel Spacing="4">
+              <TextBlock Text="HOW IT WORKS" Classes="header" />
+              <TextBlock TextWrapping="Wrap" Foreground="{StaticResource KCode}"
+                         Text="Edits go to the shared workspace, never to HREK. Save with Ctrl+S. Press Play (F5) to test a map in reach_tag_test: tags you save while it runs are reloaded by the game. The Changes panel lists everything your mod changed and can put any file back to vanilla." />
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+
+        <GridSplitter Grid.Row="3" Background="{StaticResource KBorder}" ResizeDirection="Rows" />
+
+        <!-- Bottom tool window -->
+        <DockPanel Grid.Row="4" Background="{StaticResource KBg}">
+          <Border DockPanel.Dock="Top" Height="30" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+            <DockPanel>
+              <StackPanel Orientation="Horizontal" Margin="4,0">
+                <Button Classes="tool" Content="Output" Command="{Binding ShowOutputCommand}" Classes.selected="{Binding IsOutput}" />
+                <Button Classes="tool" Command="{Binding ShowProblemsCommand}" Classes.selected="{Binding IsProblems}">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="Problems" />
+                    <TextBlock Text="{Binding ErrorCount}" Foreground="{StaticResource KError}" />
+                    <TextBlock Text="{Binding WarningCount}" Foreground="{StaticResource KWarning}" />
+                  </StackPanel>
+                </Button>
+              </StackPanel>
+              <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Classes="tool" Content="Clear" Command="{Binding ClearOutputCommand}" Margin="0,0,6,0" />
+            </DockPanel>
+          </Border>
+          <Grid>
+            <ListBox x:Name="OutputList" ItemsSource="{Binding OutputLines}" IsVisible="{Binding IsOutput}" Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="x:String">
+                  <TextBlock Text="{Binding}" Classes="mono" Foreground="{StaticResource KCode}" TextWrapping="NoWrap" />
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                  <Setter Property="MinHeight" Value="18" />
+                  <Setter Property="Padding" Value="10,0" />
+                </Style>
+              </ListBox.Styles>
+            </ListBox>
+            <ListBox ItemsSource="{Binding Problems}" IsVisible="{Binding IsProblems}" Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate DataType="vm:ProblemItem">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Width="18" Text="✕" Foreground="{StaticResource KError}" IsVisible="{Binding IsError}" />
+                    <TextBlock DockPanel.Dock="Left" Width="18" Text="!" Foreground="{StaticResource KWarning}" IsVisible="{Binding !IsError}" />
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding Time}" Foreground="{StaticResource KFaint}" Margin="12,0,0,0" />
+                    <StackPanel>
+                      <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
+                      <TextBlock Text="{Binding Source}" Classes="mono" Foreground="{StaticResource KMuted}" FontSize="11" />
+                    </StackPanel>
+                  </DockPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+          </Grid>
+        </DockPanel>
+      </Grid>
+
+      <GridSplitter Grid.Column="4" Background="{StaticResource KBorder}" ResizeDirection="Columns" />
+
+      <!-- Inspector -->
+      <Border Grid.Column="5" Background="{StaticResource KPanel}">
+        <DockPanel>
+          <Border DockPanel.Dock="Top" Height="34" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+            <TextBlock Text="FIELD" Classes="header" Margin="10,0" VerticalAlignment="Center" />
+          </Border>
+          <ScrollViewer>
+            <StackPanel Margin="12,10" Spacing="10">
+              <TextBlock Text="Select a field in the tag editor to see what it does." Foreground="{StaticResource KMuted}" TextWrapping="Wrap"
+                         IsVisible="{Binding ActiveTab.SelectedField, Converter={x:Static ObjectConverters.IsNull}, FallbackValue=True}" />
+              <StackPanel Spacing="8" IsVisible="{Binding ActiveTab.SelectedField, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}">
+                <TextBlock Text="{Binding ActiveTab.SelectedField.Label}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ActiveTab.SelectedField.Description}" TextWrapping="Wrap" Foreground="{StaticResource KCode}" />
+                <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
+                  <TextBlock Grid.Row="0" Text="Value" Foreground="{StaticResource KMuted}" />
+                  <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ActiveTab.SelectedField.Value}" Classes="mono" TextWrapping="Wrap" />
+                  <TextBlock Grid.Row="1" Text="Saved" Foreground="{StaticResource KMuted}" />
+                  <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding ActiveTab.SelectedField.SavedValue}" Classes="mono" TextWrapping="Wrap" />
+                  <TextBlock Grid.Row="2" Text="Units" Foreground="{StaticResource KMuted}" />
+                  <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ActiveTab.SelectedField.Units}" TextWrapping="Wrap" />
+                  <TextBlock Grid.Row="3" Text="Range" Foreground="{StaticResource KMuted}" />
+                  <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding ActiveTab.SelectedField.Range}" TextWrapping="Wrap" />
+                  <TextBlock Grid.Row="4" Text="Type" Foreground="{StaticResource KMuted}" />
+                  <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding ActiveTab.SelectedField.Type}" Classes="mono" />
+                  <TextBlock Grid.Row="5" Text="Raw name" Foreground="{StaticResource KMuted}" />
+                  <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ActiveTab.SelectedField.RawName}" Classes="mono" TextWrapping="Wrap" />
+                </Grid>
+                <TextBlock Text="PATH" Classes="header" Margin="0,6,0,0" />
+                <SelectableTextBlock Text="{Binding ActiveTab.SelectedField.Path}" FontFamily="{StaticResource KMono}" FontSize="11.5" TextWrapping="Wrap" Foreground="{StaticResource KCode}" />
+                <TextBlock Text="{Binding ActiveTab.SelectedField.Error}" Foreground="{StaticResource KError}" TextWrapping="Wrap" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </DockPanel>
+      </Border>
+    </Grid>
+  </DockPanel>
+</Window>

@@ -1,0 +1,221 @@
+using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+
+namespace Kalo.Core;
+
+/// <summary>
+/// Play test: runs reach_tag_test from the shared workspace on a scenario, the way HREK's Foundation
+/// does (bonobo_init.txt next to the exe). The game reloads tags saved while it runs (hot reload).
+/// </summary>
+public sealed class GameSession : IDisposable
+{
+    private readonly KaloPaths _paths;
+    private Process? _process;
+    private CancellationTokenSource? _tail;
+    private readonly object _gate = new();
+    private readonly Dictionary<string, int> _consumed = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, DateTime> _lastReload = new(StringComparer.OrdinalIgnoreCase);
+    private string? _logFolder;
+    private bool _loadedRaised;
+
+    public event Action<string>? Output;
+    /// <summary>Raised with the tag path when the game reports it reloaded a changed tag.</summary>
+    public event Action<string>? TagReloaded;
+    public event Action? Loaded;
+    public event Action<int>? Exited;
+
+    public bool IsRunning => _process is { HasExited: false };
+    public string? Scenario { get; private set; }
+
+    public GameSession(KaloPaths paths) => _paths = paths;
+
+    /// <param name="scenario">Tag path without extension, e.g. levels\multi\20_sword_slayer\20_sword_slayer</param>
+    public void Start(string scenario)
+    {
+        if (IsRunning) throw new InvalidOperationException("The game is already running.");
+        string exe = Path.Combine(_paths.Workspace, "reach_tag_test.exe");
+        if (!File.Exists(exe)) throw new FileNotFoundException("reach_tag_test.exe not found in the workspace", exe);
+        if (!File.Exists(Path.Combine(_paths.WorkspaceTags, scenario + ".scenario")))
+            throw new FileNotFoundException("Scenario not found: " + scenario);
+
+        File.WriteAllText(Path.Combine(_paths.Workspace, "bonobo_init.txt"), $"run_game_scripts 1\r\ngame_start {scenario}\r\n");
+        Scenario = scenario;
+
+        var psi = new ProcessStartInfo(exe)
+        {
+            WorkingDirectory = _paths.Workspace,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            RedirectStandardInput = true,
+        };
+        _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        _process.OutputDataReceived += (_, e) => OnLine(e.Data);
+        _process.ErrorDataReceived += (_, e) => OnLine(e.Data);
+        _process.Exited += (_, _) =>
+        {
+            int code = 0;
+            try { code = _process.ExitCode; } catch { }
+            StopTail();
+            Exited?.Invoke(code);
+        };
+        lock (_gate)
+        {
+            _consumed.Clear();
+            _lastReload.Clear();
+            _logFolder = null;
+            _loadedRaised = false;
+        }
+        DateTime startUtc = DateTime.UtcNow;
+        _process.Start();
+        StartTail(startUtc);
+        _process.StandardInput.Close();
+        _process.BeginOutputReadLine();
+        _process.BeginErrorReadLine();
+    }
+
+    /// <summary>A line from the game's console output or from its log files. Each event is raised once.</summary>
+    private void OnLine(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return;
+        Output?.Invoke(line);
+        OnEvent(line);
+    }
+
+    private void OnEvent(string line)
+    {
+        const string marker = "tags:xsync: reloaded ";
+        int i = line.IndexOf(marker, StringComparison.Ordinal);
+        if (i >= 0)
+        {
+            string tag = line.Substring(i + marker.Length).Trim().TrimEnd('.', ' ');
+            bool raise;
+            lock (_gate)
+            {
+                // The same reload can show up in the console and in a log file.
+                raise = !_lastReload.TryGetValue(tag, out var last) || DateTime.UtcNow - last > TimeSpan.FromSeconds(3);
+                _lastReload[tag] = DateTime.UtcNow;
+            }
+            if (raise) TagReloaded?.Invoke(tag);
+        }
+        if (line.Contains("END initialize for new round", StringComparison.Ordinal))
+        {
+            bool raise;
+            lock (_gate) { raise = !_loadedRaised; _loadedRaised = true; }
+            if (raise) Loaded?.Invoke();
+        }
+    }
+
+    // ---- the engine's log files ------------------------------------------------------------
+    // reach_tag_test writes most of its log to workspace\reports\reports_NN\*.txt rather than the console.
+    // The files are reused from run to run (new lines are appended after the old ones), kept open, and
+    // padded with NULs. So they are re-read whole and cleaned, only complete lines past what was already
+    // seen are considered, and only lines stamped after this game started count (the old runs' lines
+    // also contain "END initialize for new round" and reload messages).
+
+    /// <summary>Logs shown in the Output panel; the others are only scanned for events.</summary>
+    private static readonly HashSet<string> ShownLogs = new(StringComparer.OrdinalIgnoreCase) { "debug", "tag_debug", "hs_log", "system_log" };
+    private static readonly Regex Spaces = new(@"\s{2,}", RegexOptions.Compiled);
+    /// <summary>"21:29:44.510 0001008 g000005 f0000003  message tags:..." → "21:29:44 tags:..."</summary>
+    private static readonly Regex Prefix = new(@"^(\d\d:\d\d:\d\d)\.\d+\s+\d+\s+(?:g\d+\s+)?f\d+\s+(?:networking info\s+)?(?:message\s+)?", RegexOptions.Compiled);
+
+    private void StartTail(DateTime startUtc)
+    {
+        var cts = new CancellationTokenSource();
+        _tail = cts;
+        _ = Task.Run(async () =>
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                try { PollLogs(startUtc); } catch { }
+                try { await Task.Delay(700, cts.Token); } catch (OperationCanceledException) { break; }
+            }
+            try { PollLogs(startUtc); } catch { }
+        });
+    }
+
+    private void StopTail()
+    {
+        try { _tail?.Cancel(); } catch { }
+    }
+
+    private void PollLogs(DateTime startUtc)
+    {
+        string reports = Path.Combine(_paths.Workspace, "reports");
+        if (!Directory.Exists(reports)) return;
+        DateTime since = startUtc.AddSeconds(-2);
+        string? folder = Directory.GetDirectories(reports, "reports_*")
+            .Select(d => new DirectoryInfo(d))
+            .Select(d => new { d.FullName, Newest = d.GetFiles("*.txt").Select(f => f.LastWriteTimeUtc).DefaultIfEmpty(DateTime.MinValue).Max() })
+            .Where(d => d.Newest >= since)
+            .OrderByDescending(d => d.Newest)
+            .Select(d => d.FullName)
+            .FirstOrDefault();
+        if (folder == null) return;
+
+        var lines = new List<string>();
+        lock (_gate)
+        {
+            if (!string.Equals(folder, _logFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                _logFolder = folder;
+                _consumed.Clear();
+            }
+            foreach (string file in Directory.GetFiles(folder, "*.txt"))
+            {
+                var info = new FileInfo(file);
+                if (info.Length > 64L * 1024 * 1024) continue;
+                string text;
+                try
+                {
+                    using var fs = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                    using var reader = new StreamReader(fs, Encoding.UTF8);
+                    text = reader.ReadToEnd().Replace("\0", "");
+                }
+                catch (IOException) { continue; }
+
+                string name = info.Name;
+                _consumed.TryGetValue(name, out int done);
+                if (text.Length < done) done = 0; // the file was rewritten
+                int end = text.LastIndexOf('\n');
+                if (end < done) continue;
+                string log = Path.GetFileNameWithoutExtension(name);
+                bool full = log.Equals("debug_full", StringComparison.OrdinalIgnoreCase); // a copy of the others
+                foreach (string raw in text.Substring(done, end - done).Split('\n'))
+                {
+                    string line = raw.Trim();
+                    if (full || line.Length < 22) continue;
+                    if (!DateTime.TryParseExact(line.Substring(0, 21), "MM.dd.yy HH:mm:ss.fff", CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out DateTime stamp)) continue;
+                    if (stamp.ToUniversalTime() < since) continue;
+                    lines.Add((ShownLogs.Contains(log) ? "" : "\u0001") + Prefix.Replace(Spaces.Replace(line.Substring(9), " "), "$1 "));
+                }
+                _consumed[name] = end + 1;
+            }
+        }
+        foreach (string line in lines)
+        {
+            if (line[0] == '\u0001') OnEvent(line.Substring(1));
+            else OnLine(line);
+        }
+    }
+
+    public void Stop()
+    {
+        if (!IsRunning) return;
+        try
+        {
+            _process!.CloseMainWindow();
+            if (!_process.WaitForExit(5000)) _process.Kill(true);
+        }
+        catch { }
+    }
+
+    public void Dispose()
+    {
+        Stop();
+        StopTail();
+        _process?.Dispose();
+    }
+}

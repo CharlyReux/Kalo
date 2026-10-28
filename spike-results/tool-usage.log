@@ -1,0 +1,305 @@
+   1149 out usage: D:\charl\Documents\Perso\Halo\Kalo\.kalo\workspaces\spike\tool.exe verb <options..>
+   1150 out   analyze-cache-file-sharing <starting-cache-file> <ending-cache-file>
+   1150 out   analyze-dvd-cache-files <tag-list>
+   1150 out   analyze-font <font-file>
+   1150 out   analyze-font-table <font-table-to-analyze>
+   1150 out   analyze-fonts
+   1150 out   analyze-implicit-sharing <tag-list>
+   1150 out   analyze-shader <tag-containing-render-method>
+   1150 out   analyze-shaders
+   1150 out   bitmap_single <image-file>
+   1150 out   bitmaps <source-directory>
+   1150 out   bitmaps-debug <source-directory>
+   1150 out   bitmaps-with-type <source-directory> <type>
+   1150 out   build-animation-database
+   1150 out   build-cache-file <scenario> <platform> <target-language> <dedicated-server-(optional)> <compress-more|compress-most-(optional)> <use-fmod-data-(optional)> <audio-configuration>
+   1150 out   build-cache-file-cache <minor-version-number> <platform>
+   1150 out   build-cache-file-cache-campaign-second <platform> <target-language> <minor-version-number> <optimizable> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1150 out   build-cache-file-cache-custom <shared-manifest-list> <campaign-manifest-list> <platform>
+   1150 out   build-cache-file-cache-language-version <target-language> <minor-version-number> <platform>
+   1150 out   build-cache-file-cache-shared-first <platform> <target-language> <minor-version-number> <sound-config> <optimizable> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1150 out   build-cache-file-cache-sounds <platform> <target-language> <minor-version-number> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1150 out   build-cache-file-cache-sounds-index <scenario> <append> <sound-configuration> <platform>
+   1150 out   build-cache-file-cache-version <minor-version-number>
+   1151 out   build-cache-file-cache-version <minor-version-number> <platform>
+   1151 out   build-cache-file-custom <scenario> [optimizable]
+   1151 out   build-cache-file-for-cubemaps <scenario> <platform>
+   1151 out   build-cache-file-generate-dlc-layout <map-name> <platform> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1152 out   build-cache-file-generate-main-menu-layout <map-name> <platform> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1152 out   build-cache-file-generate-new-layout <map-name> <platform> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1152 out   build-cache-file-language <target-language> <scenario> <platform>
+   1152 out   build-cache-file-language-version <target-language> <minor-version-number> <scenario> <platform>
+   1153 out   build-cache-file-language-version-optimizable-use-sharing <target-language> <minor-version-number> <scenario> <platform> <sound-config> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1153 out   build-cache-file-language-version-sharing-main-menu <target-language> <minor-version-number> <scenario> <platform>
+   1153 out   build-cache-file-link <map-name> <platform> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1153 out   build-cache-file-optimize <map-name> <platform>
+   1153 out   build-cache-file-optimize-post-link <map-name> <platform>
+   1153 out   build-cache-file-package <package-manifest>
+   1153 out   build-cache-file-package-from-tag <tag>
+   1153 out   build-cache-file-pilot <scenario> <platform>
+   1153 out   build-cache-file-profile <scenario>
+   1154 out   build-cache-file-use-sharing <scenario> <platform> <target-language> <minor-version-number> <sound-config> <dedicated-server-(optional)> <use-fmod-data-(optional)>
+   1154 out   build-imposter-cache-file <render-model-list-txt-file>
+   1154 out   build-instance-imposter <source-oss-path/name>
+   1154 out   build-instance-imposter-fullpath <source-metadata-path> <stored-metadata-path>
+   1154 out   build-object-imposter <source-oss-path/name>
+   1154 out   bulk-collision <jmi-file>
+   1154 out   bulk-import-crates <jmi-file>
+   1154 out   bulk-import-crates-draft <jmi-file>
+   1154 out   bulk-import-crates-folder <source-directory>
+   1154 out   bulk-import-crates-folder-draft <source-directory>
+   1154 out   bulk-import-model-folder <source-directory>
+   1154 out   bulk-import-model-folder-draft <source-directory>
+   1155 out   bulk-import-models <jmi-file>
+   1155 out   bulk-import-models-draft <jmi-file>
+   1155 out   bulk-import-scenery <jmi-file>
+   1155 out   bulk-import-scenery-draft <jmi-file>
+   1155 out   bulk-import-scenery-folder <source-directory>
+   1155 out   bulk-import-scenery-folder-draft <source-directory>
+   1155 out   bulk-physics <jmi-file>
+   1155 out   bulk-render <jmi-file>
+   1155 out   bulk-render-final <jmi-file>
+   1155 out   cache-asset-depot-thumbnails <tag-file>
+   1155 out   cache-asset-depot-thumbnails-from-directory <tag-directory>
+   1155 out   cache-asset-depot-thumbnails-list <tag-list>
+   1155 out   camera-track <source-file>
+   1155 out   check-all-tags
+   1155 out   collision <source-directory>
+   1155 out   compile-shader <render-method> <platform>
+   1155 out   convert-tag-files-explicit-pilot <source-backend> <dest-backend> <optional:-tag-list>
+   1155 out   convert-tag-files-pilot <optional:-tag-list>
+   1156 out   convert-tiff-to-targa <input-tiff-file> <output-targa-file>
+   1156 out   convert-tiled-tiff <input-tiff-file> <output-tiff-file>
+   1156 out   count-all-class-sounds <root-path>
+   1156 out   count-class-looping-sounds <sound-class>
+   1156 out   count-class-sounds <sound-class>
+   1156 out   count-looping-sound-tags <root-path>
+   1156 out   count-sound-tags <root-path>
+   1156 out   crash <crash-type>
+   1156 out   cubemap-farm <scenario>
+   1156 out   cubemaps <scenario> <input-folder>
+   1156 out   data_access_unit_tests
+   1156 out   data_access_verify_all_game_variants_in_directory <directory>
+   1156 out   decorator-set-link-render-model <decorator-set> <base-render-model> <lod-1-render-model> <lod-2-render-model> <lod-3-render-model> <billboard-render-model>
+   1156 out   dialogue-globals-import
+   1156 out   dialogue-import <root-directory>
+   1156 out   dump-binary <binary-file> <output-file>
+   1157 out   dump-cache-file-header <map-file>
+   1157 out   dump-cache-file-header-info <map-file>
+   1157 out   dump-cache-file-section-info <map-file>
+   1157 out   dump-cache-resource-gestalt <cache-resource-gestalt>
+   1157 out   dump-cache-resource-gestalt-file-locations <cache-resource-gestalt>
+   1157 out   dump-gestalt-links <cache-resource-gestalt> <tag/resource-substring> <tag-type>
+   1157 out   dump-gestalt-links-from-file <cache-resource-gestalt> <file-of-tag/resource-substrings-(one-per-line)> <tag-type>
+   1157 out   dump-granny-file <gr2-file>
+   1157 out   dump-granny-file-verbose <gr2-file>
+   1157 out   dump-instance-imposter-budget <instance_imposter_definition>
+   1157 out   dump-render-method-options
+   1157 out   dump-tag-file-index <index-file>
+   1157 out   dump-tiff-to-header <quantization-factor> <tiff-file> <constant-prefix-string> <output-file>
+   1157 out   dump_tag_tree_with_sizes <dump_tag_tree_with_sizes-path>
+   1157 out   estimate-overdraw-threshold <effect>
+   1158 out   export-bitmap-dds <bitmap-tag> <output-path-prefix>
+   1158 out   export-bitmap-pfm <bitmap-tag> <output-path-prefix>
+   1158 out   export-bitmap-tga <bitmap-tag> <output-path-prefix>
+   1158 out   export-built-in-game-variants
+   1158 out   export-fmod-banks <csv-file.> <platform> <bank-type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1158 out   export-game-variant-settings
+   1158 out   export-game-variants-info <directory> <UUI-localized>
+   1158 out   export-importer-properties <granny-properties-output-file>
+   1158 out   export-render-model-mesh <render-model> <output-mesh-file>
+   1158 out   export-structure-mesh-obj <scenario>
+   1158 out   export-tag-to-xml <tag-file> <output-file>
+   1159 out   export-windows-font <output-directory> <font-file-(optional)> <typeface-name> <point-size>
+   1159 out   extract-import-info <tag-file>
+   1159 out   extract-lpc-data <sound-file>
+   1159 out   extract-render-data <render-model>
+   1159 out   extract-unicode-strings <multilingual_unicode_string_list>
+   1159 out   faux-build-vmf-textures-from-quadratic <scenario> <bsp-name> <per-pixel> <per-vertex>
+   1159 out   faux-compress-scenario-bitmaps-dxt5 <scenario> <bsp-name>
+   1159 out   faux-farm-compression-merge <scenario> <bsp-name>
+   1159 out   faux-reorganize-mesh-for-analytical-lights <scenario> <bsp-name>
+   1159 out   faux-test-build-pervertex-lightmaps-from-last-run <scenario> <bsp-name>
+   1159 out   faux-unit-tests
+   1160 out   faux_checkerboard <scenario> <bsp-name>
+   1160 out   faux_data_sync <scenario> <bsp-name>
+   1160 out   faux_data_sync_per_vertex_all <scenario> <bsp-name>
+   1160 out   faux_debug_dump_geometry <faux_debug_dump_geometry-path>
+   1160 out   faux_debug_dump_lighting_info <scenario_structure_lighting_info-path>
+   1160 out   faux_farm_begin <scenario> <bsp-name> <light-group-name> <quality-setting> <job-id> <analytical-light>
+   1160 out   faux_farm_begin_per_vertex_all <scenario> <bsp-name> <light-group-name> <quality-setting> <job-id> <analytical-light>
+   1160 out   faux_farm_dillum <blob-path> <client-index> <client-count>
+   1161 out   faux_farm_dillum_merge <blob-path> <client-count>
+   1161 out   faux_farm_extillum <blob-path> <client-index> <client-count>
+   1161 out   faux_farm_extillum_merge <blob-path> <client-count>
+   1161 out   faux_farm_fgather <blob-path> <client-index> <client-count>
+   1161 out   faux_farm_fgather_merge <blob-path> <client-count>
+   1161 out   faux_farm_finish <blob-path>
+   1161 out   faux_farm_pcast <blob-path> <client-index> <client-count>
+   1161 out   faux_farm_pcast_merge <blob-path> <client-count>
+   1161 out   faux_farm_radest <blob-path> <client-index> <client-count>
+   1161 out   faux_farm_radest_extillum <blob-path> <client-index> <client-count>
+   1161 out   faux_farm_radest_extillum_merge <blob-path> <client-count>
+   1161 out   faux_farm_radest_merge <blob-path> <client-count>
+   1161 out   faux_farm_relightmap_begin <scenario> <bsp-name> <light-group-name> <quality-setting> <job-id> <analytical-light>
+   1161 out   faux_match <scenario> <bsp-name>
+   1161 out   faux_stats <scenario>
+   1162 out   fbx-to-gr2 <fbx-file> <json-file> <gr2-file> <json-recreation-flag>
+   1162 out   find-field <string-array>
+   1162 out   find-model-bitmaps-by-size <model-compare-op> <model-size> <bitmap-compare-op> <bitmap-width> <bitmap-height>
+   1162 out   fix-single-tag-gamma-correction
+   1162 out   fix-tags <action>
+   1162 out   fix-tags-gamma-correction
+   1162 out   fix-tags-with-list <action> <for-people-who-aren't-lazy>
+   1162 out   fix_model_materials <root-directory> <material-name>
+   1162 out   font-package <font-table-to-package>
+   1162 out   fp-model-animations <source-directory> <character-directory> <weapon-directory>
+   1162 out   fp-model-animations-reimport-all <source-directory> <character-directory> <weapon-directory>
+   1162 out   fp-model-animations-reset <source-directory> <character-directory> <weapon-directory>
+   1162 out   fp-model-animations-uncompressed <source-directory> <character-directory> <weapon-directory>
+   1162 out   fp-model-animations-verbose <source-directory> <character-directory> <weapon-directory>
+   1162 out   generate-explicit-shader <platform> <shader> <-debug-(optional)> <-pdb-path=<the_path>-(optional)>
+   1162 out   generate-fallback-font <font-file>
+   1163 out   generate-final-shared-layout <tag-list> <platform> <dedicated-server-(optional)>
+   1163 out   generate-pathfinding <scenario>
+   1163 out   generate-shared-shaders <platform> <render-method-definition> <-debug-(optional)> <-pdb-path=<the_path>-(optional)>
+   1163 out   generate-specified-template <platform> <render-method-definition> <template-name> <-debug-(optional)> <-pdb-path=<the_path>-(optional)>
+   1163 out   generate-templates <platform> <render-method-definition>
+   1163 out   generate-templates-binary-from-text-file <render-method-definition-(tag)> <template-text-list-file>
+   1163 out   generate-templates-farm <render-method-definition> <client-index> <total-client-count> <shader-symbols-path>
+   1163 out   generate-templates-from-tag <tag-file>
+   1163 out   generate-templates-from-tag-list <tag-list-file>
+   1164 out   generate-templates-from-text-template-list <platform> <render-method-definition> <template-text-list-file>
+   1164 out   generate-unit-sphere-dictionary
+   1164 out   get-tag-field-value <tag-file-f.e-objects\characters\masterchief\shaders\mp_markv.shader> <field-path-f.e-shader_struct_definition[0].render_method[0].parameters[0].bitmap>
+   1164 out   gr2-to-json <gr2-file> <json-file>
+   1165 out   import <sidecar-file> [check] [force] [verbose] [repro] [draft] [seam_debug] [skip_instances] [local] [farm_seams] [farm_bsp] [decompose_instances] [suppress_errors_to_vrml] <string-array>
+   1165 out   import-bink <bink-file>
+   1165 out   import-bitmap-folder-as-single-tag <source_directory>
+   1165 out   import-damage-table
+   1165 out   import-particle-emitter-custom-points <custom-points> <source-data>
+   1165 out   import-particle-model <jmi-file>
+   1165 out   import-scene <ubercam-file>
+   1165 out   inspect-shader <render-method>
+   1165 out   instance-imposter-farm <scenario> <bsp-name>
+   1165 out   lightmap-farm <scenario> <bsp-name> <light-group> <quality-setting> <relightmap> <subchart-optimization>
+   1166 out   lightmap-farm-debug <scenario> <bsp-name> <light-group> <quality-setting> <relightmap> <subchart-optimization> <per-vertex> <debug-file-copies>
+   1166 out   lightmap-farm-per-vertex <scenario> <bsp-name> <light-group> <quality-setting>
+   1166 out   local-lightmap-checker-board <scenario> <bsp-name>
+   1166 out   map-variant-generate-tag-path-palette-table <scenario> <output_file>
+   1166 out   megalo-convert-variant-files <source-directory> <destination-directory>: converts .mglo files to .bin files for hoppers
+   1166 out   mission-dialogue-import <root-directory>
+   1166 out   model-animation-reset-compression <model-animation-graph>
+   1166 out   model-animation-status <source-directory>
+   1166 out   model-animations <source-directory>
+   1166 out   model-animations-force-medium <source-directory>
+   1166 out   model-animations-force-rough <source-directory>
+   1166 out   model-animations-reimport-all <source-directory>
+   1167 out   model-animations-reset <source-directory>
+   1167 out   model-animations-uncompressed <source-directory>
+   1167 out   model-animations-verbose <source-directory>
+   1167 out   monitor-bitmaps
+   1167 out   monitor-models
+   1167 out   monitor-models-draft
+   1167 out   monitor-strings
+   1167 out   muffin-link-render-model <muffin> <render-model>
+   1167 out   multiplayer-generate-all-string-lists <output_folder>
+   1167 out   multiplayer-generate-object-type-list <object_type_list> <output_folder>
+   1167 out   multiplayer-generate-scenario-object-type-bitvector <scenario> <cache_file_gestalt> <output_file>
+   1167 out   multiplayer-generate-variant-globals-tag <output_file>
+   1167 out   multiplayer-mapinfo-replace-object-type-bitvector <mapinfo-file> <multiplayer-object-type-list-bin-file> <scenario>
+   1168 out   multiplayer-populate-object-type-list-from-scenario <object_type_list> <scenario>
+   1168 out   mux-generate <mux-generator>
+   1168 out   network-blf-decompress-all-files-in-directory <directory>
+   1168 out   old-physics <source-directory>
+   1168 out   patch-tag-field <tag-file-f.e-objects\characters\masterchief\shaders\mp_markv.shader> <field-path-f.e-shader_struct_definition[0].render_method[0].parameters[0].bitmap> <field-value>
+   1168 out   patch-tag-field-batched <path-to-file-with-batched-arguments>
+   1168 out   physics <source-directory>
+   1168 out   plate <source-directory>
+   1168 out   plate-raw <source-directory>
+   1168 out   prepare-dvd-cache-gestalts <tag-list>
+   1168 out   print-tag-to-xml <tag-file>
+   1169 out   process-class-looping-sounds <sound-class> <command> <value> [checkout_tags]
+   1170 out   process-class-sounds <sound-class> <command> <value> [checkout_tags]
+   1170 out   process-final-shared-layout <sharing-layout> <final-sharing-layout>
+   1170 out   process-imposter <source-oss-path/name>
+   1170 out   process-imposters <source-oss-directory>
+   1170 out   process-looping-sounds <source-directory> <path-spec> <command> <value> [checkout_tags]
+   1170 out   process-sounds <source-directory> <path-spec> <command> <value> [checkout_tags]
+   1170 out   process-sounds-bounds <source-directory> <path-spec> <command> <lower-bound> <upper-bound> [checkout_tags]
+   1170 out   process-sounds-check-language-sizes <root-path>
+   1170 out   progress-quest
+   1170 out   rebucket-animation-resources
+   1170 out   rebuild-structure-audibility <structure>
+   1170 out   reimport-bitmaps-list <list>
+   1170 out   reimport-bitmaps-single <bitmap>
+   1171 out   reimport-model-animations
+   1171 out   reimport-sounds <source-directory> <compressor> <downmix> <import-facial-animation> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1171 out   reimport-sounds-for-senario <scenario> <compressor> <downmix> <import-facial-animation> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1171 out   reimport-sounds-single <source-file> <compressor> <downmix> <import-facial-animation> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1171 out   render <source-directory> <final-or-draft>
+   1171 out   render-accurate <source-directory> <final-or-draft>
+   1172 out   render-decorators <source-directory>
+   1172 out   render-model-analyze <render-model>
+   1172 out   render-overwrite <source-directory> <final-or-draft>
+   1172 out   render-sky <source-directory>
+   1172 out   render-verbose <source-directory> <final-or-draft>
+   1172 out   report-missing-sounds <source-directory,-tag,-senario-or-csv-file.> <append>
+   1172 out   report-object-functions
+   1172 out   report-sounds <source-directory,-tag,-senario-or-csv-file.> <append> <compression> <platform>
+   1172 out   report-sounds-tags <source-directory,-tag,-senario-or-csv-file.> <append>
+   1172 out   reprocess-tag-files <directory>
+   1172 out   scenario-analyze <scenario> <inspection-type> <platform> <dedicated-server-(optional)>
+   1172 out   scenario-empty <scenario>
+   1172 out   scenario-empty-cinematics <scenario>
+   1172 out   scenario-fix-fog <scenario-tag>
+   1172 out   scenario-manually-update-air-probes <scenario-tag> <xsync>
+   1172 out   scenario-merge <scenario>
+   1172 out   scenario-merge-and-empty <scenario>
+   1172 out   scenario-set-link-lightmap <scenario-tag>
+   1172 out   script-doc <function-or-global-name>
+   1172 out   set-sound-class <source-directory> <path-spec> <new-sound-class> [checkout_tags]
+   1172 out   shader <shader>
+   1172 out   shaders <platform> <-debug-(optional)> <-pdb-path=<the_path>-(optional)>
+   1172 out   shaders-farm <shader-symbols-path>
+   1173 out   shrink-scenario-for-graphics <scenario-tag>
+   1173 out   sound-export <sound-tag-name> <export-directory-root>
+   1173 out   sound-looping <source-directory> <type> <master-track> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1173 out   sound-looping-scenery <source-directory> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1173 out   sound-multi-layer <source-directory> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1173 out   sound-single <source-file> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1173 out   sound-test <sound-tag-root> <maximum-concurrent-sounds> <maximum-continuous-permutations>
+   1173 out   sounds-one-shot <source-directory> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1173 out   sounds-single-layer <source-directory> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1173 out   sounds-single-mixed <source-directory> <type> <-bank:suffix-where-suffix-is-a-fmod-bank-suffix-(optional)>
+   1173 out   strings <source-directory>
+   1173 out   strings-localized <source-directory>
+   1173 out   strip-bitmaps-source
+   1173 out   strip-single-tag-file <tag>
+   1173 out   strip-tag-files
+   1173 out   structure-dump-instance-physics-stats <structure-bsp>
+   1174 out   structure-import-farm <scenario> [lighting_info] [update_imposters] <structure-pieces>
+   1174 out   structure-import-farm-debug <scenario> [use_test_farm] [lighting_info] [use_test_farm] <structure-pieces>
+   1174 out   structure-reparameterize <scenario-directory> <bsp-name>
+   1174 out   structure-reparameterize-subchart <scenario-directory> <bsp-name> <regular-or-subchart>
+   1174 out   tag-file-report <tag-file>
+   1174 out   test-crash-dynamic-thread <crash-type>
+   1174 out   test-events-output
+   1174 out   test-events-output-spam <count> <message>
+   1174 out   test-tag-stuff
+   1174 out   type-library-compile <type-library>
+   1174 out   update-cache-file-cache <target-language> <minor-version-number> <platform>
+   1174 out   update-cache-file-cache-campaign-only <target-language> <minor-version-number>
+   1174 out   update-cache-file-cache-shared-only <target-language> <minor-version-number>
+   1174 out   update-instance-imposter <instance-imposter-tag>
+   1174 out   upgrade-font-package <font-package-to-upgrade>
+   1174 out   upload-crash-files <sessionid>
+   1174 out   verify-tag-files
+   1174 out   verify-tag-load <tag-file>
+   1174 out   version
+   1174 out   video-from-bitmaps <output-name> <source-directory> <frame-rate> <seconds>
+   1174 out   wet-mask-generate <scenario> <bsp-name>
+   1174 out   windows-font <font-file> <icon-folder> <-ea:n-where-n-is-a-number-(optional)>
+   1174 out   windows-font-from-settings <settings-file>
+   1175 out   write-out-hlsl-include-files
+   1175 out   zero-sounds-samples

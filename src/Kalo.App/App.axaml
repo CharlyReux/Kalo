@@ -1,0 +1,133 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Kalo.App.App"
+             RequestedThemeVariant="Dark">
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <!-- Kalo palette: neutral greys, one blue accent (see the UI mockup). -->
+      <Color x:Key="KBgColor">#1E1F22</Color>
+      <SolidColorBrush x:Key="KBg" Color="#1E1F22" />
+      <SolidColorBrush x:Key="KPanel" Color="#2B2D30" />
+      <SolidColorBrush x:Key="KPanelAlt" Color="#232427" />
+      <SolidColorBrush x:Key="KViewport" Color="#16171A" />
+      <SolidColorBrush x:Key="KBorder" Color="#393B40" />
+      <SolidColorBrush x:Key="KRowLine" Color="#2B2D30" />
+      <SolidColorBrush x:Key="KText" Color="#DFE1E5" />
+      <SolidColorBrush x:Key="KCode" Color="#BCBEC4" />
+      <SolidColorBrush x:Key="KMuted" Color="#9DA0A8" />
+      <SolidColorBrush x:Key="KFaint" Color="#6F737A" />
+      <SolidColorBrush x:Key="KAccent" Color="#2F6BE0" />
+      <SolidColorBrush x:Key="KAccentText" Color="#A4C2FA" />
+      <SolidColorBrush x:Key="KSelection" Color="#2E436E" />
+      <SolidColorBrush x:Key="KWarning" Color="#E5A50A" />
+      <SolidColorBrush x:Key="KWarningBg" Color="#2D2A1F" />
+      <SolidColorBrush x:Key="KError" Color="#F75464" />
+      <SolidColorBrush x:Key="KSuccess" Color="#5FB865" />
+      <SolidColorBrush x:Key="KPurple" Color="#C77DFF" />
+      <SolidColorBrush x:Key="KBlue" Color="#6E9EF7" />
+      <FontFamily x:Key="KMono">Cascadia Mono, Consolas, Courier New</FontFamily>
+
+      <!-- Fluent overrides: accent, compact controls, darker surfaces. -->
+      <Color x:Key="SystemAccentColor">#2F6BE0</Color>
+      <Color x:Key="SystemAccentColorLight1">#4A80E8</Color>
+      <Color x:Key="SystemAccentColorDark1">#2A5FC8</Color>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <FluentTheme DensityStyle="Compact" />
+
+    <Style Selector="Window">
+      <Setter Property="FontSize" Value="13" />
+      <Setter Property="Foreground" Value="{StaticResource KText}" />
+    </Style>
+
+    <!-- Flat dev-tool buttons -->
+    <Style Selector="Button.tool">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Foreground" Value="{StaticResource KText}" />
+      <Setter Property="FontSize" Value="12.5" />
+    </Style>
+    <Style Selector="Button.tool:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#3A3D42" />
+    </Style>
+    <Style Selector="Button.outline">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderBrush" Value="{StaticResource KBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="Padding" Value="10,3" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{StaticResource KAccent}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Padding" Value="12,3" />
+      <Setter Property="MinHeight" Value="26" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="FontSize" Value="12.5" />
+    </Style>
+    <Style Selector="Button.activity">
+      <Setter Property="Width" Value="44" />
+      <Setter Property="Height" Value="40" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="2,0,0,0" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="{StaticResource KMuted}" />
+    </Style>
+    <Style Selector="Button.activity.active">
+      <Setter Property="BorderBrush" Value="{StaticResource KAccent}" />
+      <Setter Property="Foreground" Value="{StaticResource KText}" />
+    </Style>
+    <Style Selector="ToggleButton.seg">
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Padding" Value="10,2" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Foreground" Value="{StaticResource KMuted}" />
+    </Style>
+    <Style Selector="ToggleButton.seg:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource KSelection}" />
+      <Setter Property="Foreground" Value="{StaticResource KText}" />
+    </Style>
+
+    <Style Selector="Button.tool:disabled">
+      <Setter Property="Opacity" Value="0.4" />
+    </Style>
+    <Style Selector="TextBox.compact">
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Height" Value="26" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Padding" Value="6,1" />
+      <Setter Property="FontSize" Value="12.5" />
+      <Setter Property="CornerRadius" Value="3" />
+    </Style>
+    <Style Selector="TextBlock.header">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Foreground" Value="{StaticResource KMuted}" />
+    </Style>
+    <Style Selector="TextBlock.mono">
+      <Setter Property="FontFamily" Value="{StaticResource KMono}" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TreeViewItem">
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBoxItem">
+      <Setter Property="MinHeight" Value="22" />
+      <Setter Property="Padding" Value="6,1" />
+    </Style>
+  </Application.Styles>
+</Application>

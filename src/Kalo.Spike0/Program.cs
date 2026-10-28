@@ -201,10 +201,4 @@ namespace Kalo.Spike0
             Console.WriteLine("  --yes, -y           Do not ask before copying files");
         }
     }
-
-    /// <summary>A controlled stop: the message is shown to the user as-is.</summary>
-    internal sealed class SpikeAbort : Exception
-    {
-        public SpikeAbort(string message) : base(message) { }
-    }
 }

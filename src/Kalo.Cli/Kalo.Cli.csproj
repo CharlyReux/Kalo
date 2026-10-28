@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- kalo-cli: command-line checks of Kalo's services, used by the runner to test without the UI. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>kalo-cli</AssemblyName>
+    <RootNamespace>Kalo.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kalo.Core\Kalo.Core.csproj" />
+    <!-- Build order only: make sure the Blam Host is built before the CLI runs it. -->
+    <ProjectReference Include="..\Kalo.BlamHost\Kalo.BlamHost.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />
+  </ItemGroup>
+
+</Project>

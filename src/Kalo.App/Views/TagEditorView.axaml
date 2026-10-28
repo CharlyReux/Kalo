@@ -1,0 +1,114 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             x:Class="Kalo.App.Views.TagEditorView"
+             x:DataType="vm:TagEditorViewModel">
+
+  <DockPanel>
+    <!-- Toolbar -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="10,5">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="outline" Content="Revert to vanilla" Command="{Binding RevertToVanillaCommand}" IsEnabled="{Binding DiffersFromVanilla}"
+                  ToolTip.Tip="Put the original HREK version of this tag back" />
+          <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S). A running game reloads it." />
+        </StackPanel>
+        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+          <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" Margin="0,0,8,0" ClipToBounds="True">
+            <StackPanel Orientation="Horizontal">
+              <ToggleButton Classes="seg" Content="Labeled" IsChecked="{Binding ShowLabeled, Mode=TwoWay}" />
+              <ToggleButton Classes="seg" Content="Raw fields" IsChecked="{Binding ShowRaw, Mode=TwoWay}" />
+            </StackPanel>
+          </Border>
+          <TextBox Classes="compact" Width="200" Watermark="Filter fields" Text="{Binding Filter}" Margin="0,0,8,0" />
+          <CheckBox Content="Changed only" IsChecked="{Binding ChangedOnly}" FontSize="12" Margin="0,0,8,0" />
+          <Button Classes="tool" Command="{Binding ExpandAllCommand}" ToolTip.Tip="Expand all">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70D;" FontSize="12" />
+          </Button>
+          <Button Classes="tool" Command="{Binding CollapseAllCommand}" ToolTip.Tip="Collapse all">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70E;" FontSize="12" />
+          </Button>
+        </WrapPanel>
+      </DockPanel>
+    </Border>
+
+    <!-- Column header -->
+    <Border DockPanel.Dock="Top" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Height="26">
+      <Grid ColumnDefinitions="*,260,110,130" Margin="12,0,16,0">
+        <TextBlock Grid.Column="0" Text="Field" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="1" Text="Value" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="2" Text="Units" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="3" Text="Range / type" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+
+    <Grid>
+      <TextBlock Text="Loading…" Foreground="{StaticResource KMuted}" Margin="16" IsVisible="{Binding IsLoading}" />
+      <TreeView x:Name="FieldTree" ItemsSource="{Binding Fields}" SelectedItem="{Binding SelectedItem, Mode=TwoWay}" IsVisible="{Binding !IsLoading}">
+        <TreeView.Styles>
+          <Style Selector="TreeViewItem" x:DataType="vm:FieldViewModel">
+            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+            <Setter Property="IsVisible" Value="{Binding IsVisible}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+          </Style>
+          <Style Selector="TreeViewItem /template/ ContentPresenter#PART_HeaderPresenter">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+          </Style>
+          <Style Selector="TextBox.value">
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="FontFamily" Value="{StaticResource KMono}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+          </Style>
+          <Style Selector="TextBox.value.dirty">
+            <Setter Property="Foreground" Value="{StaticResource KWarning}" />
+          </Style>
+          <Style Selector="TextBox.value.error">
+            <Setter Property="BorderBrush" Value="{StaticResource KError}" />
+          </Style>
+          <Style Selector="ComboBox.value">
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Padding" Value="6,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+          </Style>
+        </TreeView.Styles>
+        <TreeView.ItemTemplate>
+          <TreeDataTemplate DataType="vm:FieldViewModel" ItemsSource="{Binding Children}">
+            <Grid ColumnDefinitions="*,260,110,130" MinHeight="24" Margin="0,0,4,0">
+              <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" ToolTip.Tip="{Binding Description}">
+                <Border Width="3" Height="16" Background="{StaticResource KWarning}" IsVisible="{Binding IsDirty}" />
+                <TextBlock Text="{Binding DisplayText}" FontSize="12.5" VerticalAlignment="Center" Classes.section="{Binding IsContainer}" Classes.note="{Binding IsExplanation}" TextTrimming="CharacterEllipsis" />
+              </StackPanel>
+
+              <TextBox Grid.Column="1" Classes="value" Classes.dirty="{Binding IsDirty}" Classes.error="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       IsVisible="{Binding IsTextEditor}" Text="{Binding Value, UpdateSourceTrigger=LostFocus}" KeyDown="ValueBox_KeyDown" ToolTip.Tip="{Binding Error}" />
+              <ComboBox Grid.Column="1" Classes="value" IsVisible="{Binding IsEnum}" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedOption, Mode=TwoWay}" />
+              <TextBlock Grid.Column="1" IsVisible="{Binding IsReadOnlyValue}" Text="{Binding Value}" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+              <TextBlock Grid.Column="1" Grid.ColumnSpan="3" IsVisible="{Binding IsExplanation}" Text="{Binding Value}" Foreground="{StaticResource KFaint}" FontSize="11.5" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+
+              <TextBlock Grid.Column="2" Text="{Binding Units}" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="8,0,0,0" />
+              <TextBlock Grid.Column="3" Text="{Binding Extra}" Foreground="{StaticResource KMuted}" FontSize="11.5" FontFamily="{StaticResource KMono}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="8,0,0,0" />
+            </Grid>
+          </TreeDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+    </Grid>
+  </DockPanel>
+
+  <UserControl.Styles>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="TextBlock.note">
+      <Setter Property="Foreground" Value="{StaticResource KAccentText}" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="11.5" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

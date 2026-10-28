@@ -5,9 +5,36 @@ A modern modding workbench for Halo: Reach (MCC), built on top of the official H
 - Design doc: https://claude.ai/artifact/Fsh4bt9uP1xP8H7CMdWGQ8
 - UI mockup: https://claude.ai/artifact/7PetLn2NLhZ1LxxBweqAe6
 
-Status: **Spike 0**. A throwaway command-line probe that answers one question before any UI work:
-can Kalo drive ManagedBlam (tags) and tool.exe (builds) from its own process, inside a Kalo workspace,
-without ever writing to the HREK or MCC folders?
+Status: **first working draft** of the app (tag editor + Play with hot reload). The spikes before it were
+throwaway command-line probes:
+
+- Spike 0 (passed): can Kalo drive ManagedBlam (tags) and tool.exe (builds) from its own process, inside a
+  Kalo workspace, without ever writing to the HREK or MCC folders?
+- Spike 1 (done): can Kalo edit maps live? Hot reload of saved tags in reach_tag_test works; RemoteCommand,
+  in-process engine rendering and Forge variant editing do not (yet). See [Spike 1](#spike-1-live-3d-editing).
+
+## Running Kalo
+
+```powershell
+cd D:\charl\Documents\Perso\Halo\Kalo
+dotnet build Kalo.sln
+src\Kalo.App\bin\Debug\net8.0\kalo.exe
+```
+
+- Left: every tag of the shared workspace (Ctrl+P searches by name). Double-click opens it.
+- Middle: the tag editor. "Labeled" shows friendly names and hides engine internals, "Raw fields" shows
+  the engine's names and types. Type a value and press Enter: Kalo checks it with the engine right away.
+  Save (Ctrl+S) writes the tag into the shared workspace, never into HREK.
+- Play (F5) starts reach_tag_test on the map picked at the top. While it runs, every tag you save is
+  reloaded by the game within a second (change the assault rifle's magazine size and look at its ammo
+  counter).
+- The Changes panel (second icon on the left) lists every file that differs from vanilla HREK and puts any
+  of them back. "Revert to vanilla" in the editor does the same for the open tag.
+
+Self-test, used through the runner: `kalo.exe --self-test .kalo\shots\selftest` opens the assault rifle,
+sets the magazine size, saves, starts the game, changes it again while the game runs, waits for the game
+to reload it, stops the game, reverts, and checks HREK was not touched. It prints `SELFTEST PASS` or the
+failed checks and saves screenshots of the Kalo window.
 
 ## Layout
 
@@ -15,9 +42,15 @@ without ever writing to the HREK or MCC folders?
 Kalo/
   Kalo.sln
   Directory.Build.props        HREK location (HrekRoot), shared build settings
-  src/Kalo.Spike0/             the probe (net48, x64)
-  spike-results/               reports written by the probe (created on first run)
-  .kalo/workspaces/spike/      the test workspace (git-ignored, several GB)
+  src/Kalo.App/                the Kalo window (Avalonia, net8.0)
+  src/Kalo.Core/               workspace, change tracking, Blam Host client, play test (net8.0)
+  src/Kalo.Protocol/           messages between the app and the Blam Host (netstandard2.0)
+  src/Kalo.BlamHost/           background process that runs ManagedBlam (net48, x64; HREK's DLLs need it)
+  src/Kalo.Cli/                command-line checks (host-test, changes, play-test)
+  src/Kalo.Spike0/             Spike 0 probe (net48, x64)
+  src/Kalo.Spike1/             Spike 1 probe (net48, x64), shares a few files with Spike 0
+  spike-results/               reports written by the probes
+  .kalo/shared/                the shared workspace used by every project (git-ignored, ~40 GB)
 ```
 
 ## One-time setup
@@ -108,3 +141,46 @@ Nothing to send: the folder is shared with Claude, so just say it has run.
 | `Could not load file or assembly 'ManagedBlam'` | HREK path is wrong. Check `KALO_HREK` or pass `--hrek`. |
 | ManagedBlam crash or assertion message | The report keeps the message and engine file and line; this is exactly what Spike 0 is meant to find. |
 | A window from HREK pops up | Note what it says; close it. The report still gets written. |
+
+## The Kalo runner (lets Claude build and test on this PC)
+
+Claude can write files in this folder but cannot run programs. The runner closes that gap: start it once,
+leave the window open, and Claude can build Kalo, run tests and take screenshots on its own.
+
+```powershell
+cd D:\charl\Documents\Perso\Halo\Kalo
+powershell -ExecutionPolicy Bypass -File tools\kalo-runner.ps1
+```
+
+- Claude drops job files in `.kalo\jobs\inbox\`; results go to `.kalo\jobs\done\<job>\` (logs, outputs, screenshots).
+- Only these steps exist: `dotnet build|run|test|restore|clean`, Kalo's own built `.exe` files, the game tools
+  inside `.kalo\shared` (reach_tag_test, tool, sapien...), screenshots, waits, closing those tools,
+  and `git status|add|commit|log|diff`. Every path must stay inside this Kalo folder; HREK and MCC are never touched.
+- While it runs, Windows will not go to sleep. Game windows may open and close on their own.
+- Stop it any time with Ctrl+C or by closing the window. Read `tools\kalo-runner.ps1` to see exactly what it does.
+
+## Spike 1: live 3D editing
+
+From the `Kalo` folder:
+
+```powershell
+dotnet run --project src\Kalo.Spike1 -- all
+```
+
+`all` runs four steps, each in its own process so a crash in one does not hide the others:
+
+| Step | What happens | Writes to |
+| --- | --- | --- |
+| `shared` | Renames the Spike 0 workspace to `.kalo\shared` (no copy, instant), removes Spike 0's test tag, records a baseline index of every file in `tags/` and `data/` | `.kalo\shared` |
+| `forge` | Reads the Forge map variants MCC ships (`haloreach\map_variants\*.mvar`, read-only), loads them with ManagedBlam, writes them back to bytes and compares, exports them to XML | `spike-results\forge\` |
+| `live` | Starts `reach_tag_test.exe` on Sword Base, connects to it, runs a script command, places an assault rifle, then changes the rifle's magazine size live in the game (99, then 46 to 50) without saving the tag. **Asks you** whether you saw the change, then offers to close the game | `.kalo\shared` (a temporary `bonobo_init.txt`) |
+| `engine` | Starts the engine inside Kalo's own process, loads Sword Base, runs about 900 frames and saves what the engine's viewport rendered as `engine-frame.png` | `spike-results\` |
+
+Expect a few minutes: loading a map straight from tags is slower than from a built `.map`. A game window
+opens during `live`; the `engine` step may open one too. Pick another map with
+`--map levels\multi\forge_halo\forge_halo`, and allow more time with `--timeout 600`.
+
+Each step checks HREK is untouched and lists which files in the shared workspace changed
+(`spike-results\workspace-changes.txt`): that list is what a project's overlay would hold.
+
+Single steps: `shared`, `changes`, `forge`, `live`, `engine`. Reports: `spike-results\spike-report-s1-*.md`.
