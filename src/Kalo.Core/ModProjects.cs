@@ -168,6 +168,52 @@ public sealed class ModProjects
         ActiveName = target?.Name;
     }
 
+    /// <summary>
+    /// Imports a mod zip made by Export (or laid out the same way: kalo-project.json + tags\... / data\...) as a new,
+    /// inactive project. Only files under tags\ and data\ are taken.
+    /// </summary>
+    public ModProject Import(string zipPath)
+    {
+        lock (_gate)
+        {
+            using var zip = ZipFile.OpenRead(zipPath);
+            ProjectManifest manifest = new() { Name = Path.GetFileNameWithoutExtension(zipPath) };
+            var entry = zip.GetEntry(ManifestName);
+            if (entry != null)
+            {
+                using var r = new StreamReader(entry.Open());
+                manifest = JsonSerializer.Deserialize<ProjectManifest>(r.ReadToEnd(), Json) ?? manifest;
+            }
+            string baseName = string.IsNullOrWhiteSpace(manifest.Name) ? "Imported mod" : manifest.Name.Trim();
+            string name = baseName;
+            for (int i = 2; Find(name) != null || Directory.Exists(Path.Combine(Root, Safe(name))); i++) name = $"{baseName} ({i})";
+            string dir = Path.Combine(Root, Safe(name));
+            string files = Path.Combine(dir, "files");
+            Directory.CreateDirectory(files);
+            var imported = new List<string>();
+            foreach (var e in zip.Entries)
+            {
+                if (e.FullName.EndsWith('/')) continue;
+                string rel = e.FullName.Replace('/', '\\');
+                if (!(rel.StartsWith(@"tags\", StringComparison.OrdinalIgnoreCase) || rel.StartsWith(@"data\", StringComparison.OrdinalIgnoreCase))) continue;
+                string target = Path.GetFullPath(Path.Combine(files, rel));
+                if (!KaloPaths.IsUnder(target, files)) continue; // no "..\" tricks
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                e.ExtractToFile(target, true);
+                imported.Add(rel);
+            }
+            manifest.Name = name;
+            manifest.Files = imported.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
+            manifest.Deleted ??= new();
+            if (manifest.Created == default) manifest.Created = DateTime.Now;
+            var p = new ModProject(dir, manifest);
+            SaveManifest(p);
+            return p;
+        }
+    }
+
+    private static string Safe(string name) => string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+
     /// <summary>Deletes a project folder (only inside Kalo\projects). Does not touch the workspace.</summary>
     public void Delete(ModProject p)
     {

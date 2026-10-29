@@ -60,6 +60,130 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public bool HasSelection => Selected != null;
 
+    // ---- multi-selection ----------------------------------------------------------------------
+    // Selected is the primary object (inspector); Selection holds everything Ctrl+click added.
+
+    private readonly List<PlacementItem> _selection = new();
+    private bool _keepSelection;
+    public IReadOnlyList<PlacementItem> Selection => _selection;
+    public bool IsSelected(PlacementItem item) => _selection.Contains(item);
+    public bool HasMultiSelection => _selection.Count > 1;
+    public string SelectionText => $"{_selection.Count} objects selected. Drag, R, Ctrl+D and Delete apply to all of them; Ctrl+click adds or removes one.";
+
+    /// <summary>Ctrl+click: adds the object to the selection, or removes it.</summary>
+    public void ToggleSelection(PlacementItem item)
+    {
+        _keepSelection = true;
+        if (_selection.Contains(item))
+        {
+            _selection.Remove(item);
+            Selected = _selection.LastOrDefault();
+        }
+        else
+        {
+            _selection.Add(item);
+            Selected = item;
+        }
+        _keepSelection = false;
+        SelectionChanged();
+    }
+
+    /// <summary>Makes an already selected object the one the inspector shows, keeping the group.</summary>
+    public void MakePrimary(PlacementItem item)
+    {
+        _keepSelection = true;
+        Selected = item;
+        _keepSelection = false;
+    }
+
+    private void SelectionChanged()
+    {
+        OnPropertyChanged(nameof(HasMultiSelection));
+        OnPropertyChanged(nameof(SelectionText));
+        SceneChanged?.Invoke();
+    }
+
+    /// <summary>Moves every selected object by the same offset from where it was when the drag started.</summary>
+    public void MoveSelectionLocal(IReadOnlyDictionary<PlacementItem, Vector3> start, Vector3 delta)
+    {
+        foreach (var (item, origin) in start) item.SetPositionLocal(origin + delta);
+        SceneChanged?.Invoke();
+    }
+
+    public void RotateSelectionLocal(IReadOnlyDictionary<PlacementItem, float> startYaw, float delta)
+    {
+        foreach (var (item, yaw) in startYaw) item.SetRotationLocal(yaw + delta, item.Pitch, item.Roll);
+        SceneChanged?.Invoke();
+    }
+
+    public async Task CommitSelectionAsync()
+    {
+        foreach (var item in _selection.ToList()) await CommitMoveAsync(item);
+    }
+
+    // ---- drag & drop from the project tree ------------------------------------------------------
+
+    /// <summary>Placement block for an object tag, from its extension (weapon → weapons...). Null if it cannot be placed.</summary>
+    public static string? CategoryFor(string tagPath) => System.IO.Path.GetExtension(tagPath).TrimStart('.').ToLowerInvariant() switch
+    {
+        "weapon" => "weapons",
+        "vehicle" => "vehicles",
+        "scenery" => "scenery",
+        "crate" => "crates",
+        "equipment" => "equipment",
+        "device_machine" => "machines",
+        "device_control" => "controls",
+        "device_terminal" => "terminals",
+        "biped" => "bipeds",
+        "giant" => "giants",
+        "effect_scenery" => "effect scenery",
+        "sound_scenery" => "sound scenery",
+        _ => null,
+    };
+
+    /// <summary>Places any object tag at a point: adds it to the right palette first if needed.</summary>
+    public async Task<PlacementItem?> AddTagAtAsync(string tagPath, Vector3 position)
+    {
+        string? category = CategoryFor(tagPath);
+        if (category == null || _main.Host == null)
+        {
+            Status = $"{System.IO.Path.GetFileName(tagPath)} is not an object that can be placed.";
+            return null;
+        }
+        try
+        {
+            var pal = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Category = category, Op = PlacementOps.AddPalette, Tag = tagPath });
+            if (pal.Category != null) ReplaceCategory(pal.Category);
+            var add = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Category = category, Op = PlacementOps.Add, Type = pal.SelectIndex, Position = ToArray(position) });
+            if (add.Category != null) ReplaceCategory(add.Category);
+            IsDirty = true;
+            RefreshPalette();
+            var item = Items.FirstOrDefault(i => i.Category == category && i.Index == add.SelectIndex);
+            Selected = item;
+            if (item?.RenderModel != null && item.Model == null)
+            {
+                await _main.Models.LoadAsync(_main.Host, new[] { item.RenderModel });
+                foreach (var i in Items.Where(i => i.RenderModel == item.RenderModel)) i.Model = _main.Models.Get(i.RenderModel);
+                SceneChanged?.Invoke();
+            }
+            _main.Log($"{Title}: placed {System.IO.Path.GetFileName(tagPath)} in {category}.");
+            return item;
+        }
+        catch (HostException ex)
+        {
+            _main.AddProblem("error", $"Place {tagPath}: {ex.Message}", Path);
+            return null;
+        }
+    }
+
+    private void RefreshPalette()
+    {
+        PaletteChoices.Clear();
+        foreach (var c in _categories.Values)
+            for (int i = 0; i < (c.Palette?.Count ?? 0); i++)
+                if (!string.IsNullOrEmpty(c.Palette![i].Tag)) PaletteChoices.Add(new PaletteChoice(c.Name!, i, c.Palette[i].Tag!));
+    }
+
     public void ReportRenderer(string text) => Avalonia.Threading.Dispatcher.UIThread.Post(() => RendererStatus = text);
 
     // ---- loading ---------------------------------------------------------------------------------
@@ -147,6 +271,12 @@ public partial class MapEditorViewModel : DocumentViewModel
     partial void OnSelectedChanged(PlacementItem? value)
     {
         OnPropertyChanged(nameof(HasSelection));
+        if (!_keepSelection)
+        {
+            _selection.Clear();
+            if (value != null) _selection.Add(value);
+            SelectionChanged();
+        }
         SceneChanged?.Invoke();
     }
 
@@ -201,26 +331,33 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task RotateSelectedAsync(float degrees)
     {
-        if (Selected == null) return;
-        Selected.SetRotationLocal(Selected.Yaw + degrees, Selected.Pitch, Selected.Roll);
-        await CommitMoveAsync(Selected);
+        foreach (var item in _selection.ToList())
+        {
+            item.SetRotationLocal(item.Yaw + degrees, item.Pitch, item.Roll);
+            await CommitMoveAsync(item);
+        }
     }
+
+    /// <summary>The selection as (category, index), highest index first, so earlier operations do not shift later ones.</summary>
+    private List<(string Category, int Index, Vector3 Position, float Radius)> SelectionKeys() =>
+        _selection.Select(i => (i.Category, i.Index, i.Position, i.PickRadius)).OrderBy(k => k.Category).ThenByDescending(k => k.Index).ToList();
 
     [RelayCommand]
     private async Task DuplicateSelected()
     {
-        if (Selected == null) return;
-        var s = Selected;
-        var offset = new Vector3(Math.Max(0.5f, s.PickRadius * 2f), 0, 0);
-        await RunOpAsync(new PlacementOpParams { Path = Path, Category = s.Category, Op = PlacementOps.Duplicate, Index = s.Index, Position = ToArray(s.Position + offset) }, s.Category);
+        if (_selection.Count == 0) return;
+        float offset = Math.Max(0.5f, _selection.Max(i => i.PickRadius) * 2f);
+        foreach (var k in SelectionKeys())
+            await RunOpAsync(new PlacementOpParams { Path = Path, Category = k.Category, Op = PlacementOps.Duplicate, Index = k.Index, Position = ToArray(k.Position + new Vector3(offset, 0, 0)) }, k.Category);
     }
 
     [RelayCommand]
     private async Task DeleteSelected()
     {
-        if (Selected == null) return;
-        var s = Selected;
-        await RunOpAsync(new PlacementOpParams { Path = Path, Category = s.Category, Op = PlacementOps.Remove, Index = s.Index }, s.Category);
+        if (_selection.Count == 0) return;
+        foreach (var k in SelectionKeys())
+            await RunOpAsync(new PlacementOpParams { Path = Path, Category = k.Category, Op = PlacementOps.Remove, Index = k.Index }, k.Category);
+        Selected = null;
     }
 
     /// <summary>Places the chosen palette object where the level was last clicked (or in front of the selection).</summary>

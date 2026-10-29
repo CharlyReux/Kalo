@@ -37,19 +37,27 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
 - Maps: double-click a .scenario (or search for one). The map view shows the level (read from the
   structure_bsp tags, cached in .kalo\cache\geometry) and every object placement as a coloured box.
   Right-drag looks around, WASD/QE fly (Shift faster), click selects, drag moves (Shift: up/down, Ctrl: snap
-  to 0.25), R turns 15°, Ctrl+D duplicates, Delete removes, F frames. The inspector edits exact position and
-  rotation and adds new objects from the scenario's palettes where you last clicked the level.
+  to 0.25), R turns 15°, Ctrl+D duplicates, Delete removes, F frames, Home frames the play space. The selected
+  object shows handles: drag an arrow to move along that axis, drag the ring to turn it. Ctrl+click adds objects
+  to the selection (Ctrl+A selects everything listed); moves, turns, duplicate and delete apply to the whole
+  selection. Drag any object tag (weapon, vehicle, scenery, crate...) from the project tree or the search results
+  onto the map to place it. The inspector edits exact position and rotation and adds objects from the palettes.
 - Gametypes (third icon on the left): the Megalo scripts from data\multiplayer\megalo. F7 compiles with
   HREK's own compiler: errors with line numbers, the gametype budget, declared variables, and a searchable list
-  of every action and condition with its description (double-click inserts it). "Test in game" compiles,
+  of every action and condition with its description (double-click inserts it). Autocomplete pops up after
+  "action " and "condition " and while typing (Ctrl+Space forces it): actions, conditions, keywords, the engine's
+  value lists (weapons, vehicles, object types, sounds...) and the script's own variables. "Test in game" compiles,
   deploys the engine to maps\megalo\kalo_<name>.mglo in the workspace (as MegaloEdit does for a devkit) and
   starts the map picked at the top with `load_binary_game_engine kalo_<name>` in bonobo_init.txt.
 - Mod projects (fourth icon): a project is a small folder in Kalo\projects holding only the files your mod
   changes. Every save is recorded in the active project; switching projects puts the shared workspace back to
-  vanilla and loads the other project's files; Export zips a project into Kalo\exports.
+  vanilla and loads the other project's files; Export zips a project into Kalo\exports; "Import mod…" adds such a
+  zip back as a project. "Diff" in the Changes panel (or "Compare" in the tag editor) lists every field that
+  differs from vanilla HREK, or the changed lines of a script.
 
 Self-tests, used through the runner: `kalo.exe --tour .kalo\shots\tour` walks through blocks, references, the
-map view, the script editor and projects (nothing is saved). `kalo.exe --self-test .kalo\shots\selftest` opens the assault rifle,
+map view (handles, multi-select, drop), the script editor (autocomplete) and projects (diff, import); nothing is
+saved. `--map-play-test` and `--megalo-play-test` check an edited map and a gametype in reach_tag_test. `kalo.exe --self-test .kalo\shots\selftest` opens the assault rifle,
 sets the magazine size, saves, starts the game, changes it again while the game runs, waits for the game
 to reload it, stops the game, reverts, and checks HREK was not touched. It prints `SELFTEST PASS` or the
 failed checks and saves screenshots of the Kalo window.

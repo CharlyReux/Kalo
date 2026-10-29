@@ -1,5 +1,10 @@
 using System.Xml;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Media;
+using AvaloniaEdit.CodeCompletion;
+using AvaloniaEdit.Document;
+using AvaloniaEdit.Editing;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
 using Kalo.App.ViewModels;
@@ -24,6 +29,37 @@ public partial class ScriptEditorView : UserControl
             _vm.Text = Editor.Text;
         };
         DataContextChanged += (_, _) => Attach(DataContext as ScriptEditorViewModel);
+        Editor.TextArea.TextEntered += (_, e) =>
+        {
+            if (_completion != null || string.IsNullOrEmpty(e.Text)) return;
+            char c = e.Text[^1];
+            if (char.IsLetterOrDigit(c) || c == '_' || c == ' ') ShowCompletion(false);
+        };
+        Editor.TextArea.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Space && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                ShowCompletion(true);
+                e.Handled = true;
+            }
+        };
+    }
+
+    private CompletionWindow? _completion;
+
+    /// <summary>Opens the suggestion list for the word at the caret (Ctrl+Space, or while typing).</summary>
+    private void ShowCompletion(bool explicitRequest)
+    {
+        if (_vm == null) return;
+        var line = Editor.Document.GetLineByOffset(Editor.CaretOffset);
+        string before = Editor.Document.GetText(line.Offset, Editor.CaretOffset - line.Offset);
+        if (!explicitRequest && before.EndsWith(' ') && !before.TrimEnd().EndsWith("action") && !before.TrimEnd().EndsWith("condition")) return;
+        var (start, items) = _vm.Complete(before, explicitRequest);
+        if (items.Count == 0) return;
+        _completion = new CompletionWindow(Editor.TextArea) { StartOffset = line.Offset + start, Width = 420 };
+        foreach (var item in items) _completion.CompletionList.CompletionData.Add(new MegaloCompletion(item));
+        _completion.Closed += (_, _) => _completion = null;
+        _completion.Show();
     }
 
     private void Attach(ScriptEditorViewModel? vm)
@@ -106,4 +142,17 @@ public partial class ScriptEditorView : UserControl
         _megalo = HighlightingLoader.Load(reader, HighlightingManager.Instance);
         return _megalo;
     }
+}
+
+/// <summary>An autocomplete row: the word, its kind on the right, its signature as the tooltip.</summary>
+internal sealed class MegaloCompletion(CompletionItem item) : ICompletionData
+{
+    public IImage? Image => null;
+    public string Text => item.Text;
+    public object Content => item.Text + "   · " + item.Kind;
+    public object? Description => string.IsNullOrEmpty(item.Description) ? item.Kind : item.Text + " " + item.Description;
+    public double Priority => item.Kind is "action" or "condition" ? 1 : 0;
+
+    public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs) =>
+        textArea.Document.Replace(completionSegment, Text);
 }

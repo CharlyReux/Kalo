@@ -180,6 +180,8 @@
                   <DockPanel>
                     <Button DockPanel.Dock="Right" Classes="tool" Content="Revert" FontSize="11.5"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RevertChangeCommand}" CommandParameter="{Binding}" />
+                    <Button DockPanel.Dock="Right" Classes="tool" Content="Diff" FontSize="11.5" ToolTip.Tip="Compare with vanilla"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CompareChangeCommand}" CommandParameter="{Binding}" />
                     <StackPanel>
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="{Binding Kind}" FontSize="11" Foreground="{StaticResource KWarning}" />
@@ -254,6 +256,7 @@
         <views:TagEditorView Grid.Row="2" DataContext="{Binding ActiveTab}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasTab}" />
         <views:MapEditorView Grid.Row="2" DataContext="{Binding ActiveMap}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasMap}" />
         <views:ScriptEditorView Grid.Row="2" DataContext="{Binding ActiveScript}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasScript}" />
+        <views:DiffView Grid.Row="2" DataContext="{Binding ActiveDiff}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasDiff}" />
         <ScrollViewer Grid.Row="2" IsVisible="{Binding NoTab}">
           <StackPanel Margin="32,28" Spacing="18" MaxWidth="720" HorizontalAlignment="Left">
             <StackPanel>
@@ -348,6 +351,9 @@
                            IsVisible="{Binding !ActiveMap.HasSelection, FallbackValue=False}" />
                 <StackPanel Spacing="8" IsVisible="{Binding ActiveMap.HasSelection, FallbackValue=False}">
                   <TextBlock Text="{Binding ActiveMap.Selected.Display, FallbackValue=''}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" />
+                  <Border Background="{StaticResource KSelection}" CornerRadius="4" Padding="8,6" IsVisible="{Binding ActiveMap.HasMultiSelection, FallbackValue=False}">
+                    <TextBlock Text="{Binding ActiveMap.SelectionText, FallbackValue=''}" TextWrapping="Wrap" FontSize="12" />
+                  </Border>
                   <TextBlock Text="{Binding ActiveMap.Selected.Detail, FallbackValue=''}" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" FontSize="11.5" />
                   <SelectableTextBlock Text="{Binding ActiveMap.Selected.Tag, FallbackValue=''}" FontFamily="{StaticResource KMono}" FontSize="11.5" TextWrapping="Wrap" Foreground="{StaticResource KCode}" />
                   <TextBlock Text="POSITION (world units)" Classes="header" Margin="0,6,0,0" />
@@ -376,7 +382,7 @@
                 </StackPanel>
 
                 <TextBlock Text="ADD AN OBJECT" Classes="header" Margin="0,10,0,0" />
-                <TextBlock Text="Click the level where it should go, pick a type, then Add." Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock Text="Drag an object tag from the project tree or search onto the map, or click the level, pick a type here, then Add." Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
                 <ComboBox ItemsSource="{Binding ActiveMap.PaletteChoices, FallbackValue={x:Null}}" SelectedItem="{Binding ActiveMap.SelectedPalette, FallbackValue={x:Null}}" HorizontalAlignment="Stretch" FontSize="12">
                   <ComboBox.ItemTemplate>
                     <DataTemplate DataType="vm:PaletteChoice">

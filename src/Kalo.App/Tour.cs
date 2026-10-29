@@ -236,12 +236,41 @@ public sealed class Tour
         int count = map.Items.Count;
         await map.DuplicateSelectedCommand.ExecuteAsync(null);
         Check(map.Items.Count == count + 1 && map.Selected != null && map.Selected != weapon, "duplicated it");
+        // Handles: the closest point on an axis to a ray (used by the arrow handles).
+        float t = Kalo.App.Viewport.MapViewport.ClosestOnAxis(Vector3.Zero, Vector3.UnitX, new Vector3(5, -10, 0), Vector3.UnitY);
+        Check(MathF.Abs(t - 5) < 1e-4f, $"arrow handle math: closest point on the x axis is 5 ({t})");
+
+        // Multi-selection: move two weapons together.
+        var others = map.Items.Where(i => i.Category == "weapons" && !map.IsSelected(i)).Take(2).ToList();
+        if (others.Count == 2)
+        {
+            map.Selected = others[0];
+            map.ToggleSelection(others[1]);
+            Check(map.Selection.Count == 2 && map.HasMultiSelection, "Ctrl+click selects two objects");
+            var origins = map.Selection.ToDictionary(i => i, i => i.Position);
+            map.MoveSelectionLocal(origins, new Vector3(0, 2f, 0));
+            await map.CommitSelectionAsync();
+            Check(origins.All(kv => MathF.Abs(kv.Key.Position.Y - (kv.Value.Y + 2f)) < 0.01f), "both moved 2 units together");
+            int before = map.Items.Count;
+            await map.DuplicateSelectedCommand.ExecuteAsync(null);
+            Check(map.Items.Count == before + 2, $"duplicating the selection added 2 objects ({map.Items.Count - before})");
+        }
+
+        // Drag & drop: place a DMR from the tag tree.
+        int weaponsBefore = map.Items.Count(i => i.Category == "weapons");
+        var dmr = await map.AddTagAtAsync(@"objects\weapons\rifle\dmr\dmr.weapon", weapon.Position + new Vector3(0, 0, 1));
+        Check(dmr != null && map.Items.Count(i => i.Category == "weapons") == weaponsBefore + 1 && map.PaletteChoices.Any(p => p.Tag.EndsWith("dmr.weapon")),
+            "dropping dmr.weapon placed a DMR (and added it to the weapon palette)");
+        Check(MapEditorViewModel.CategoryFor("x.device_machine") == "machines" && MapEditorViewModel.CategoryFor("x.bitmap") == null, "tag types map to the right placement block");
+        if (dmr != null) map.Selected = dmr;
+
         await Pause(1000);
         Say($"holding the map view for {_hold:F0} s");
         Shot("map-selected");
         await Task.Delay(TimeSpan.FromSeconds(_hold));
+        int beforeDelete = map.Items.Count;
         await map.DeleteSelectedCommand.ExecuteAsync(null);
-        Check(map.Items.Count == count, "deleted the copy");
+        Check(map.Items.Count == beforeDelete - 1, "Delete removed the selected object");
         await _vm.CloseTabCommand.ExecuteAsync(map); // unsaved
     }
 
@@ -260,6 +289,13 @@ public sealed class Tour
         script.CatalogQuery = "score";
         await Pause(300);
         Check(script.CatalogResults.Any(), $"catalog search finds score actions ({script.CatalogResults.Count})");
+        var (start2, actions) = script.Complete("\taction set_sc");
+        Check(start2 == 8 && actions.Any(a => a.Text == "set_score" && a.Description != null), $"autocomplete after 'action set_sc' offers set_score ({actions.Count})");
+        var (_, conditions) = script.Complete("\tcondition ");
+        Check(conditions.FirstOrDefault()?.Text == "if" && conditions.Count > 5, $"autocomplete after 'condition ' offers if + conditions ({conditions.Count})");
+        var (_, values) = script.Complete("\taction create_object warth");
+        Check(values.Any(v => v.Text == "warthog"), "autocomplete offers engine values (warthog)");
+        Check(script.Maps.Count > 0 && script.TestMap != null, $"Test in game has a map picker ({script.Maps.Count} maps)");
         await Pause(800);
         Shot("script-compiled");
 
@@ -320,11 +356,22 @@ public sealed class Tour
         Check(projects.ActiveName == name && _vm.Baseline!.IsChanged(rel), "switching back loaded the project's weapon");
         var again = await _vm.OpenTagAsync(weapon);
         Check(again?.FindField(magazine)?.Value == "33", "the weapon has the project's magazine size (33)");
+        var diff = await _vm.CompareWithVanillaAsync(rel);
+        var magRow = diff?.Rows.FirstOrDefault(r => r.Detail == magazine);
+        Check(magRow != null && magRow.Vanilla == "32" && magRow.Current == "33", $"Compare shows magazine size 32 → 33 ({diff?.Summary})");
+        await Pause(500);
+        Shot("diff");
+        var lines = Kalo.Core.TextDiff.Compare(new[] { "a", "b", "c" }, new[] { "a", "x", "c" });
+        Check(lines.Count(l => l.Op == '-') == 1 && lines.Count(l => l.Op == '+') == 1, "text diff finds one changed line");
         await Pause(500);
         Shot("project-switched");
 
         string zip = await Task.Run(() => projects.Export(p));
         Check(File.Exists(zip) && new FileInfo(zip).Length > 0, "exported " + System.IO.Path.GetFileName(zip));
+        var imported = await _vm.ImportProjectAsync(zip);
+        Check(imported != null && imported.Name != name && imported.Manifest.Files.Contains(rel, StringComparer.OrdinalIgnoreCase),
+            $"imported the zip as a new project ({imported?.Name}, {imported?.Manifest.Files.Count} file)");
+        if (imported != null) projects.Delete(imported);
         try { File.Delete(zip); } catch { }
 
         await _vm.SwitchProjectCommand.ExecuteAsync(null);

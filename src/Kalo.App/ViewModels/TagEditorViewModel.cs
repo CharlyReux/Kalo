@@ -175,6 +175,9 @@ public partial class TagEditorViewModel : DocumentViewModel
     }
 
     [RelayCommand]
+    private async Task Compare() => await _main.CompareWithVanillaAsync(@"tags\" + Path);
+
+    [RelayCommand]
     private async Task RevertToVanillaAsync() => await _main.RevertTagAsync(this);
 
     [RelayCommand]

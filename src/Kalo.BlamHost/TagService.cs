@@ -139,6 +139,89 @@ namespace Kalo.BlamHost
             return new BlockOpResult { Block = list.FirstOrDefault(), SelectIndex = select };
         }
 
+        /// <summary>
+        /// Field-by-field comparison of a tag with its vanilla version: the current state (unsaved edits included
+        /// when the tag is open) against a temporary copy of HREK's file placed under tags\_kalo_vanilla.
+        /// </summary>
+        public DiffTagResult Diff(string path, string vanillaFile)
+        {
+            path = Normalize(path);
+            var sw = Stopwatch.StartNew();
+            if (!File.Exists(vanillaFile)) throw new FileNotFoundException("No vanilla file", vanillaFile);
+            string tempRel = "_kalo_vanilla\\" + path;
+            string temp = Path.Combine(_tagRoot, tempRel);
+            Directory.CreateDirectory(Path.GetDirectoryName(temp));
+            File.Copy(vanillaFile, temp, true);
+            TagFile current = null, vanilla = null;
+            bool ownCurrent = false;
+            try
+            {
+                if (!_open.TryGetValue(path, out current))
+                {
+                    current = new TagFile(ToTagPath(path));
+                    ownCurrent = true;
+                }
+                vanilla = new TagFile(ToTagPath(tempRel));
+                var a = new Dictionary<string, KeyValuePair<string, string>>();
+                var b = new Dictionary<string, KeyValuePair<string, string>>();
+                int budget = 400000;
+                Flatten(vanilla.Fields, a, 0, ref budget);
+                Flatten(current.Fields, b, 0, ref budget);
+                var result = new DiffTagResult { Entries = new List<DiffEntry>(), FieldsCompared = b.Count, Truncated = budget <= 0 };
+                foreach (var kv in b)
+                {
+                    KeyValuePair<string, string> old;
+                    if (!a.TryGetValue(kv.Key, out old))
+                        result.Entries.Add(new DiffEntry { Path = kv.Key, Name = kv.Value.Key, Current = kv.Value.Value, Kind = DiffKinds.Added });
+                    else if (old.Value != kv.Value.Value)
+                        result.Entries.Add(new DiffEntry { Path = kv.Key, Name = kv.Value.Key, Vanilla = old.Value, Current = kv.Value.Value, Kind = DiffKinds.Changed });
+                }
+                foreach (var kv in a)
+                    if (!b.ContainsKey(kv.Key))
+                        result.Entries.Add(new DiffEntry { Path = kv.Key, Name = kv.Value.Key, Vanilla = kv.Value.Value, Kind = DiffKinds.Removed });
+                if (result.Entries.Count > 2000) { result.Entries = result.Entries.Take(2000).ToList(); result.Truncated = true; }
+                result.Ms = sw.ElapsedMilliseconds;
+                return result;
+            }
+            finally
+            {
+                try { if (vanilla != null) vanilla.Dispose(); } catch (Exception) { }
+                try { if (ownCurrent && current != null) current.Dispose(); } catch (Exception) { }
+                try { File.Delete(temp); } catch (Exception) { }
+                try { Directory.Delete(Path.Combine(_tagRoot, "_kalo_vanilla"), true); } catch (Exception) { }
+            }
+        }
+
+        /// <summary>Every leaf value (and every block's element count) by field path, with its display name.</summary>
+        private static void Flatten(TagField[] fields, Dictionary<string, KeyValuePair<string, string>> into, int depth, ref int budget)
+        {
+            if (fields == null || depth > 24) return;
+            foreach (TagField f in fields)
+            {
+                if (f == null || budget-- <= 0) return;
+                string type = Safe(() => f.FieldType.ToString());
+                if (Hidden.Contains(type) || f is TagFieldExplanation) continue;
+                string path = Safe(() => f.FieldPath) ?? "";
+                string name = Safe(() => f.DisplayName) ?? Safe(() => f.FieldName) ?? "";
+                if (f is TagFieldStruct)
+                {
+                    ITagElementCollection els = ((TagFieldStruct)f).Elements;
+                    if (els != null && els.Count > 0) Flatten(els[0].Fields, into, depth + 1, ref budget);
+                }
+                else if (f is TagFieldBlock || f is TagFieldArray)
+                {
+                    ITagElementCollection els = f is TagFieldBlock ? ((TagFieldBlock)f).Elements : ((TagFieldArray)f).Elements;
+                    int n = els == null ? 0 : els.Count;
+                    into[path] = new KeyValuePair<string, string>(name, n + (n == 1 ? " element" : " elements"));
+                    for (int i = 0; i < n && budget > 0; i++) Flatten(els[i].Fields, into, depth + 1, ref budget);
+                }
+                else
+                {
+                    into[path] = new KeyValuePair<string, string>(name, ValueOf(f) ?? "");
+                }
+            }
+        }
+
         private static void CheckIndex(int index, int count)
         {
             if (index < 0 || index >= count) throw new ArgumentOutOfRangeException("index", "Element " + index + " does not exist.");

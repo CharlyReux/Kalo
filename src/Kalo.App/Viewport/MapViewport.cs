@@ -79,17 +79,46 @@ void main() {
     private double _lastFrame;
     private bool _cameraPlaced;
 
-    private enum Drag { None, Look, Pan, Move }
+    private enum Drag { None, Look, Pan, Move, Axis, Turn }
     private Drag _drag;
     private Point _last;
     private PlacementItem? _dragItem;
     private Vector3 _grabOffset;
     private bool _dragVertical, _moved;
+    private uint _gizmoVao, _gizmoVbo;
+    private const int RingSegments = 48;
+    private int _hoverPart = -1;           // 0..2 axis, 3 ring
+    private Vector3 _axis, _axisOrigin;
+    private float _axisT0, _turnAngle0;
+    private Dictionary<PlacementItem, Vector3> _startPositions = new();
+    private Dictionary<PlacementItem, float> _startYaws = new();
 
     public MapViewport()
     {
         Focusable = true;
         ClipToBounds = true;
+        DragDrop.SetAllowDrop(this, true);
+        AddHandler(DragDrop.DragOverEvent, OnDragOver);
+        AddHandler(DragDrop.DropEvent, OnDrop);
+    }
+
+    // ---- drag & drop: tags from the project tree -------------------------------------------------
+
+    private void OnDragOver(object? sender, DragEventArgs e)
+    {
+        string? tag = e.Data.GetText();
+        e.DragEffects = tag != null && MapEditorViewModel.CategoryFor(tag) != null ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    private async void OnDrop(object? sender, DragEventArgs e)
+    {
+        var map = Map;
+        string? tag = e.Data.GetText();
+        if (map == null || tag == null) return;
+        var (o, d) = Ray(e.GetPosition(this));
+        Vector3 at = HitGeometry(o, d) ?? o + d * 6f;
+        await map.AddTagAtAsync(tag.Trim(), at + new Vector3(0, 0, 0.05f));
+        RequestNextFrameRendering();
     }
 
     private MapEditorViewModel? Map => DataContext as MapEditorViewModel;
@@ -145,6 +174,7 @@ void main() {
             _uLit = _gl.Uniform(_program, "uLit");
             (_cubeVao, _cubeVbo) = Upload(Shapes.CubeTriangles());
             (_edgeVao, _edgeVbo) = Upload(Shapes.CubeEdges());
+            (_gizmoVao, _gizmoVbo) = Upload(Shapes.Gizmo(RingSegments));
             Map?.ReportRenderer("OpenGL " + _gl.Version);
         }
         catch (Exception ex)
@@ -160,6 +190,7 @@ void main() {
         _gl.DeleteVertexArray(_bspVao); _gl.DeleteBuffer(_bspVbo);
         _gl.DeleteVertexArray(_cubeVao); _gl.DeleteBuffer(_cubeVbo);
         _gl.DeleteVertexArray(_edgeVao); _gl.DeleteBuffer(_edgeVbo);
+        _gl.DeleteVertexArray(_gizmoVao); _gl.DeleteBuffer(_gizmoVbo);
         foreach (var m in _models.Values) { _gl.DeleteVertexArray(m.vao); _gl.DeleteBuffer(m.vbo); }
         _models.Clear();
         _gl.DeleteProgram(_program);
@@ -261,7 +292,7 @@ void main() {
         foreach (var item in map.VisibleItems)
         {
             var c = item.Color;
-            if (item == selected) gl.Uniform4(_uColor, 1f, 0.78f, 0.25f, 1f);
+            if (map.IsSelected(item)) gl.Uniform4(_uColor, 1f, 0.78f, 0.25f, 1f);
             else gl.Uniform4(_uColor, c.X, c.Y, c.Z, 1f);
             var model = item.Model;
             if (model != null && model.TriangleCount > 0)
@@ -287,13 +318,27 @@ void main() {
 
         if (selected != null)
         {
-            // Outline on top of everything so the selection is never lost behind walls.
+            // Outlines and the move/turn handles on top of everything, so the selection is never lost behind walls.
             gl.Disable(Gl.DEPTH_TEST);
             gl.Uniform1(_uLit, 0f);
             gl.Uniform4(_uColor, 1f, 0.85f, 0.35f, 1f);
             gl.BindVertexArray(_edgeVao);
-            gl.UniformMatrix(_uModel, selected.OutlineMatrix);
-            gl.DrawArrays(Gl.LINES, 0, 24);
+            foreach (var item in map.Selection)
+            {
+                gl.UniformMatrix(_uModel, item.OutlineMatrix);
+                gl.DrawArrays(Gl.LINES, 0, 24);
+            }
+            gl.BindVertexArray(_gizmoVao);
+            gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(GizmoScale(selected)) * Matrix4x4.CreateTranslation(selected.Position));
+            var colors = new[] { new Vector3(0.95f, 0.3f, 0.3f), new Vector3(0.35f, 0.85f, 0.35f), new Vector3(0.35f, 0.55f, 1f), new Vector3(1f, 0.8f, 0.3f) };
+            for (int part = 0; part < 4; part++)
+            {
+                var c = colors[part];
+                float k = part == _hoverPart || (part < 3 && _drag == Drag.Axis && _axis == Axes[part]) || (part == 3 && _drag == Drag.Turn) ? 1.25f : 0.85f;
+                gl.Uniform4(_uColor, Math.Min(1, c.X * k), Math.Min(1, c.Y * k), Math.Min(1, c.Z * k), 1f);
+                if (part < 3) gl.DrawArrays(Gl.LINES, part * 2, 2);
+                else gl.DrawArrays(Gl.LINES, 6, RingSegments * 2);
+            }
             gl.Enable(Gl.DEPTH_TEST);
         }
         gl.BindVertexArray(0);
@@ -343,6 +388,84 @@ void main() {
         if (_keys.Contains(Key.Q)) move -= Vector3.UnitZ;
         if (move != Vector3.Zero) _eye += Vector3.Normalize(move) * speed;
         return _keys.Overlaps(new[] { Key.W, Key.A, Key.S, Key.D, Key.Q, Key.E });
+    }
+
+    // ---- move / turn handles ------------------------------------------------------------------------
+
+    private static readonly Vector3[] Axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
+
+    /// <summary>Handles keep the same size on screen: about 15% of the distance to the camera.</summary>
+    private float GizmoScale(PlacementItem item) => Math.Max(0.2f, Vector3.Distance(_eye, item.Position) * 0.15f);
+
+    private Point? ToScreen(Vector3 p)
+    {
+        var vp = ViewProj((int)Math.Max(1, Bounds.Width), (int)Math.Max(1, Bounds.Height));
+        var c = Vector4.Transform(new Vector4(p, 1), vp);
+        if (c.W <= 0.001f) return null;
+        return new Point((c.X / c.W + 1) * 0.5 * Bounds.Width, (1 - c.Y / c.W) * 0.5 * Bounds.Height);
+    }
+
+    private static double SegmentDistance(Point p, Point a, Point b)
+    {
+        double vx = b.X - a.X, vy = b.Y - a.Y;
+        double len = vx * vx + vy * vy;
+        double t = len < 1e-9 ? 0 : Math.Clamp(((p.X - a.X) * vx + (p.Y - a.Y) * vy) / len, 0, 1);
+        double dx = a.X + t * vx - p.X, dy = a.Y + t * vy - p.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    /// <summary>Which handle is under the mouse: 0/1/2 = x/y/z arrow, 3 = turn ring, -1 = none.</summary>
+    private int HandleAt(Point mouse)
+    {
+        var sel = Map?.Selected;
+        if (sel == null) return -1;
+        float s = GizmoScale(sel);
+        var origin = ToScreen(sel.Position);
+        if (origin == null) return -1;
+        int best = -1;
+        double bestDistance = 8;
+        for (int a = 0; a < 3; a++)
+        {
+            var tip = ToScreen(sel.Position + Axes[a] * s);
+            if (tip == null) continue;
+            double dist = SegmentDistance(mouse, origin.Value, tip.Value);
+            if (dist < bestDistance) { bestDistance = dist; best = a; }
+        }
+        Point? prev = null;
+        for (int i = 0; i <= RingSegments; i++)
+        {
+            float t = i * MathF.Tau / RingSegments;
+            var q = ToScreen(sel.Position + new Vector3(MathF.Cos(t), MathF.Sin(t), 0) * (s * 0.75f));
+            if (q != null && prev != null)
+            {
+                double dist = SegmentDistance(mouse, prev.Value, q.Value);
+                if (dist < bestDistance) { bestDistance = dist; best = 3; }
+            }
+            prev = q;
+        }
+        return best;
+    }
+
+    /// <summary>Parameter t of the point on the line origin + t·axis closest to the ray (o, d).</summary>
+    public static float ClosestOnAxis(Vector3 origin, Vector3 axis, Vector3 o, Vector3 d)
+    {
+        Vector3 w = origin - o;
+        float a = Vector3.Dot(axis, axis), b = Vector3.Dot(axis, d), c = Vector3.Dot(d, d);
+        float dd = Vector3.Dot(axis, w), e = Vector3.Dot(d, w);
+        float denom = a * c - b * b;
+        return MathF.Abs(denom) < 1e-6f ? 0 : (b * e - c * dd) / denom;
+    }
+
+    private float TurnAngle(Vector3 center, Vector3 o, Vector3 d)
+    {
+        var hit = HitPlane(o, d, center, Vector3.UnitZ) ?? center + Vector3.UnitX;
+        return MathF.Atan2(hit.Y - center.Y, hit.X - center.X) * 180f / MathF.PI;
+    }
+
+    private void RememberSelection(MapEditorViewModel map)
+    {
+        _startPositions = map.Selection.ToDictionary(i => i, i => i.Position);
+        _startYaws = map.Selection.ToDictionary(i => i, i => i.Yaw);
     }
 
     // ---- picking ---------------------------------------------------------------------------------
@@ -428,20 +551,53 @@ void main() {
         else if (point.Properties.IsLeftButtonPressed && map != null)
         {
             var (o, d) = Ray(point.Position);
-            var hit = Pick(o, d);
-            map.Selected = hit;
-            if (hit != null)
+            int handle = e.KeyModifiers.HasFlag(KeyModifiers.Control) ? -1 : HandleAt(point.Position);
+            if (handle >= 0 && map.Selected != null)
             {
-                _drag = Drag.Move;
-                _dragItem = hit;
-                _dragVertical = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+                var sel = map.Selected;
+                RememberSelection(map);
                 _moved = false;
-                var plane = HitPlane(o, d, hit.Position, DragNormal(_dragVertical));
-                _grabOffset = plane.HasValue ? plane.Value - hit.Position : Vector3.Zero;
+                _dragItem = sel;
+                if (handle < 3)
+                {
+                    _drag = Drag.Axis;
+                    _axis = Axes[handle];
+                    _axisOrigin = sel.Position;
+                    _axisT0 = ClosestOnAxis(_axisOrigin, _axis, o, d);
+                }
+                else
+                {
+                    _drag = Drag.Turn;
+                    _axisOrigin = sel.Position;
+                    _turnAngle0 = TurnAngle(_axisOrigin, o, d);
+                }
             }
             else
             {
-                map.CursorPoint = HitGeometry(o, d);
+                var hit = Pick(o, d);
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+                {
+                    if (hit != null) map.ToggleSelection(hit);
+                }
+                else
+                {
+                    if (hit == null || !map.IsSelected(hit)) map.Selected = hit;
+                    else if (map.Selected != hit) map.MakePrimary(hit); // keep the group
+                    if (hit != null)
+                    {
+                        _drag = Drag.Move;
+                        _dragItem = hit;
+                        _dragVertical = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+                        _moved = false;
+                        RememberSelection(map);
+                        var plane = HitPlane(o, d, hit.Position, DragNormal(_dragVertical));
+                        _grabOffset = plane.HasValue ? plane.Value - hit.Position : Vector3.Zero;
+                    }
+                    else
+                    {
+                        map.CursorPoint = HitGeometry(o, d);
+                    }
+                }
             }
         }
         e.Pointer.Capture(this);
@@ -459,7 +615,17 @@ void main() {
     protected override void OnPointerMoved(PointerEventArgs e)
     {
         base.OnPointerMoved(e);
-        if (_drag == Drag.None) return;
+        if (_drag == Drag.None)
+        {
+            int hover = HandleAt(e.GetPosition(this));
+            if (hover != _hoverPart)
+            {
+                _hoverPart = hover;
+                Cursor = hover >= 0 ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+                RequestNextFrameRendering();
+            }
+            return;
+        }
         var pos = e.GetPosition(this);
         double dx = pos.X - _last.X, dy = pos.Y - _last.Y;
         _last = pos;
@@ -475,14 +641,32 @@ void main() {
             case Drag.Move when _dragItem != null && Map != null:
             {
                 var (o, d) = Ray(pos);
-                var hit = HitPlane(o, d, _dragItem.Position, DragNormal(_dragVertical));
+                Vector3 start = _startPositions.TryGetValue(_dragItem, out var sp) ? sp : _dragItem.Position;
+                var hit = HitPlane(o, d, start, DragNormal(_dragVertical));
                 if (hit == null) break;
                 Vector3 target = hit.Value - _grabOffset;
-                Vector3 p = _dragItem.Position;
-                p = _dragVertical ? new Vector3(p.X, p.Y, target.Z) : new Vector3(target.X, target.Y, p.Z);
+                Vector3 p = _dragVertical ? new Vector3(start.X, start.Y, target.Z) : new Vector3(target.X, target.Y, start.Z);
                 if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
                     p = new Vector3(MathF.Round(p.X * 4) / 4, MathF.Round(p.Y * 4) / 4, MathF.Round(p.Z * 4) / 4);
-                Map.MoveLocal(_dragItem, p);
+                Map.MoveSelectionLocal(_startPositions, p - start);
+                _moved = true;
+                break;
+            }
+            case Drag.Axis when Map != null:
+            {
+                var (o, d) = Ray(pos);
+                float t = ClosestOnAxis(_axisOrigin, _axis, o, d) - _axisT0;
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) t = MathF.Round(t * 4) / 4;
+                Map.MoveSelectionLocal(_startPositions, _axis * t);
+                _moved = true;
+                break;
+            }
+            case Drag.Turn when Map != null:
+            {
+                var (o, d) = Ray(pos);
+                float delta = TurnAngle(_axisOrigin, o, d) - _turnAngle0;
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) delta = MathF.Round(delta / 15f) * 15f;
+                Map.RotateSelectionLocal(_startYaws, delta);
                 _moved = true;
                 break;
             }
@@ -493,12 +677,11 @@ void main() {
     protected override async void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        var item = _dragItem;
-        bool moved = _drag == Drag.Move && _moved;
+        bool edited = (_drag is Drag.Move or Drag.Axis or Drag.Turn) && _moved;
         _drag = Drag.None;
         _dragItem = null;
         e.Pointer.Capture(null);
-        if (moved && item != null && Map != null) await Map.CommitMoveAsync(item);
+        if (edited && Map != null) await Map.CommitSelectionAsync();
     }
 
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
@@ -524,6 +707,10 @@ void main() {
             case Key.Delete when map?.Selected != null:
                 e.Handled = true;
                 await map.DeleteSelectedCommand.ExecuteAsync(null);
+                return;
+            case Key.A when ctrl && map != null:
+                foreach (var item in map.OutlinerItems.Where(i => !map.IsSelected(i))) map.ToggleSelection(item);
+                e.Handled = true;
                 return;
             case Key.D when ctrl && map?.Selected != null:
                 e.Handled = true;
@@ -584,6 +771,21 @@ internal static class Shapes
         Face(-Vector3.UnitY, Vector3.UnitX, Vector3.UnitZ);
         Face(Vector3.UnitZ, Vector3.UnitX, Vector3.UnitY);
         Face(-Vector3.UnitZ, Vector3.UnitY, Vector3.UnitX);
+        return list.ToArray();
+    }
+
+    /// <summary>Three unit axis lines (x, y, z) then a ring of radius 0.75 in the horizontal plane, as line pairs.</summary>
+    public static float[] Gizmo(int segments)
+    {
+        var list = new List<float>();
+        void V(Vector3 p) { list.Add(p.X); list.Add(p.Y); list.Add(p.Z); list.Add(0); list.Add(0); list.Add(1); }
+        foreach (var a in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ }) { V(Vector3.Zero); V(a); }
+        for (int i = 0; i < segments; i++)
+        {
+            float t0 = i * MathF.Tau / segments, t1 = (i + 1) * MathF.Tau / segments;
+            V(new Vector3(MathF.Cos(t0), MathF.Sin(t0), 0) * 0.75f);
+            V(new Vector3(MathF.Cos(t1), MathF.Sin(t1), 0) * 0.75f);
+        }
         return list.ToArray();
     }
 

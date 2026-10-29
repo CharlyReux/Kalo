@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             x:Class="Kalo.App.Views.DiffView"
+             x:DataType="vm:DiffViewModel">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="12,8">
+      <TextBlock Text="{Binding Summary}" Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
+    </Border>
+    <Border DockPanel.Dock="Top" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Height="26">
+      <Grid ColumnDefinitions="22,2*,1.5*,1.5*" Margin="8,0">
+        <TextBlock Grid.Column="1" Text="Field / line" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="2" Text="Vanilla" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+        <TextBlock Grid.Column="3" Text="This mod" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+      </Grid>
+    </Border>
+    <ListBox ItemsSource="{Binding Rows}" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+      <ListBox.ItemTemplate>
+        <DataTemplate DataType="vm:DiffRow">
+          <Grid ColumnDefinitions="22,2*,1.5*,1.5*" MinHeight="22">
+            <TextBlock Text="{Binding Marker}" FontFamily="{StaticResource KMono}" FontWeight="Bold" VerticalAlignment="Center"
+                       Classes.added="{Binding IsAdded}" Classes.removed="{Binding IsRemoved}" Classes.changed="{Binding IsChanged}" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+              <TextBlock Text="{Binding Label}" FontSize="12.5" TextTrimming="CharacterEllipsis" />
+              <TextBlock Text="{Binding Detail}" FontSize="10.5" Foreground="{StaticResource KFaint}" FontFamily="{StaticResource KMono}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Detail}" />
+            </StackPanel>
+            <TextBlock Grid.Column="2" Text="{Binding Vanilla}" FontFamily="{StaticResource KMono}" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,8,0" Classes.removed="{Binding IsRemoved}" />
+            <TextBlock Grid.Column="3" Text="{Binding Current}" FontFamily="{StaticResource KMono}" FontSize="12" VerticalAlignment="Center" TextWrapping="Wrap" Classes.added="{Binding IsAdded}" Classes.changed="{Binding IsChanged}" />
+          </Grid>
+        </DataTemplate>
+      </ListBox.ItemTemplate>
+    </ListBox>
+  </DockPanel>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.added"><Setter Property="Foreground" Value="{StaticResource KSuccess}" /></Style>
+    <Style Selector="TextBlock.removed"><Setter Property="Foreground" Value="{StaticResource KError}" /></Style>
+    <Style Selector="TextBlock.changed"><Setter Property="Foreground" Value="{StaticResource KWarning}" /></Style>
+  </UserControl.Styles>
+</UserControl>

@@ -39,6 +39,7 @@ namespace Kalo.Protocol
         public const string PlacementOp = "placementOp";
         public const string ExportLevelMesh = "exportLevelMesh";
         public const string ExportModelMeshes = "exportModelMeshes";
+        public const string DiffTag = "diffTag";
         public const string MegaloCompile = "megaloCompile";
         public const string Shutdown = "shutdown";
     }
@@ -364,5 +365,39 @@ namespace Kalo.Protocol
     public static class ModelMeshNames
     {
         public static string FileName(string renderModel) => renderModel.Replace('\\', '_').Replace('/', '_') + ".kmesh";
+    }
+
+    // ---- compare with vanilla -------------------------------------------------------------------
+
+    public sealed class DiffTagParams
+    {
+        /// <summary>Tag path relative to tags\, with extension.</summary>
+        public string Path { get; set; }
+        /// <summary>The vanilla file (HREK's copy). The host copies it into the workspace for the comparison and deletes it after.</summary>
+        public string VanillaFile { get; set; }
+    }
+
+    public static class DiffKinds
+    {
+        public const string Changed = "changed";
+        public const string Added = "added";
+        public const string Removed = "removed";
+    }
+
+    public sealed class DiffEntry
+    {
+        public string Path { get; set; }
+        public string Name { get; set; }
+        public string Vanilla { get; set; }
+        public string Current { get; set; }
+        public string Kind { get; set; }
+    }
+
+    public sealed class DiffTagResult
+    {
+        public List<DiffEntry> Entries { get; set; }
+        public int FieldsCompared { get; set; }
+        public bool Truncated { get; set; }
+        public long Ms { get; set; }
     }
 }

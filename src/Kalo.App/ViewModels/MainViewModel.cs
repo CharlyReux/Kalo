@@ -59,6 +59,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public TagEditorViewModel? ActiveTab => ActiveDocument as TagEditorViewModel;
     public MapEditorViewModel? ActiveMap => ActiveDocument as MapEditorViewModel;
     public ScriptEditorViewModel? ActiveScript => ActiveDocument as ScriptEditorViewModel;
+    public DiffViewModel? ActiveDiff => ActiveDocument as DiffViewModel;
     [ObservableProperty] private string _searchText = "";
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private string _sidePanel = "explorer";
@@ -81,6 +82,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public bool HasTab => ActiveTab != null;
     public bool HasMap => ActiveMap != null;
     public bool HasScript => ActiveScript != null;
+    public bool HasDiff => ActiveDiff != null;
     public bool HasDocument => ActiveDocument != null;
     public string InspectorTitle => HasMap ? "OBJECT" : HasScript ? "GAMETYPE SCRIPT" : "FIELD";
     public bool NoTab => ActiveDocument == null;
@@ -292,6 +294,79 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         await map.ReloadAsync();
         Log($"Opened map {scenarioPath}: {map.Status}");
         return map;
+    }
+
+    // ---- compare with vanilla --------------------------------------------------------------------
+
+    [RelayCommand]
+    private async Task CompareChange(ChangeItem? change)
+    {
+        if (change != null) await CompareWithVanillaAsync(change.Path);
+    }
+
+    /// <summary>Opens a diff tab: tag fields that differ from HREK's version, or changed lines of a text file.</summary>
+    public async Task<DiffViewModel?> CompareWithVanillaAsync(string workspacePath)
+    {
+        if (Paths == null) return null;
+        var existing = Tabs.OfType<DiffViewModel>().FirstOrDefault(t => t.File.Equals(workspacePath, StringComparison.OrdinalIgnoreCase));
+        if (existing != null) Tabs.Remove(existing);
+        var diff = new DiffViewModel(workspacePath);
+        Tabs.Add(diff);
+        ActiveDocument = diff;
+        string vanilla = System.IO.Path.Combine(Paths.Hrek, workspacePath);
+        string current = System.IO.Path.Combine(Paths.Workspace, workspacePath);
+        try
+        {
+            if (!File.Exists(vanilla)) { diff.Summary = "This file is new: it does not exist in vanilla HREK."; return diff; }
+            if (!File.Exists(current)) { diff.Summary = "This mod deletes the vanilla file."; return diff; }
+            if (workspacePath.StartsWith(@"tags\", StringComparison.OrdinalIgnoreCase))
+            {
+                if (Host == null) { diff.Summary = "The Blam Host is not running."; return diff; }
+                var r = await Host.DiffTagAsync(workspacePath.Substring(5), vanilla);
+                foreach (var e in r.Entries ?? new())
+                    diff.Rows.Add(new DiffRow(e.Kind ?? "changed", FieldLabels.For(e.Name, e.Name), e.Path ?? "", e.Vanilla ?? "", e.Current ?? ""));
+                int changed = diff.Rows.Count(x => x.IsChanged), added = diff.Rows.Count(x => x.IsAdded), removed = diff.Rows.Count(x => x.IsRemoved);
+                diff.Summary = diff.Rows.Count == 0
+                    ? $"No field differs from vanilla ({r.FieldsCompared:N0} fields compared): only the file itself was rewritten."
+                    : $"{changed} changed, {added} added, {removed} removed field(s) out of {r.FieldsCompared:N0} compared in {r.Ms} ms" + (r.Truncated ? " (list cut short)" : "") + ".";
+            }
+            else
+            {
+                diff.IsText = true;
+                var a = await File.ReadAllLinesAsync(vanilla);
+                var b = await File.ReadAllLinesAsync(current);
+                var lines = await Task.Run(() => TextDiff.Compare(a, b));
+                foreach (var l in lines)
+                    diff.Rows.Add(new DiffRow(l.Op == ' ' ? "same" : l.Op.ToString(),
+                        l.Op == '…' ? "…" : $"{l.OldNumber?.ToString() ?? "·"} → {l.NewNumber?.ToString() ?? "·"}", "",
+                        l.Op == '+' ? "" : l.Text, l.Op == '-' ? "" : l.Text));
+                diff.Summary = $"{lines.Count(l => l.Op == '+')} line(s) added, {lines.Count(l => l.Op == '-')} removed ({a.Length} → {b.Length} lines).";
+            }
+        }
+        catch (Exception ex)
+        {
+            diff.Summary = "Could not compare: " + ex.Message;
+        }
+        return diff;
+    }
+
+    // ---- import a mod ---------------------------------------------------------------------------------
+
+    public async Task<ModProject?> ImportProjectAsync(string zipPath)
+    {
+        if (ModProjects == null) return null;
+        try
+        {
+            var p = await Task.Run(() => ModProjects.Import(zipPath));
+            Log($"Imported {System.IO.Path.GetFileName(zipPath)} as project {p.Name} ({p.Manifest.Files.Count} files). Switch to it to load it into the workspace.");
+            RefreshProjects();
+            return p;
+        }
+        catch (Exception ex)
+        {
+            AddProblem("error", "Import failed: " + ex.Message, "Projects");
+            return null;
+        }
     }
 
     private void FindScripts()
@@ -640,6 +715,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         OnPropertyChanged(nameof(ActiveTab));
         OnPropertyChanged(nameof(ActiveMap));
         OnPropertyChanged(nameof(ActiveScript));
+        OnPropertyChanged(nameof(ActiveDiff));
+        OnPropertyChanged(nameof(HasDiff));
         OnPropertyChanged(nameof(HasTab));
         OnPropertyChanged(nameof(HasMap));
         OnPropertyChanged(nameof(HasScript));

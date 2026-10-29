@@ -21,6 +21,68 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     public ScriptEditorViewModel(MainViewModel main, string path) : base(path)
     {
         _main = main;
+        _testMap = main.SelectedScenario;
+    }
+
+    /// <summary>Maps the gametype can be tested on (the same list as the Play menu).</summary>
+    public ObservableCollection<string> Maps => _main.Scenarios;
+    [ObservableProperty] private string? _testMap;
+
+    // ---- completion --------------------------------------------------------------------------
+
+    private static readonly string[] Keywords =
+    {
+        "trigger", "end", "action", "condition", "if", "not", "temporary", "include", "localized_include", "override", "option",
+        "game_options", "string_table", "constants", "loadout", "loadout_palette", "teams", "team", "engine_data", "player_rating",
+        "map_permissions", "variables", "requisition_palette", "hud_widgets", "map_object", "game_stats", "networked", "local",
+        "true", "false", "number", "object", "player", "timer", "general", "initialization", "local_initialization", "pregame",
+        "current_player", "current_team", "current_object", "for_each", "designator",
+    };
+
+    private readonly HashSet<string> _scriptNames = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Suggestions for the word being typed at the end of <paramref name="lineBeforeCaret"/>: actions after "action",
+    /// conditions after "condition", otherwise keywords, the engine's value lists and the script's own names.
+    /// Returns where the word starts in the line.
+    /// </summary>
+    public (int Start, List<CompletionItem> Items) Complete(string lineBeforeCaret, bool explicitRequest = false)
+    {
+        int start = lineBeforeCaret.Length;
+        while (start > 0 && (char.IsLetterOrDigit(lineBeforeCaret[start - 1]) || lineBeforeCaret[start - 1] == '_')) start--;
+        string prefix = lineBeforeCaret[start..];
+        string before = lineBeforeCaret[..start].TrimEnd();
+        string last = before.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+        var catalog = _main.MegaloCatalog;
+        IEnumerable<CompletionItem> pool;
+        bool contextual = false;
+        if (last == "action" && !before.EndsWith('.'))
+        {
+            pool = (catalog?.Actions ?? new()).Select(a => new CompletionItem(a.Name!, "action", a.Description));
+            contextual = true;
+        }
+        else if (last == "condition")
+        {
+            pool = new[] { new CompletionItem("if", "keyword", "condition if <a> <op> <b>: compare two values") }
+                .Concat((catalog?.Conditions ?? new()).Select(c => new CompletionItem(c.Name!, "condition", c.Description)));
+            contextual = true;
+        }
+        else
+        {
+            pool = Keywords.Select(k => new CompletionItem(k, "keyword", null))
+                .Concat(_scriptNames.Select(n => new CompletionItem(n, "script", "Declared in this script (from the last compile)")))
+                .Concat((catalog?.Lists ?? new()).SelectMany(kv => kv.Value.Select(v => new CompletionItem(v, kv.Key, null))));
+        }
+        if (!contextual && !explicitRequest && prefix.Length < 2) return (start, new List<CompletionItem>());
+        var items = pool
+            .Where(i => prefix.Length == 0 || i.Text.Contains(prefix, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(i => i.Text).Select(g => g.First())
+            .OrderBy(i => i.Text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(i => contextual && i.Kind == "keyword" ? 0 : 1) // "condition if" first
+            .ThenBy(i => i.Text, StringComparer.OrdinalIgnoreCase)
+            .Take(300)
+            .ToList();
+        return (start, items);
     }
 
     public override string Badge => "script";
@@ -134,8 +196,12 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             Stat("HUD widgets", "HudWidgetsUsed");
             Stat("Encoded size (bytes)", "EncodedSize");
             Variables.Clear();
+            _scriptNames.Clear();
             foreach (var kv in r.Variables ?? new())
+            {
                 if (kv.Value.Count > 0) Variables.Add($"{kv.Key}: {string.Join(", ", kv.Value)}");
+                foreach (var name in kv.Value) if (!string.IsNullOrWhiteSpace(name)) _scriptNames.Add(name);
+            }
             OnPropertyChanged(nameof(HasMessages));
             CompileOk = r.Succeeded;
             int errors = Messages.Count(m => m.IsError);
@@ -164,6 +230,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         if (_main.Host == null || _main.Paths == null) return;
         string name = "kalo_" + System.IO.Path.GetFileNameWithoutExtension(Path);
         string mglo = System.IO.Path.Combine(_main.Paths.Workspace, "maps", "megalo", name + ".mglo");
+        if (!string.IsNullOrEmpty(TestMap)) _main.SelectedScenario = TestMap;
         await CompileAsync(mglo);
         if (!CompileOk) return;
         if (!File.Exists(mglo)) { CompileSummary = "The compiler did not produce a game engine to deploy."; return; }
@@ -208,6 +275,9 @@ public sealed record ScriptMessage(int Line, int Start, int Length, string Sever
 }
 
 public sealed record StatRow(string Label, string Value);
+
+/// <summary>One autocomplete suggestion: the word, where it comes from (action, condition, weapons...), its signature or help.</summary>
+public sealed record CompletionItem(string Text, string Kind, string? Description);
 
 /// <summary>A script in the Gametypes panel.</summary>
 public sealed record ScriptFile(string Name, string RelativePath, string Folder);

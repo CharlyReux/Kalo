@@ -13,6 +13,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // Tags can be dragged from the project tree and the search results (onto the map view).
+        foreach (var source in new Control[] { ExplorerTree, SearchList })
+        {
+            source.AddHandler(PointerPressedEvent, DragSource_Pressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
+            source.AddHandler(PointerMovedEvent, DragSource_Moved, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
+        }
         Opened += OnOpened;
         DataContextChanged += (_, _) =>
         {
@@ -21,6 +27,32 @@ public partial class MainWindow : Window
     }
 
     private MainViewModel? Vm => DataContext as MainViewModel;
+
+    private Point? _dragStart;
+    private string? _dragTag;
+
+    private void DragSource_Pressed(object? sender, PointerPressedEventArgs e)
+    {
+        _dragStart = null;
+        _dragTag = (e.Source as StyledElement)?.DataContext switch
+        {
+            ExplorerNode { IsFolder: false, TagPath: { } t } => t,
+            SearchResult r => r.TagPath,
+            _ => null,
+        };
+        if (_dragTag != null && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) _dragStart = e.GetPosition(this);
+    }
+
+    private async void DragSource_Moved(object? sender, PointerEventArgs e)
+    {
+        if (_dragStart == null || _dragTag == null || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) return;
+        var p = e.GetPosition(this);
+        if (Math.Abs(p.X - _dragStart.Value.X) + Math.Abs(p.Y - _dragStart.Value.Y) < 8) return;
+        _dragStart = null;
+        var data = new DataObject();
+        data.Set(DataFormats.Text, _dragTag);
+        await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy);
+    }
 
     private void OnOutputChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {

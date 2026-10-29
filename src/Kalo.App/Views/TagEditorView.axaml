@@ -9,6 +9,8 @@
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
       <DockPanel Margin="10,5">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="outline" Content="Compare" Command="{Binding CompareCommand}" IsEnabled="{Binding DiffersFromVanilla}"
+                  ToolTip.Tip="List the fields that differ from the vanilla HREK tag (unsaved edits included)" />
           <Button Classes="outline" Content="Revert to vanilla" Command="{Binding RevertToVanillaCommand}" IsEnabled="{Binding DiffersFromVanilla}"
                   ToolTip.Tip="Put the original HREK version of this tag back" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S). A running game reloads it." />

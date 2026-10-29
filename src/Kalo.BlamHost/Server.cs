@@ -121,6 +121,9 @@ namespace Kalo.BlamHost
                 case Methods.ExportModelMeshes:
                     var models = Params<ExportModelMeshesParams>(r);
                     return LevelMeshService.ExportModels(models.RenderModels, models.OutputFolder);
+                case Methods.DiffTag:
+                    var diff = Params<DiffTagParams>(r);
+                    return tags.Diff(diff.Path, diff.VanillaFile);
                 case Methods.Shutdown:
                     return true;
                 default:
