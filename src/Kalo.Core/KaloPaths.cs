@@ -44,13 +44,16 @@ public sealed class KaloPaths
     /// <summary>The Blam Host exe: next to the app (blamhost\) when deployed, else the build output in src.</summary>
     public string FindBlamHost()
     {
+        // A test build (bin\test\...) uses the test build of the host next to it.
+        bool test = AppContext.BaseDirectory.Contains(Path.Combine("bin", "test"), StringComparison.OrdinalIgnoreCase);
         string[] candidates =
         {
             Path.Combine(AppContext.BaseDirectory, "blamhost", "kalo-blamhost.exe"),
+            test ? Path.Combine(Repo, "src", "Kalo.BlamHost", "bin", "test", "Debug", "net48", "kalo-blamhost.exe") : "",
             Path.Combine(Repo, "src", "Kalo.BlamHost", "bin", "Debug", "net48", "kalo-blamhost.exe"),
             Path.Combine(Repo, "src", "Kalo.BlamHost", "bin", "Release", "net48", "kalo-blamhost.exe"),
         };
-        return candidates.FirstOrDefault(File.Exists)
+        return candidates.Where(c => c.Length > 0).FirstOrDefault(File.Exists)
             ?? throw new FileNotFoundException("kalo-blamhost.exe not found. Build the solution first.");
     }
 

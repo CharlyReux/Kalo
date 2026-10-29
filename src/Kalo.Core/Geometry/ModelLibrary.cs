@@ -10,7 +10,7 @@ public sealed class ModelLibrary
 
     public ModelLibrary(KaloPaths paths) => _paths = paths;
 
-    public string Folder => Path.Combine(_paths.KaloData, "cache", "models");
+    public string Folder => Path.Combine(_paths.KaloData, "cache", "models-v2"); // v2: decompressed vertex positions
 
     public Mesh? Get(string? renderModel) => renderModel != null && _meshes.TryGetValue(renderModel, out var m) ? m : null;
 

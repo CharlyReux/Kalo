@@ -11,4 +11,11 @@
     <Deterministic>true</Deterministic>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
   </PropertyGroup>
+  <!--
+    Test builds (the Kalo runner passes -p:KaloTestBuild=true) go to bin\test\ so they never fight with a Kalo
+    you have open from bin\Debug\ (a running Kalo locks its own files).
+  -->
+  <PropertyGroup Condition="'$(KaloTestBuild)' == 'true'">
+    <BaseOutputPath>$(MSBuildProjectDirectory)\bin\test\</BaseOutputPath>
+  </PropertyGroup>
 </Project>
