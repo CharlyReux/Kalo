@@ -121,6 +121,52 @@ public sealed class Tour
         return _failures == 0 ? 0 : 1;
     }
 
+    /// <summary>--megalo-play-test: compile juggernaut, deploy it and start Sword Slayer with it; collect game log evidence.</summary>
+    public async Task<int> MegaloPlayAsync()
+    {
+        Say("megalo play test started");
+        string? mglo = null;
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            var file = _vm.Scripts.FirstOrDefault(s => s.Name == "juggernaut") ?? _vm.Scripts.First();
+            var script = await _vm.OpenScriptAsync(file.RelativePath);
+            if (!Check(script != null, "opened " + file.Name)) return 1;
+            var lines = new List<string>();
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Output += l => { lock (lines) lines.Add(l); };
+            _vm.Game.Loaded += () => loaded.TrySetResult();
+            _vm.Game.Exited += _ => loaded.TrySetException(new Exception("the game exited while loading"));
+            await script!.TestInGameCommand.ExecuteAsync(null);
+            mglo = System.IO.Path.Combine(_vm.Paths!.Workspace, "maps", "megalo", "kalo_" + file.Name + ".mglo");
+            Check(script.CompileOk && File.Exists(mglo), $"compiled and deployed {System.IO.Path.GetFileName(mglo)} ({(File.Exists(mglo) ? new FileInfo(mglo).Length : 0)} bytes)");
+            Check(_vm.IsGameRunning, "started the game with the gametype");
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, "the map loaded");
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            string[] keys = { "megalo", "game engine", "game_engine", "variant", "juggernaut", "load_binary" };
+            List<string> evidence;
+            lock (lines) evidence = lines.Where(l => keys.Any(k => l.Contains(k, StringComparison.OrdinalIgnoreCase))).Take(25).ToList();
+            Say($"{evidence.Count} game log lines mention the gametype:");
+            foreach (var l in evidence) Say("   " + l);
+            Check(!evidence.Any(l => l.Contains("load_binary_game_engine", StringComparison.OrdinalIgnoreCase) && (l.Contains("fail", StringComparison.OrdinalIgnoreCase) || l.Contains("unknown", StringComparison.OrdinalIgnoreCase))),
+                "no load_binary_game_engine failure in the log");
+        }
+        catch (Exception ex)
+        {
+            Check(false, "unexpected error: " + ex.Message);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+            if (mglo != null) try { File.Delete(mglo); } catch { }
+        }
+        Say(_failures == 0 ? "MEGALOPLAY PASS" : $"MEGALOPLAY FAIL ({_failures})");
+        return _failures == 0 ? 0 : 1;
+    }
+
     // ---- blocks and references -------------------------------------------------------------------
 
     private async Task Blocks()

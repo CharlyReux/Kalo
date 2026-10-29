@@ -216,6 +216,8 @@ namespace Kalo.Protocol
         public string IncludeFolder { get; set; }
         /// <summary>Where the compiled variant goes. Null = do not write it.</summary>
         public string OutputFolder { get; set; }
+        /// <summary>When set and the script compiles, the engine (as MegaloEdit deploys it, .mglo) is written here.</summary>
+        public string MgloFile { get; set; }
     }
 
     public sealed class MegaloMessage

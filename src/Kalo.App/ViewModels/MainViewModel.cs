@@ -485,12 +485,17 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     private bool CanPlay() => !IsGameRunning;
 
     [RelayCommand(CanExecute = nameof(CanPlay))]
-    private void Play()
+    private void Play() => StartGame(Array.Empty<string>(), null);
+
+    /// <summary>Starts reach_tag_test on the selected map, optionally running console commands first.</summary>
+    public void StartGame(IReadOnlyList<string> initCommands, string? note)
     {
         if (Game == null || SelectedScenario == null) return;
+        if (IsGameRunning) Game.Stop();
         try
         {
-            Game.Start(SelectedScenario);
+            Game.Start(SelectedScenario, initCommands);
+            if (note != null) Log(note);
             IsGameRunning = true;
             GameStatus = "Game loading " + System.IO.Path.GetFileName(SelectedScenario) + "…";
             GameBrush = Brushes.Orange;

@@ -13,6 +13,8 @@
       <DockPanel Margin="10,5">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
           <Button Classes="outline" Content="Compile (F7)" Command="{Binding CompileCommand}" />
+          <Button Classes="outline" Content="Test in game" Command="{Binding TestInGameCommand}"
+                  ToolTip.Tip="Compile, deploy to maps\megalo and start the map picked at the top with this gametype" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">

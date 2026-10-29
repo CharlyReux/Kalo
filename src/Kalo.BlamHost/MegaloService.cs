@@ -99,6 +99,12 @@ namespace Kalo.BlamHost
                 Variables = new Dictionary<string, List<string>>(),
                 OutputFiles = write ? Directory.GetFiles(output).Where(f => File.GetLastWriteTimeUtc(f) >= before).ToList() : new List<string>()
             };
+            if (r.Succeeded && !string.IsNullOrEmpty(p.MgloFile) && r.SerializedEngine != null && r.SerializedEngine.Length > 0)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(p.MgloFile));
+                File.WriteAllBytes(p.MgloFile, r.SerializedEngine);
+                result.OutputFiles.Add(p.MgloFile);
+            }
             M.EngineStats s = r.Stats;
             foreach (var f in typeof(M.EngineStats).GetFields())
                 result.Stats[f.Name] = Convert.ToInt64(f.GetValue(s));

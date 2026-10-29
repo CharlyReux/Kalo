@@ -41,7 +41,9 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   rotation and adds new objects from the scenario's palettes where you last clicked the level.
 - Gametypes (third icon on the left): the Megalo scripts from data\multiplayer\megalo. F7 compiles with
   HREK's own compiler: errors with line numbers, the gametype budget, declared variables, and a searchable list
-  of every action and condition with its description (double-click inserts it).
+  of every action and condition with its description (double-click inserts it). "Test in game" compiles,
+  deploys the engine to maps\megalo\kalo_<name>.mglo in the workspace (as MegaloEdit does for a devkit) and
+  starts the map picked at the top with `load_binary_game_engine kalo_<name>` in bonobo_init.txt.
 - Mod projects (fourth icon): a project is a small folder in Kalo\projects holding only the files your mod
   changes. Every save is recorded in the active project; switching projects puts the shared workspace back to
   vanilla and loads the other project's files; Export zips a project into Kalo\exports.

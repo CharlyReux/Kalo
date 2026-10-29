@@ -97,7 +97,9 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     }
 
     [RelayCommand]
-    public async Task Compile()
+    public Task Compile() => CompileAsync(null);
+
+    private async Task CompileAsync(string? mgloFile)
     {
         if (_main.Host == null || _main.Paths == null) return;
         CompileSummary = "Compiling…";
@@ -109,7 +111,8 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 ObjectLists = _main.Paths.MegaloObjectLists,
                 IncludeFolder = _main.Paths.MegaloSource,
                 Text = Text,
-                OutputFolder = output
+                OutputFolder = output,
+                MgloFile = mgloFile
             });
             Messages.Clear();
             foreach (var m in r.Messages ?? new())
@@ -149,6 +152,24 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             _main.AddProblem("error", ex.Message, Path);
             if (ex.EngineHalted) await _main.RestartHostAsync();
         }
+    }
+
+    /// <summary>
+    /// Compiles, deploys the engine to maps\megalo\kalo_&lt;name&gt;.mglo in the workspace (as MegaloEdit does for a devkit)
+    /// and starts the selected map with load_binary_game_engine, so the game plays this script.
+    /// </summary>
+    [RelayCommand]
+    private async Task TestInGame()
+    {
+        if (_main.Host == null || _main.Paths == null) return;
+        string name = "kalo_" + System.IO.Path.GetFileNameWithoutExtension(Path);
+        string mglo = System.IO.Path.Combine(_main.Paths.Workspace, "maps", "megalo", name + ".mglo");
+        await CompileAsync(mglo);
+        if (!CompileOk) return;
+        if (!File.Exists(mglo)) { CompileSummary = "The compiler did not produce a game engine to deploy."; return; }
+        _main.StartGame(new[] { "load_binary_game_engine " + name },
+            $"Testing {Title} in the game: deployed {mglo} and asked the game to load it before the map starts.");
+        CompileSummary += " Deployed and launched in the game.";
     }
 
     [RelayCommand]
