@@ -138,6 +138,8 @@ void main() {
             _subscribed.SceneChanged -= OnSceneChanged;
             _subscribed.FocusRequested -= OnFocusRequested;
             _subscribed.FrameAllRequested -= OnFrameAll;
+            _subscribed.CameraRequested -= OnCameraRequested;
+            _subscribed.CaptureRequested -= OnCaptureRequested;
         }
         _subscribed = Map;
         if (_subscribed != null)
@@ -145,12 +147,57 @@ void main() {
             _subscribed.SceneChanged += OnSceneChanged;
             _subscribed.FocusRequested += OnFocusRequested;
             _subscribed.FrameAllRequested += OnFrameAll;
+            _subscribed.CameraRequested += OnCameraRequested;
+            _subscribed.CaptureRequested += OnCaptureRequested;
             _cameraPlaced = false;
         }
         RequestNextFrameRendering();
     }
 
     private void OnSceneChanged() => RequestNextFrameRendering();
+
+    private (string Path, TaskCompletionSource<bool> Done)? _capture;
+
+    private void OnCaptureRequested(string path, TaskCompletionSource<bool> done)
+    {
+        _capture = (path, done);
+        RequestNextFrameRendering();
+    }
+
+    /// <summary>Saves what was just drawn (rows come bottom-up from GL).</summary>
+    private void SaveCapture(Gl gl, int w, int h)
+    {
+        if (_capture is not { } c) return;
+        _capture = null;
+        try
+        {
+            byte[] px = gl.ReadPixels(w, h);
+            using var bitmap = new Avalonia.Media.Imaging.WriteableBitmap(new PixelSize(w, h), new Avalonia.Vector(96, 96),
+                Avalonia.Platform.PixelFormat.Rgba8888, Avalonia.Platform.AlphaFormat.Opaque);
+            using (var fb = bitmap.Lock())
+            {
+                for (int y = 0; y < h; y++)
+                    System.Runtime.InteropServices.Marshal.Copy(px, (h - 1 - y) * w * 4, fb.Address + y * fb.RowBytes, w * 4);
+            }
+            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(c.Path))!);
+            bitmap.Save(c.Path);
+            c.Done.TrySetResult(true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("View capture failed: " + ex.Message);
+            c.Done.TrySetResult(false);
+        }
+    }
+
+    private void OnCameraRequested(Vector3 eye, float yawDegrees, float pitchDegrees)
+    {
+        _eye = eye;
+        _yaw = yawDegrees * MathF.PI / 180f; // ManagedBlam gives angles in degrees
+        _pitch = pitchDegrees * MathF.PI / 180f;
+        _cameraPlaced = true;
+        RequestNextFrameRendering();
+    }
 
     private void OnFrameAll()
     {
@@ -348,6 +395,7 @@ void main() {
             gl.Enable(Gl.DEPTH_TEST);
         }
         gl.BindVertexArray(0);
+        SaveCapture(gl, w, h);
 
         if (animate) RequestNextFrameRendering();
     }

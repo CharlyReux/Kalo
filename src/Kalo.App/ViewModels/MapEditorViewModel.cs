@@ -42,6 +42,32 @@ public partial class MapEditorViewModel : DocumentViewModel
     public event Action? SceneChanged;
     public event Action<Vector3, float>? FocusRequested;
     public event Action? FrameAllRequested;
+    /// <summary>Camera at a point, looking along a yaw (degrees, 0 = +x) and pitch.</summary>
+    public event Action<Vector3, float, float>? CameraRequested;
+
+    /// <summary>The 3D view saves its next frame to this file (the view only, as drawn by the GPU).</summary>
+    public event Action<string, TaskCompletionSource<bool>>? CaptureRequested;
+
+    public Task<bool> CaptureViewAsync(string path)
+    {
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (CaptureRequested == null) done.TrySetResult(false);
+        else { CaptureRequested.Invoke(path, done); SceneChanged?.Invoke(); }
+        return done.Task;
+    }
+
+    /// <summary>The scenario's first player starting location and its facing (degrees).</summary>
+    public (Vector3 Position, float Facing)? Spawn { get; private set; }
+    public bool HasSpawn => Spawn != null;
+
+    /// <summary>Puts the camera where a player spawns, at eye height, looking the way they face: the view you get in game.</summary>
+    public void LookFrom(Vector3 eye, float yawDegrees, float pitchDegrees) => CameraRequested?.Invoke(eye, yawDegrees, pitchDegrees);
+
+    [RelayCommand]
+    private void ViewFromSpawn()
+    {
+        if (Spawn is { } s) CameraRequested?.Invoke(s.Position + new Vector3(0, 0, 0.62f), s.Facing, 0f);
+    }
 
     [RelayCommand]
     private void FrameAll() => FrameAllRequested?.Invoke();
@@ -196,6 +222,9 @@ public partial class MapEditorViewModel : DocumentViewModel
             var data = await _main.Host.GetPlacementsAsync(Path);
             int keepCategory = -1;
             string? selCat = Selected?.Category; int selIndex = Selected?.Index ?? -1;
+            var start = data.SpawnPoints?.FirstOrDefault(p => p.Position is { Length: >= 3 });
+            Spawn = start == null ? null : (new Vector3(start.Position![0], start.Position[1], start.Position[2]), start.Rotation is { Length: > 0 } r ? r[0] : 0f);
+            OnPropertyChanged(nameof(HasSpawn));
             Items.Clear();
             _categories.Clear();
             PaletteChoices.Clear();

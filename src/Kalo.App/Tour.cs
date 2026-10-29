@@ -228,6 +228,19 @@ public sealed class Tour
         var modelsUntil = DateTime.UtcNow.AddMinutes(4);
         while (map.ModelVersion == 0 && DateTime.UtcNow < modelsUntil) await Task.Delay(500);
         Check(map.Items.Count(i => i.Model != null) > map.Items.Count / 2, $"object models loaded for {map.Items.Count(i => i.Model != null)} of {map.Items.Count} objects");
+        // The view a player gets at the first spawn point, to compare with the game.
+        map.ViewFromSpawnCommand.Execute(null);
+        Say($"spawn view from {map.Spawn?.Position} facing {map.Spawn?.Facing}");
+        await Pause(1000);
+        Check(await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "view-spawn.png")), "captured the 3D view from the spawn point");
+        // A second angle: from above the spawn, looking down the hall.
+        if (map.Spawn is { } sp)
+        {
+            map.LookFrom(sp.Position + new Vector3(-6, 0, 6), sp.Facing, -30);
+            await Pause(800);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "view-above.png"));
+        }
+        map.FrameAllCommand.Execute(null);
         await Pause(1500);
         Shot("map-overview");
 

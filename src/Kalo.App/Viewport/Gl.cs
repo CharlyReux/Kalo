@@ -59,6 +59,7 @@ internal sealed unsafe class Gl
     private readonly delegate* unmanaged<int, void> _clear;
     private readonly delegate* unmanaged<int, byte*> _getString;
     private readonly delegate* unmanaged<int, uint, void> _bindFramebuffer;
+    private readonly delegate* unmanaged<int, int, int, int, int, int, void*, void> _readPixels;
 
     public bool IsEs { get; }
     public string Version { get; }
@@ -111,6 +112,7 @@ internal sealed unsafe class Gl
         _clear = (delegate* unmanaged<int, void>)L("glClear");
         _getString = (delegate* unmanaged<int, byte*>)L("glGetString");
         _bindFramebuffer = (delegate* unmanaged<int, uint, void>)L("glBindFramebuffer");
+        _readPixels = (delegate* unmanaged<int, int, int, int, int, int, void*, void>)L("glReadPixels");
         Version = Marshal.PtrToStringAnsi((IntPtr)_getString(VERSION)) ?? "";
         IsEs = Version.Contains("OpenGL ES", StringComparison.OrdinalIgnoreCase);
     }
@@ -140,6 +142,14 @@ internal sealed unsafe class Gl
     public void ClearColor(float r, float g, float b, float a) => _clearColor(r, g, b, a);
     public void Clear(int mask) => _clear(mask);
     public void BindFramebuffer(int fb) => _bindFramebuffer(FRAMEBUFFER, (uint)fb);
+
+    /// <summary>RGBA bytes of the current framebuffer, bottom row first.</summary>
+    public byte[] ReadPixels(int w, int h)
+    {
+        var data = new byte[w * h * 4];
+        fixed (byte* p = data) _readPixels(0, 0, w, h, 0x1908 /* RGBA */, 0x1401 /* UNSIGNED_BYTE */, p);
+        return data;
+    }
 
     public int Uniform(uint program, string name)
     {

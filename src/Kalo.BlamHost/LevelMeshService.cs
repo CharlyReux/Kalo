@@ -259,15 +259,36 @@ namespace Kalo.BlamHost
                     result.Clusters++;
                 }
 
+            // Each instance points at an instance definition, which names the real mesh and compression box.
+            const string defs = "Struct:resource interface[0]/Block:raw_resources[0]/Struct:raw_items[0]/Block:instanced geometries definitions";
+            var defBlock = bsp.SelectField(defs) as TagFieldBlock;
+            int defCount = defBlock == null ? 0 : defBlock.Elements.Count;
+            var defMesh = new int[defCount];
+            var defComp = new int[defCount];
+            for (int d = 0; d < defCount; d++)
+            {
+                defMesh[d] = Int(bsp.SelectField(defs + "[" + d + "]/ShortInteger:mesh index"));
+                defComp[d] = Int(bsp.SelectField(defs + "[" + d + "]/ShortInteger:compression index"));
+            }
+            int fromDefinition = 0, differs = 0;
+
             var instances = bsp.SelectField("Block:instanced geometry instances") as TagFieldBlock;
             if (instances != null)
                 for (int k = 0; k < instances.Elements.Count; k++)
                 {
                     string e = "Block:instanced geometry instances[" + k + "]/";
-                    int index = Int(bsp.SelectField(e + "ShortInteger:mesh_index"));
+                    int definition = Int(bsp.SelectField(e + "ShortBlockIndex:instance definition"));
+                    int ownMesh = Int(bsp.SelectField(e + "ShortInteger:mesh_index"));
+                    int index = ownMesh, ci = Int(bsp.SelectField(e + "ShortInteger:compression_index"));
+                    if (definition >= 0 && definition < defCount && defMesh[definition] >= 0)
+                    {
+                        if (defMesh[definition] != ownMesh) differs++;
+                        index = defMesh[definition];
+                        if (defComp[definition] >= 0) ci = defComp[definition];
+                        fromDefinition++;
+                    }
                     RawMesh m = mesh(index);
                     if (m == null) continue;
-                    int ci = Int(bsp.SelectField(e + "ShortInteger:compression_index"));
                     float scale = Float(bsp.SelectField(e + "Real:scale"));
                     if (scale == 0) scale = 1;
                     float[] f = Vec(bsp.SelectField(e + "RealVector3d:forward"));
@@ -295,8 +316,8 @@ namespace Kalo.BlamHost
                     Append(new RawMesh { Positions = columns ? b2 : b1, Indices = m.Indices }, positions, indices, columns ? tt : t);
                     result.Instances++;
                 }
-            notes.Add(string.Format("clusters {0}/{1} decompressed; instances {2}/{3} decompressed, {5} with transposed axes, {4} still off their bounds",
-                clustersDecompressed, result.Clusters, instancesDecompressed, result.Instances, instancesOff, transposed));
+            notes.Add(string.Format("clusters {0}/{1} decompressed; instances {2}/{3} decompressed, {5} with transposed axes, {4} still off their bounds; {6} meshes from definitions ({7} differ from the instance's own mesh_index)",
+                clustersDecompressed, result.Clusters, instancesDecompressed, result.Instances, instancesOff, transposed, fromDefinition, differs));
         }
 
         /// <summary>Compression boxes of a render geometry: x0, x1, y0, y1, z0, z1, flags (fields are mislabeled in the tag: bounds 0 = x0 x1 y0, bounds 1 = y1 z0 z1).</summary>
