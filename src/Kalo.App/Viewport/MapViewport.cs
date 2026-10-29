@@ -18,8 +18,14 @@ namespace Kalo.App.Viewport;
 /// Objects: click selects, drag moves along the ground (Shift: up/down, Ctrl: snap to 0.25),
 /// R / Shift+R turns 15°, Ctrl+D duplicates, Delete removes, F frames the selection.
 /// </summary>
-public sealed class MapViewport : OpenGlControlBase
+public sealed class MapViewport : OpenGlControlBase, Avalonia.Rendering.ICustomHitTest
 {
+    /// <summary>
+    /// The GL surface draws nothing Avalonia can see, so without this the control is "empty" for hit testing
+    /// and never receives the mouse (no look, no select, no focus for WASD).
+    /// </summary>
+    public bool HitTest(Point point) => new Rect(Bounds.Size).Contains(point);
+
     private const string VertexShader = @"
 in vec3 aPosition;
 in vec3 aNormal;

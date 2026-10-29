@@ -40,8 +40,14 @@ public sealed class Tour
                 await Section("blocks", Blocks);
                 await Section("map", Map);
                 await Section("script", Script);
-                await Section("projects", Projects);
-                await Section("new mod", NewMod);
+                // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
+                bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
+                if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
+                else
+                {
+                    await Section("projects", Projects);
+                    await Section("new mod", NewMod);
+                }
             }
         }
         catch (Exception ex)
@@ -224,6 +230,17 @@ public sealed class Tour
         Check(map.Items.Count(i => i.Model != null) > map.Items.Count / 2, $"object models loaded for {map.Items.Count(i => i.Model != null)} of {map.Items.Count} objects");
         await Pause(1500);
         Shot("map-overview");
+
+        // Real mouse input reaches the 3D view (it must be hit-testable, or look/move/select do nothing).
+        var viewport = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(_window).OfType<Kalo.App.Viewport.MapViewport>().FirstOrDefault(v => v.IsEffectivelyVisible);
+        if (Check(viewport != null, "the map view is on screen"))
+        {
+            var center = Avalonia.VisualExtensions.TranslatePoint(viewport!, new Avalonia.Point(viewport!.Bounds.Width / 2, viewport.Bounds.Height / 2), _window);
+            var hit = center.HasValue ? Avalonia.Input.InputExtensions.InputHitTest(_window, center.Value) : null;
+            bool reaches = hit is Avalonia.Visual v && (ReferenceEquals(v, viewport) || Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(v).Contains(viewport));
+            Check(reaches, $"the mouse reaches the 3D view (hit: {hit?.GetType().Name ?? "nothing"})");
+            Check(viewport.Focusable, "the 3D view can take keyboard focus (WASD)");
+        }
         Say("holding the overview for 20 s");
         await Task.Delay(TimeSpan.FromSeconds(20));
 
