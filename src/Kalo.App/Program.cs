@@ -26,6 +26,7 @@ internal static class Program
 ///   --screenshot-delay &lt;s&gt;     wait before the screenshot (default 3)
 ///   --exit                     close after the screenshot
 ///   --self-test &lt;dir&gt;          drive the whole loop (edit, save, play, hot reload, revert) and write shots to dir
+///   --tour &lt;dir&gt;               guided checks of every feature; --tour-sections map,script runs only some
 ///   --self-test-hold &lt;s&gt;       keep the game running this long after the reload (default 30), for a game screenshot
 ///   --workspace &lt;dir&gt;, --hrek &lt;dir&gt;
 /// </summary>
@@ -40,6 +41,8 @@ public sealed class AppArgs
     public bool Exit { get; private set; }
     public string? SelfTest { get; private set; }
     public string? Tour { get; private set; }
+    /// <summary>--tour-sections map,script: run only these tour sections.</summary>
+    public string[]? TourSections { get; private set; }
     public bool MapPlay { get; private set; }
     public bool MegaloPlay { get; private set; }
     public bool ModPlay { get; private set; }
@@ -62,6 +65,7 @@ public sealed class AppArgs
                 case "--exit": a.Exit = true; break;
                 case "--self-test": a.SelfTest = next; i++; break;
                 case "--tour": a.Tour = next; i++; break;
+                case "--tour-sections": a.TourSections = next.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries); i++; break;
                 case "--map-play-test": a.Tour = next; a.MapPlay = true; i++; break;
                 case "--megalo-play-test": a.Tour = next; a.MegaloPlay = true; i++; break;
                 case "--mod-play-test": a.Tour = next; a.ModPlay = true; i++; break;

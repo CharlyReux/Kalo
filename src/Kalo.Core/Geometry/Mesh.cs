@@ -13,6 +13,12 @@ public sealed class Mesh
     public int TriangleCount => Indices.Length / 3;
     public int VertexCount => Positions.Length / 3;
 
+    /// <summary>Texture coordinates (2 per vertex), or null.</summary>
+    public float[]? Uvs { get; init; }
+    /// <summary>Index ranges drawn with one material (Material = index in Materials, -1 = none).</summary>
+    public IReadOnlyList<MeshGroup> Groups { get; init; } = Array.Empty<MeshGroup>();
+    public IReadOnlyList<MeshMaterial> Materials { get; init; } = Array.Empty<MeshMaterial>();
+
     public Mesh(float[] positions, int[] indices)
     {
         Positions = positions;
@@ -42,11 +48,24 @@ public sealed class Mesh
         using (var w = new BinaryWriter(File.Create(tmp)))
         {
             w.Write(Magic);
-            w.Write(1);
+            w.Write(4);
             w.Write(Positions.Length);
             w.Write(Indices.Length);
             foreach (float f in Positions) w.Write(f);
             foreach (int i in Indices) w.Write(i);
+            float[] uv = Uvs ?? Array.Empty<float>();
+            w.Write(uv.Length);
+            foreach (float f in uv) w.Write(f);
+            w.Write(Groups.Count);
+            foreach (var g in Groups) { w.Write(g.Material); w.Write(g.Start); w.Write(g.Count); }
+            w.Write(Materials.Count);
+            foreach (var m in Materials)
+            {
+                w.Write(m.Shader); w.Write(m.BaseMap);
+                w.Write(m.ScaleX); w.Write(m.ScaleY); w.Write(m.OffsetX); w.Write(m.OffsetY);
+                w.Write(m.Blend);
+                w.Write((byte)((m.AlphaTest ? 1 : 0) | (m.SelfIllum ? 2 : 0)));
+            }
         }
         File.Move(tmp, path, true);
     }
@@ -57,18 +76,55 @@ public sealed class Mesh
         {
             if (!File.Exists(path)) return null;
             using var r = new BinaryReader(File.OpenRead(path));
-            if (r.ReadUInt32() != Magic || r.ReadInt32() != 1) return null;
+            if (r.ReadUInt32() != Magic) return null;
+            int version = r.ReadInt32();
+            if (version is < 1 or > 4) return null;
             var p = new float[r.ReadInt32()];
             var idx = new int[r.ReadInt32()];
             for (int i = 0; i < p.Length; i++) p[i] = r.ReadSingle();
             for (int i = 0; i < idx.Length; i++) idx[i] = r.ReadInt32();
-            return new Mesh(p, idx);
+            if (version == 1) return new Mesh(p, idx);
+            var uv = new float[r.ReadInt32()];
+            for (int i = 0; i < uv.Length; i++) uv[i] = r.ReadSingle();
+            var groups = new MeshGroup[r.ReadInt32()];
+            for (int i = 0; i < groups.Length; i++) groups[i] = new MeshGroup(r.ReadInt32(), r.ReadInt32(), r.ReadInt32());
+            var materials = new MeshMaterial[r.ReadInt32()];
+            for (int i = 0; i < materials.Length; i++)
+            {
+                var m = new MeshMaterial(r.ReadString(), r.ReadString());
+                if (version >= 3) m = m with { ScaleX = r.ReadSingle(), ScaleY = r.ReadSingle(), OffsetX = r.ReadSingle(), OffsetY = r.ReadSingle() };
+                if (version >= 4)
+                {
+                    string blend = r.ReadString();
+                    byte flags = r.ReadByte();
+                    m = m with { Blend = blend, AlphaTest = (flags & 1) != 0, SelfIllum = (flags & 2) != 0 };
+                }
+                materials[i] = m;
+            }
+            return new Mesh(p, idx) { Uvs = uv.Length > 0 ? uv : null, Groups = groups, Materials = materials };
         }
         catch
         {
             return null;
         }
     }
+}
+
+/// <summary>Index range [Start, Start+Count) drawn with material Material (-1: none).</summary>
+public readonly record struct MeshGroup(int Material, int Start, int Count);
+
+/// <summary>A material: the shader tag, the bitmap it shows as color (empty if none) and that bitmap's uv tiling.</summary>
+public sealed record MeshMaterial(string Shader, string BaseMap)
+{
+    public float ScaleX { get; init; } = 1;
+    public float ScaleY { get; init; } = 1;
+    public float OffsetX { get; init; }
+    public float OffsetY { get; init; }
+    /// <summary>The shader's blend_mode option: opaque, additive, multiply, alpha_blend, double_multiply, pre_multiplied_alpha.</summary>
+    public string Blend { get; init; } = "opaque";
+    public bool AlphaTest { get; init; }
+    public bool SelfIllum { get; init; }
+    public bool IsTranslucent => Blend is not ("opaque" or "");
 }
 
 /// <summary>

@@ -15,7 +15,7 @@ public sealed class LevelGeometry
     public LevelGeometry(KaloPaths paths) => _paths = paths;
 
     public string CacheFile(string scenarioPath) =>
-        Path.Combine(_paths.KaloData, "cache", "geometry", scenarioPath.Replace('\\', '_').Replace('/', '_') + ".v3.kmesh"); // v3: decompressed positions, meshes from instance definitions
+        Path.Combine(_paths.KaloData, "cache", "geometry", scenarioPath.Replace('\\', '_').Replace('/', '_') + ".v6.kmesh"); // v6: + texcoords, materials (tiling, blend mode)
 
     public async Task<Mesh?> LoadLevelAsync(string scenarioPath, IReadOnlyList<string> bsps, Action<string>? progress = null)
     {

@@ -33,7 +33,7 @@
       <StackPanel Orientation="Horizontal" Spacing="14" Margin="10,0" VerticalAlignment="Center">
         <TextBlock Text="{Binding GeometryStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
         <TextBlock Text="{Binding RendererStatus}" FontSize="11.5" Foreground="{StaticResource KFaint}" />
-        <TextBlock Text="Right-drag look · WASD/QE fly (Shift faster) · click select · drag move (Shift up/down, Ctrl snap) · R turn · Ctrl+D duplicate · Del delete · F frame"
+        <TextBlock Text="Right-drag look · WASD/QE fly (Shift faster) · click select · drag move (Shift up/down, Ctrl snap) · R turn · Ctrl+D duplicate · Del delete · F frame · Z shading"
                    FontSize="11.5" Foreground="{StaticResource KFaint}" />
       </StackPanel>
     </Border>
@@ -55,10 +55,46 @@
       </DockPanel>
       <GridSplitter Grid.Column="1" Background="{StaticResource KBorder}" ResizeDirection="Columns" />
       <vp:MapViewport Grid.Column="2" x:Name="Viewport" />
+      <!-- Viewport shading, top right like Blender's header: Wireframe / Solid / Textured, plus an edge overlay. -->
+      <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,10,0" Spacing="4">
+        <Border Background="#CC232427" BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="6" Padding="3"
+                HorizontalAlignment="Right">
+          <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="seg" Classes.on="{Binding IsWireframe}" Content="Wireframe" Command="{Binding SetShadingCommand}" CommandParameter="Wireframe"
+                    ToolTip.Tip="Edges only, see through everything (Z cycles the modes)" />
+            <Button Classes="seg" Classes.on="{Binding IsSolid}" Content="Solid" Command="{Binding SetShadingCommand}" CommandParameter="Solid"
+                    ToolTip.Tip="Plain shaded surfaces: floors warm, walls cool, 1-unit grid (Z cycles the modes)" />
+            <Button Classes="seg" Classes.on="{Binding IsTextured}" Content="Textured" Command="{Binding SetShadingCommand}" CommandParameter="Textured"
+                    ToolTip.Tip="The color maps of the level and objects (Z cycles the modes). Decoded once, then cached." />
+            <Border Width="1" Background="{StaticResource KBorder}" Margin="3,2" />
+            <ToggleButton Classes="seg" Content="Edges" IsChecked="{Binding WireOverlay}"
+                          ToolTip.Tip="Draw triangle edges over Solid and Textured" />
+          </StackPanel>
+        </Border>
+        <TextBlock Text="{Binding TextureStatus}" IsVisible="{Binding TextureStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   HorizontalAlignment="Right" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+      </StackPanel>
     </Grid>
   </DockPanel>
 
   <UserControl.Styles>
+    <Style Selector="Button.seg, ToggleButton.seg">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Padding" Value="9,3" />
+      <Setter Property="MinHeight" Value="24" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource KMuted}" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.seg.on, ToggleButton.seg:checked">
+      <Setter Property="Background" Value="{StaticResource KAccent}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+    <Style Selector="Button.seg.on /template/ ContentPresenter, ToggleButton.seg:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource KAccent}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
     <Style Selector="ToggleButton.chip">
       <Setter Property="FontSize" Value="12" />
       <Setter Property="Padding" Value="8,2" />

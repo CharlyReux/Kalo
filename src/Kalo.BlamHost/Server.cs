@@ -126,6 +126,9 @@ namespace Kalo.BlamHost
                     return tags.Diff(diff.Path, diff.VanillaFile);
                 case Methods.CreateMap:
                     return scenarios.CreateMap(Params<CreateMapParams>(r));
+                case Methods.ExportTextures:
+                    var tex = Params<ExportTexturesParams>(r);
+                    return TextureService.Export(tex.Bitmaps, tex.OutputFolder, tex.MaxSize <= 0 ? 256 : tex.MaxSize);
                 case Methods.Shutdown:
                     return true;
                 default:

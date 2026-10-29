@@ -60,6 +60,8 @@ public sealed class Tour
 
     private async Task Section(string name, Func<Task> body)
     {
+        var only = AppArgs.Current.TourSections;
+        if (only != null && !only.Contains(name, StringComparer.OrdinalIgnoreCase)) return;
         Say("== " + name);
         try { await body(); }
         catch (Exception ex) { Check(false, name + " threw: " + ex.Message); }
@@ -228,11 +230,35 @@ public sealed class Tour
         var modelsUntil = DateTime.UtcNow.AddMinutes(4);
         while (map.ModelVersion == 0 && DateTime.UtcNow < modelsUntil) await Task.Delay(500);
         Check(map.Items.Count(i => i.Model != null) > map.Items.Count / 2, $"object models loaded for {map.Items.Count(i => i.Model != null)} of {map.Items.Count} objects");
+        // Shading: textured (color maps decoded by the host), then wireframe and solid + edges.
+        map.Shading = ViewShading.Textured;
+        var texUntil = DateTime.UtcNow.AddMinutes(6);
+        var texClock = System.Diagnostics.Stopwatch.StartNew();
+        await Pause(300);
+        while ((map.TexturesLoading || map.TexturesVersion == 0) && DateTime.UtcNow < texUntil) await Task.Delay(500);
+        int bspMaps = map.Bsp?.Materials.Count(m => !string.IsNullOrEmpty(m.BaseMap)) ?? 0;
+        int bspReady = map.Bsp?.Materials.Count(m => map.TextureFor(m.BaseMap) != null) ?? 0;
+        Check(bspMaps > 10 && bspReady > bspMaps * 3 / 4, $"level textures ready: {bspReady} of {bspMaps} materials ({texClock.ElapsedMilliseconds} ms) {map.TextureStatus}");
+        var blends = (map.Bsp?.Materials ?? Array.Empty<Kalo.Core.Geometry.MeshMaterial>()).GroupBy(m => m.Blend).Select(g => $"{g.Key} {g.Count()}");
+        Say("level material blend modes: " + string.Join(", ", blends) + $"; alpha-tested {map.Bsp?.Materials.Count(m => m.AlphaTest)}");
+        Check(map.Bsp?.Materials.Any(m => m.IsTranslucent) == true, "shader blend modes read (glass and decals are drawn see-through)");
+        int uvMeshes = map.Items.Select(i => i.Model).OfType<Kalo.Core.Geometry.Mesh>().Distinct().Count(m => m.Uvs != null);
+        Check(map.Bsp?.Uvs != null && uvMeshes > 0, $"texture coordinates exported (level: {map.Bsp?.Uvs != null}, {uvMeshes} models)");
+
         // The view a player gets at the first spawn point, to compare with the game.
         map.ViewFromSpawnCommand.Execute(null);
         Say($"spawn view from {map.Spawn?.Position} facing {map.Spawn?.Facing}");
         await Pause(1000);
-        Check(await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "view-spawn.png")), "captured the 3D view from the spawn point");
+        Check(await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "view-spawn.png")), "captured the 3D view from the spawn point (textured)");
+        map.Shading = ViewShading.Wireframe;
+        await Pause(600);
+        Check(await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "view-spawn-wire.png")), "captured the wireframe view");
+        map.Shading = ViewShading.Solid;
+        map.WireOverlay = true;
+        await Pause(600);
+        Check(await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "view-spawn-solid-edges.png")), "captured the solid view with edges");
+        map.WireOverlay = false;
+        map.Shading = ViewShading.Textured;
         // A second angle: from above the spawn, looking down the hall.
         if (map.Spawn is { } sp)
         {

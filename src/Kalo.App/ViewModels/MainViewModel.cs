@@ -24,6 +24,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public GameSession? Game { get; }
     public Kalo.Core.Geometry.LevelGeometry Geometry { get; private set; } = null!;
     public Kalo.Core.Geometry.ModelLibrary Models { get; private set; } = null!;
+    public Kalo.Core.Geometry.TextureLibrary Textures { get; private set; } = null!;
 
     public ObservableCollection<ExplorerNode> ExplorerRoots { get; } = new();
     public ObservableCollection<SearchResult> SearchResults { get; } = new();
@@ -114,6 +115,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Game = new GameSession(Paths);
         Geometry = new Kalo.Core.Geometry.LevelGeometry(Paths);
         Models = new Kalo.Core.Geometry.ModelLibrary(Paths);
+        Textures = new Kalo.Core.Geometry.TextureLibrary(Paths);
         Geometry.TagSource = async (scenario, bsps) =>
         {
             if (Host == null) return null;

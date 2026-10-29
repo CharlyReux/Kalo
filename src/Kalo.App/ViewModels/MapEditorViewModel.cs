@@ -72,6 +72,94 @@ public partial class MapEditorViewModel : DocumentViewModel
     [RelayCommand]
     private void FrameAll() => FrameAllRequested?.Invoke();
 
+    // ---- viewport shading (like Blender's: wireframe, solid, material preview) ---------------------
+
+    /// <summary>The last shading picked, used for the next map opened.</summary>
+    private static ViewShading s_lastShading = ViewShading.Textured;
+    private static bool s_lastWire;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsWireframe), nameof(IsSolid), nameof(IsTextured))]
+    private ViewShading _shading = s_lastShading;
+    [ObservableProperty] private bool _wireOverlay = s_lastWire;
+    [ObservableProperty] private string _textureStatus = "";
+
+    public bool IsWireframe { get => Shading == ViewShading.Wireframe; set { if (value) Shading = ViewShading.Wireframe; } }
+    public bool IsSolid { get => Shading == ViewShading.Solid; set { if (value) Shading = ViewShading.Solid; } }
+    public bool IsTextured { get => Shading == ViewShading.Textured; set { if (value) Shading = ViewShading.Textured; } }
+
+    /// <summary>Bumped whenever more textures are ready, so the view retries the ones it had no image for.</summary>
+    public int TexturesVersion { get; private set; }
+    public TextureImage? TextureFor(string? bitmap) => string.IsNullOrEmpty(bitmap) ? null : _main.Textures.Get(bitmap);
+
+    partial void OnShadingChanged(ViewShading value)
+    {
+        s_lastShading = value;
+        if (value == ViewShading.Textured) _ = EnsureTexturesAsync();
+        SceneChanged?.Invoke();
+    }
+
+    partial void OnWireOverlayChanged(bool value)
+    {
+        s_lastWire = value;
+        SceneChanged?.Invoke();
+    }
+
+    [RelayCommand]
+    private void SetShading(string name)
+    {
+        if (Enum.TryParse<ViewShading>(name, true, out var s)) Shading = s;
+    }
+
+    private readonly HashSet<string> _texturesRequested = new(StringComparer.OrdinalIgnoreCase);
+    private bool _texturesLoading, _texturesAgain;
+    public bool TexturesLoading => _texturesLoading;
+
+    /// <summary>
+    /// Decodes the color maps of the level and of the loaded object models (once; cached on disk after that).
+    /// Safe to call often: it only asks for bitmaps it has not asked for yet.
+    /// </summary>
+    public async Task EnsureTexturesAsync()
+    {
+        if (Shading != ViewShading.Textured || _main.Host == null) return;
+        if (_texturesLoading) { _texturesAgain = true; return; }
+        _texturesLoading = true;
+        try
+        {
+            do
+            {
+                _texturesAgain = false;
+                var meshes = new List<Mesh>();
+                if (Bsp != null) meshes.Add(Bsp);
+                meshes.AddRange(Items.Select(i => i.Model).OfType<Mesh>().Distinct());
+                var wanted = meshes.SelectMany(m => m.Materials).Select(m => m.BaseMap)
+                    .Where(b => !string.IsNullOrEmpty(b) && _texturesRequested.Add(b)).ToList();
+                if (wanted.Count == 0) continue;
+                TextureStatus = $"Loading {wanted.Count} textures…";
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                try
+                {
+                    await _main.Textures.LoadAsync(_main.Host, wanted);
+                    int ready = wanted.Count(b => _main.Textures.Get(b) != null);
+                    TextureStatus = "";
+                    _main.Log($"{Title}: {ready}/{wanted.Count} textures ready in {sw.ElapsedMilliseconds} ms." +
+                              (ready < wanted.Count ? " Shown plain: " + string.Join("; ", _main.Textures.LastErrors.Take(4)) : ""));
+                }
+                catch (Exception ex)
+                {
+                    TextureStatus = "Textures unavailable: " + ex.Message;
+                    _main.Log("Textures unavailable: " + ex.Message);
+                }
+                TexturesVersion++;
+                SceneChanged?.Invoke();
+            } while (_texturesAgain);
+        }
+        finally
+        {
+            _texturesLoading = false;
+        }
+    }
+
     [ObservableProperty] private PlacementItem? _selected;
     [ObservableProperty] private string _filter = "";
     [ObservableProperty] private string _geometryStatus = "";
@@ -190,6 +278,7 @@ public partial class MapEditorViewModel : DocumentViewModel
             {
                 await _main.Models.LoadAsync(_main.Host, new[] { item.RenderModel });
                 foreach (var i in Items.Where(i => i.RenderModel == item.RenderModel)) i.Model = _main.Models.Get(i.RenderModel);
+                _ = EnsureTexturesAsync();
                 SceneChanged?.Invoke();
             }
             _main.Log($"{Title}: placed {System.IO.Path.GetFileName(tagPath)} in {category}.");
@@ -260,6 +349,7 @@ public partial class MapEditorViewModel : DocumentViewModel
             GeometryVersion++;
             GeometryStatus = mesh == null ? "No level geometry (objects only)." : $"{mesh.TriangleCount:N0} triangles";
             SceneChanged?.Invoke();
+            _ = EnsureTexturesAsync();
         }
         catch (Exception ex)
         {
@@ -280,6 +370,7 @@ public partial class MapEditorViewModel : DocumentViewModel
             ModelVersion++;
             _main.Log($"{Title}: {loaded} object models ready.");
             SceneChanged?.Invoke();
+            _ = EnsureTexturesAsync();
         }
         catch (Exception ex)
         {
@@ -477,6 +568,9 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     private static float[] ToArray(Vector3 v) => new[] { v.X, v.Y, v.Z };
 }
+
+/// <summary>How the map view draws surfaces.</summary>
+public enum ViewShading { Wireframe, Solid, Textured }
 
 public sealed record PaletteChoice(string Category, int Index, string Tag)
 {

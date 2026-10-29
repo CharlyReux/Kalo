@@ -41,6 +41,7 @@ namespace Kalo.Protocol
         public const string ExportModelMeshes = "exportModelMeshes";
         public const string DiffTag = "diffTag";
         public const string CreateMap = "createMap";
+        public const string ExportTextures = "exportTextures";
         public const string MegaloCompile = "megaloCompile";
         public const string Shutdown = "shutdown";
     }
@@ -421,5 +422,36 @@ namespace Kalo.Protocol
         public int Kept { get; set; }
         public int Removed { get; set; }
         public long Ms { get; set; }
+    }
+
+    // ---- textures for the map view --------------------------------------------------------------------
+
+    public sealed class ExportTexturesParams
+    {
+        public List<string> Bitmaps { get; set; }
+        public string OutputFolder { get; set; }
+        /// <summary>Largest side kept (a smaller mip level is used for big bitmaps).</summary>
+        public int MaxSize { get; set; }
+    }
+
+    public sealed class TextureInfo
+    {
+        public string Bitmap { get; set; }
+        public string File { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
+        public string Format { get; set; }
+        public string Error { get; set; }
+    }
+
+    public sealed class ExportTexturesResult
+    {
+        public List<TextureInfo> Textures { get; set; }
+        public long Ms { get; set; }
+    }
+
+    public static class TextureNames
+    {
+        public static string FileName(string bitmap) => bitmap.Replace('\\', '_').Replace('/', '_') + ".ktex";
     }
 }

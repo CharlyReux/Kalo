@@ -45,7 +45,10 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
 - Blocks: right-click a block row (or use the inspector) to add, insert, duplicate or delete elements.
   References: select one and pick a tag of an allowed type in the inspector, or open the referenced tag.
 - Maps: double-click a .scenario (or search for one). The map view shows the level (read from the
-  structure_bsp tags, cached in .kalo\cache\geometry) and every object placement as a coloured box.
+  structure_bsp tags, cached in .kalo\cache\geometry) and every object placement with its model (or a box).
+  Shading, top right of the view (Z cycles, Shift+Z wireframe): Wireframe (edges only, see-through), Solid
+  (blockout shading with a 1-unit floor grid) or Textured (each shader's color map, decoded once by the Blam Host
+  into .kalo\cache\textures; glass, decals and lights blended like in the game). "Edges" overlays triangle edges.
   Right-drag looks around, WASD/QE fly (Shift faster), click selects, drag moves (Shift: up/down, Ctrl: snap
   to 0.25), R turns 15°, Ctrl+D duplicates, Delete removes, F frames, Home frames the play space. The selected
   object shows handles: drag an arrow to move along that axis, drag the ring to turn it. Ctrl+click adds objects

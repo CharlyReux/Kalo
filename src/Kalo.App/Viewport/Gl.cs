@@ -16,8 +16,12 @@ internal sealed unsafe class Gl
     public const int COLOR_BUFFER_BIT = 0x4000, DEPTH_BUFFER_BIT = 0x0100;
     public const int VERTEX_SHADER = 0x8B31, FRAGMENT_SHADER = 0x8B30, COMPILE_STATUS = 0x8B81, LINK_STATUS = 0x8B82;
     public const int VERSION = 0x1F02, LEQUAL = 0x0203, LESS = 0x0201, ALWAYS = 0x0207;
-    public const int SRC_ALPHA = 0x0302, ONE_MINUS_SRC_ALPHA = 0x0303;
+    public const int SRC_ALPHA = 0x0302, ONE_MINUS_SRC_ALPHA = 0x0303, ONE = 1, ZERO = 0, DST_COLOR = 0x0306, SRC_COLOR = 0x0300;
     public const int FRAMEBUFFER = 0x8D40;
+    public const int TEXTURE_2D = 0x0DE1, TEXTURE0 = 0x84C0, RGBA = 0x1908, UNSIGNED_BYTE = 0x1401;
+    public const int TEXTURE_MIN_FILTER = 0x2801, TEXTURE_MAG_FILTER = 0x2800, TEXTURE_WRAP_S = 0x2802, TEXTURE_WRAP_T = 0x2803;
+    public const int LINEAR = 0x2601, LINEAR_MIPMAP_LINEAR = 0x2703, REPEAT = 0x2901;
+    public const int UNPACK_ALIGNMENT = 0x0CF5;
 
     private readonly delegate* unmanaged<int, uint*, void> _genBuffers;
     private readonly delegate* unmanaged<int, uint*, void> _deleteBuffers;
@@ -60,6 +64,15 @@ internal sealed unsafe class Gl
     private readonly delegate* unmanaged<int, byte*> _getString;
     private readonly delegate* unmanaged<int, uint, void> _bindFramebuffer;
     private readonly delegate* unmanaged<int, int, int, int, int, int, void*, void> _readPixels;
+    private readonly delegate* unmanaged<int, uint*, void> _genTextures;
+    private readonly delegate* unmanaged<int, uint*, void> _deleteTextures;
+    private readonly delegate* unmanaged<int, uint, void> _bindTexture;
+    private readonly delegate* unmanaged<int, int, int, int, int, int, int, int, void*, void> _texImage2D;
+    private readonly delegate* unmanaged<int, int, int, void> _texParameteri;
+    private readonly delegate* unmanaged<int, void> _generateMipmap;
+    private readonly delegate* unmanaged<int, void> _activeTexture;
+    private readonly delegate* unmanaged<int, int, void> _uniform1i;
+    private readonly delegate* unmanaged<int, int, void> _pixelStorei;
 
     public bool IsEs { get; }
     public string Version { get; }
@@ -113,6 +126,15 @@ internal sealed unsafe class Gl
         _getString = (delegate* unmanaged<int, byte*>)L("glGetString");
         _bindFramebuffer = (delegate* unmanaged<int, uint, void>)L("glBindFramebuffer");
         _readPixels = (delegate* unmanaged<int, int, int, int, int, int, void*, void>)L("glReadPixels");
+        _genTextures = (delegate* unmanaged<int, uint*, void>)L("glGenTextures");
+        _deleteTextures = (delegate* unmanaged<int, uint*, void>)L("glDeleteTextures");
+        _bindTexture = (delegate* unmanaged<int, uint, void>)L("glBindTexture");
+        _texImage2D = (delegate* unmanaged<int, int, int, int, int, int, int, int, void*, void>)L("glTexImage2D");
+        _texParameteri = (delegate* unmanaged<int, int, int, void>)L("glTexParameteri");
+        _generateMipmap = (delegate* unmanaged<int, void>)L("glGenerateMipmap");
+        _activeTexture = (delegate* unmanaged<int, void>)L("glActiveTexture");
+        _uniform1i = (delegate* unmanaged<int, int, void>)L("glUniform1i");
+        _pixelStorei = (delegate* unmanaged<int, int, void>)L("glPixelStorei");
         Version = Marshal.PtrToStringAnsi((IntPtr)_getString(VERSION)) ?? "";
         IsEs = Version.Contains("OpenGL ES", StringComparison.OrdinalIgnoreCase);
     }
@@ -151,6 +173,25 @@ internal sealed unsafe class Gl
         return data;
     }
 
+    /// <summary>Uploads an RGBA image (rows top first; GL treats row 0 as v = 0) with mipmaps and repeat wrapping.</summary>
+    public uint CreateTexture(int w, int h, byte[] rgba)
+    {
+        uint t;
+        _genTextures(1, &t);
+        _bindTexture(TEXTURE_2D, t);
+        _pixelStorei(UNPACK_ALIGNMENT, 1);
+        fixed (byte* p = rgba) _texImage2D(TEXTURE_2D, 0, RGBA, w, h, 0, RGBA, UNSIGNED_BYTE, p);
+        _generateMipmap(TEXTURE_2D);
+        _texParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, LINEAR_MIPMAP_LINEAR);
+        _texParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, LINEAR);
+        _texParameteri(TEXTURE_2D, TEXTURE_WRAP_S, REPEAT);
+        _texParameteri(TEXTURE_2D, TEXTURE_WRAP_T, REPEAT);
+        return t;
+    }
+    public void DeleteTexture(uint t) { if (t != 0) _deleteTextures(1, &t); }
+    public void BindTexture(uint t) { _activeTexture(TEXTURE0); _bindTexture(TEXTURE_2D, t); }
+    public void UniformInt(int loc, int v) => _uniform1i(loc, v);
+
     public int Uniform(uint program, string name)
     {
         byte[] bytes = Encoding.ASCII.GetBytes(name + "\0");
@@ -161,7 +202,7 @@ internal sealed unsafe class Gl
     public void Uniform3(int loc, System.Numerics.Vector3 v) => _uniform3f(loc, v.X, v.Y, v.Z);
     public void Uniform1(int loc, float v) => _uniform1f(loc, v);
 
-    /// <summary>Compiles and links a program; attribute 0 = position, 1 = normal.</summary>
+    /// <summary>Compiles and links a program; attributes 0 = position, 1 = normal, 2 = uv, 3 = barycentric.</summary>
     public uint BuildProgram(string vertexBody, string fragmentBody)
     {
         string header = IsEs ? "#version 300 es\nprecision highp float;\n" : "#version 330 core\n";
@@ -172,6 +213,8 @@ internal sealed unsafe class Gl
         _attachShader(program, fs);
         BindAttrib(program, 0, "aPosition");
         BindAttrib(program, 1, "aNormal");
+        BindAttrib(program, 2, "aUv");
+        BindAttrib(program, 3, "aBary");
         _linkProgram(program);
         int ok;
         _getProgramiv(program, LINK_STATUS, &ok);
