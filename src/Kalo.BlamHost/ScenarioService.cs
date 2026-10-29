@@ -161,6 +161,49 @@ namespace Kalo.BlamHost
             return new PlacementOpResult { Category = Category(tag, k, ObjectNames(tag)), SelectIndex = select };
         }
 
+        /// <summary>
+        /// A new map from a Reach level: the template scenario saved under a new path (it keeps using the
+        /// template's level geometry), with a new map id, and optionally every object removed except respawn points.
+        /// </summary>
+        public CreateMapResult CreateMap(CreateMapParams p)
+        {
+            var sw = Stopwatch.StartNew();
+            if (_tags.IsOpen(p.Template)) throw new InvalidOperationException("Close the template map first: it is open in a tab.");
+            if (System.IO.File.Exists(_tags.FullPath(p.NewPath))) throw new InvalidOperationException("A map already exists at " + p.NewPath);
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(_tags.FullPath(p.NewPath)));
+            using (var template = new TagFile(TagService.TagPathOf(p.Template)))
+                template.SaveAs(TagService.TagPathOf(p.NewPath));
+
+            TagFile tag = _tags.GetOrOpen(p.NewPath);
+            var result = new CreateMapResult { Path = p.NewPath };
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField("LongInteger:map id")).Data = p.MapId);
+            if (p.Empty)
+            {
+                foreach (string[] k in Kinds)
+                {
+                    var block = tag.SelectField("Block:" + k[0]) as TagFieldBlock;
+                    if (block == null) continue;
+                    var palette = new List<string>();
+                    var pal = tag.SelectField("Block:" + k[1]) as TagFieldBlock;
+                    if (pal != null)
+                        for (int i = 0; i < pal.Elements.Count; i++)
+                            palette.Add(TagService.ValueOf(tag.SelectField("Block:" + k[1] + "[" + i + "]/Reference:name")) ?? "");
+                    for (int i = block.Elements.Count - 1; i >= 0; i--)
+                    {
+                        int type = Int(tag.SelectField("Block:" + k[0] + "[" + i + "]/ShortBlockIndex:type"));
+                        string objectTag = type >= 0 && type < palette.Count ? palette[type] : "";
+                        bool keep = k[0] == "scenery" && objectTag.IndexOf("respawn_point", StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (keep) { result.Kept++; continue; }
+                        block.RemoveElement(i);
+                        result.Removed++;
+                    }
+                }
+            }
+            tag.Save();
+            result.Ms = sw.ElapsedMilliseconds;
+            return result;
+        }
+
         // ---- reading ---------------------------------------------------------------------------
 
         private PlacementCategory Category(TagFile tag, string[] k, List<string> names)

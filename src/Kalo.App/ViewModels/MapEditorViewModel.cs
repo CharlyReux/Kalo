@@ -423,7 +423,7 @@ public partial class MapEditorViewModel : DocumentViewModel
             var r = await _main.Host.SaveTagAsync(Path);
             IsDirty = false;
             Status = _main.IsGameRunning
-                ? $"Saved in {r.Ms} ms. The running game keeps the old placements: press Play this map to restart it."
+                ? $"Saved in {r.Ms} ms. The running game keeps the old placements: press Play (F5) to restart it."
                 : $"Saved in {r.Ms} ms";
             _main.OnDocumentSaved(this);
         }
@@ -444,7 +444,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     private async Task OpenFields() => await _main.OpenTagAsync(Path);
 
     [RelayCommand]
-    private void PlayHere() => _main.PlayScenario(Scenario);
+    private Task PlayHere() => _main.PlayScenarioAsync(Scenario);
 
     private static float[] ToArray(Vector3 v) => new[] { v.X, v.Y, v.Z };
 }

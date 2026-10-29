@@ -1,0 +1,125 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             xmlns:sys="using:System"
+             x:Class="Kalo.App.Views.ModPanel"
+             x:DataType="vm:MainViewModel">
+  <ScrollViewer>
+    <StackPanel Margin="8,8" Spacing="8">
+
+      <!-- No mod yet -->
+      <StackPanel Spacing="8" IsVisible="{Binding NoActiveMod}">
+        <TextBlock TextWrapping="Wrap" FontSize="12.5" Text="You are not working on a mod yet. A mod holds only what you make or change." />
+        <TextBox Classes="compact" Watermark="Mod name" Text="{Binding NewModName}" />
+        <Button Classes="primary" Content="Create a mod" Command="{Binding CreateModCommand}" HorizontalAlignment="Left" />
+      </StackPanel>
+
+      <StackPanel Spacing="6" IsVisible="{Binding HasActiveMod}">
+        <TextBlock Text="{Binding ActiveModName}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis" />
+
+        <!-- New map form -->
+        <Border IsVisible="{Binding IsNewMapOpen}" Background="{StaticResource KBg}" BorderBrush="{StaticResource KAccent}" BorderThickness="1" CornerRadius="4" Padding="8">
+          <StackPanel Spacing="6">
+            <TextBlock Text="NEW MAP" Classes="header" />
+            <TextBox Classes="compact" Watermark="Map name" Text="{Binding NewMapName}" />
+            <TextBlock Text="Level to build on" Foreground="{StaticResource KMuted}" FontSize="11.5" />
+            <ComboBox ItemsSource="{Binding BaseLevels}" SelectedItem="{Binding NewMapBase}" HorizontalAlignment="Stretch" FontSize="12">
+              <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="sys:String">
+                  <TextBlock Text="{Binding}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapEmpty}" FontSize="12">
+              <TextBlock TextWrapping="Wrap" Text="Empty: the level with only its spawn points. You place everything." />
+            </RadioButton>
+            <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapFull}" FontSize="12">
+              <TextBlock TextWrapping="Wrap" Text="Remix: a full copy with all its objects, to change." />
+            </RadioButton>
+            <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KFaint}"
+                       Text="Brand-new level geometry needs Blender (Foundry); that template will come with the Foundry bridge." />
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Classes="primary" Content="Create map" Command="{Binding CreateMapCommand}" />
+              <Button Classes="tool" Content="Cancel" Command="{Binding CancelNewContentCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- New gametype form -->
+        <Border IsVisible="{Binding IsNewGametypeOpen}" Background="{StaticResource KBg}" BorderBrush="{StaticResource KAccent}" BorderThickness="1" CornerRadius="4" Padding="8">
+          <StackPanel Spacing="6">
+            <TextBlock Text="NEW GAMETYPE" Classes="header" />
+            <TextBox Classes="compact" Watermark="Gametype name" Text="{Binding NewGametypeName}" />
+            <TextBlock Text="Start from" Foreground="{StaticResource KMuted}" FontSize="11.5" />
+            <ComboBox ItemsSource="{Binding GametypeTemplates}" SelectedItem="{Binding NewGametypeTemplate}" HorizontalAlignment="Stretch" FontSize="12">
+              <ComboBox.ItemTemplate>
+                <DataTemplate DataType="vm:GametypeTemplate">
+                  <TextBlock Text="{Binding Label}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </ComboBox.ItemTemplate>
+            </ComboBox>
+            <StackPanel Orientation="Horizontal" Spacing="6">
+              <Button Classes="primary" Content="Create gametype" Command="{Binding CreateGametypeCommand}" />
+              <Button Classes="tool" Content="Cancel" Command="{Binding CancelNewContentCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- The mod, by kind -->
+        <ItemsControl ItemsSource="{Binding ModGroups}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:ModGroup">
+              <StackPanel Margin="0,4,0,2">
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Classes="tool" Padding="6,0" ToolTip.Tip="{Binding ActionLabel}"
+                          Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).GroupActionCommand}" CommandParameter="{Binding}">
+                    <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE710;" FontSize="12" />
+                  </Button>
+                  <TextBlock DockPanel.Dock="Right" Text="{Binding CountText}" Foreground="{StaticResource KMuted}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,6,0" />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock FontFamily="{StaticResource KIcons}" Text="{Binding Glyph}" FontSize="13" Foreground="{StaticResource KAccentText}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12.5" VerticalAlignment="Center" />
+                  </StackPanel>
+                </DockPanel>
+                <Button Classes="tool" IsVisible="{Binding IsEmpty}" Content="{Binding ActionLabel}" FontSize="11.5" Foreground="{StaticResource KFaint}" Margin="18,0,0,0" HorizontalAlignment="Left"
+                        Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).GroupActionCommand}" CommandParameter="{Binding}" />
+                <ItemsControl ItemsSource="{Binding Items}" Margin="14,0,0,0">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:ModEntry">
+                      <Button Classes="tool" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="6,2" ToolTip.Tip="{Binding Path}"
+                              Command="{Binding $parent[UserControl].((vm:MainViewModel)DataContext).OpenModEntryCommand}" CommandParameter="{Binding}">
+                        <Button.ContextMenu>
+                          <ContextMenu>
+                            <MenuItem Header="Open" Command="{Binding Main.OpenModEntryCommand}" CommandParameter="{Binding}" />
+                            <MenuItem Header="Compare with vanilla" Command="{Binding Main.CompareModEntryCommand}" CommandParameter="{Binding}" />
+                            <MenuItem Header="Remove from mod (back to vanilla)" Command="{Binding Main.RemoveModEntryCommand}" CommandParameter="{Binding}" />
+                          </ContextMenu>
+                        </Button.ContextMenu>
+                        <DockPanel>
+                          <TextBlock DockPanel.Dock="Right" Text="{Binding Badge}" FontSize="10.5" VerticalAlignment="Center" Margin="6,0,0,0"
+                                     Foreground="{StaticResource KWarning}" Classes.new="{Binding IsNew}" />
+                          <StackPanel>
+                            <TextBlock Text="{Binding Name}" FontSize="12.5" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding TypeText}" FontSize="10.5" Foreground="{StaticResource KFaint}" />
+                          </StackPanel>
+                        </DockPanel>
+                      </Button>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource KFaint}" Margin="0,6,0,0"
+                   Text="Anything you open from All game files and save is added here. Right-click a file to compare it with vanilla or take it out of the mod." />
+      </StackPanel>
+    </StackPanel>
+  </ScrollViewer>
+  <UserControl.Styles>
+    <Style Selector="TextBlock.new">
+      <Setter Property="Foreground" Value="{StaticResource KSuccess}" />
+    </Style>
+  </UserControl.Styles>
+</UserControl>

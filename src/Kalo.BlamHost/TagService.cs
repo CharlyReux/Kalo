@@ -280,6 +280,10 @@ namespace Kalo.BlamHost
 
         internal static TagPath TagPathOf(string path) => ToTagPath(Normalize(path));
 
+        internal bool IsOpen(string path) => _open.ContainsKey(Normalize(path));
+
+        internal string FullPath(string path) => Path.Combine(_tagRoot, Normalize(path));
+
         private TagFile Get(string path)
         {
             TagFile tag;

@@ -41,6 +41,7 @@ public sealed class Tour
                 await Section("map", Map);
                 await Section("script", Script);
                 await Section("projects", Projects);
+                await Section("new mod", NewMod);
             }
         }
         catch (Exception ex)
@@ -137,9 +138,11 @@ public sealed class Tour
             _vm.Game!.Output += l => { lock (lines) lines.Add(l); };
             _vm.Game.Loaded += () => loaded.TrySetResult();
             _vm.Game.Exited += _ => loaded.TrySetException(new Exception("the game exited while loading"));
-            await script!.TestInGameCommand.ExecuteAsync(null);
+            _vm.SelectedScenario = @"levels\multi\20_sword_slayer\20_sword_slayer";
+            Check(_vm.SelectedGametype?.Path == file.RelativePath, "the gametype picker follows the open script");
+            await _vm.PlayCommand.ExecuteAsync(null);
             mglo = System.IO.Path.Combine(_vm.Paths!.Workspace, "maps", "megalo", "kalo_" + file.Name + ".mglo");
-            Check(script.CompileOk && File.Exists(mglo), $"compiled and deployed {System.IO.Path.GetFileName(mglo)} ({(File.Exists(mglo) ? new FileInfo(mglo).Length : 0)} bytes)");
+            Check(File.Exists(mglo), $"Play compiled and deployed {System.IO.Path.GetFileName(mglo)} ({(File.Exists(mglo) ? new FileInfo(mglo).Length : 0)} bytes)");
             Check(_vm.IsGameRunning, "started the game with the gametype");
             var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
             Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, "the map loaded");
@@ -295,7 +298,7 @@ public sealed class Tour
         Check(conditions.FirstOrDefault()?.Text == "if" && conditions.Count > 5, $"autocomplete after 'condition ' offers if + conditions ({conditions.Count})");
         var (_, values) = script.Complete("\taction create_object warth");
         Check(values.Any(v => v.Text == "warthog"), "autocomplete offers engine values (warthog)");
-        Check(script.Maps.Count > 0 && script.TestMap != null, $"Test in game has a map picker ({script.Maps.Count} maps)");
+        Check(_vm.SelectedGametype?.Path == script.Path, "the Play gametype picker follows the open script");
         await Pause(800);
         Shot("script-compiled");
 
@@ -379,6 +382,119 @@ public sealed class Tour
         projects.Delete(projects.Find(name)!);
         _vm.RefreshProjects();
         Check(projects.ActiveName == null && projects.Find(name) == null, "cleaned up the test project");
+    }
+
+    // ---- a new mod from templates ------------------------------------------------------------------------
+
+    private const string TourMod = "Kalo tour mod";
+
+    /// <summary>Creates a mod with a new empty map and a new gametype (and plays them when <paramref name="play"/>), then removes it all.</summary>
+    private async Task NewMod() => await NewModCore(false);
+
+    private async Task NewModCore(bool play)
+    {
+        var projects = _vm.ModProjects!;
+        // The project that was active before an earlier, interrupted run (so it can be restored).
+        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
+        string? interrupted = File.Exists(marker) ? File.ReadAllText(marker).Trim() : null;
+        foreach (var old in projects.List().Where(x => x.Name.StartsWith("Kalo tour")).ToList())
+        {
+            if (projects.ActiveName == old.Name) await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            projects.Delete(old);
+        }
+        _vm.RefreshProjects();
+        if (projects.ActiveName == null && !string.IsNullOrEmpty(interrupted) && projects.Find(interrupted) != null)
+            await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == interrupted));
+        // Someone's mod may be active: Create mod puts it aside (saved in its project folder); it is switched back at the end.
+        string? previous = projects.ActiveName;
+        if (previous != null) Say($"'{previous}' is active: it is saved and put aside, then restored after the test");
+        File.WriteAllText(marker, previous ?? "");
+        _vm.NewModName = TourMod;
+        await _vm.CreateModCommand.ExecuteAsync(null);
+        Check(_vm.HasActiveMod && _vm.ActiveModName == TourMod, "created the mod");
+        Check(_vm.ModGroups.Select(g => g.Name).Take(2).SequenceEqual(new[] { "Maps", "Gametypes" }) && _vm.ModGroups.All(g => g.Items.Count == 0),
+            "My mod shows empty Maps, Gametypes, Weapons… groups");
+        try
+        {
+            // New map: the Sword Slayer level with only its spawn points.
+            _vm.OpenNewMapFormCommand.Execute(null);
+            Check(_vm.IsNewMapOpen && _vm.BaseLevels.Any(), $"New map form offers {_vm.BaseLevels.Count()} Reach levels");
+            var map = await _vm.CreateMapAsync("Tour Arena", @"levels\multi\20_sword_slayer\20_sword_slayer", empty: true);
+            Check(map != null && map.Path.StartsWith(@"levels\mods\kalo_tour_mod\tour_arena\"), "created levels\\mods\\kalo_tour_mod\\tour_arena");
+            if (map != null)
+            {
+                var until = DateTime.UtcNow.AddMinutes(3);
+                while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(300);
+                int spawns = map.Items.Count(i => i.Tag.Contains("respawn_point"));
+                Check(spawns > 0 && map.Items.Count == spawns, $"the empty map keeps only its {spawns} spawn points ({map.Items.Count} objects)");
+                Check(map.Bsp != null, "the new map shows the Sword Slayer level");
+                var rifle = await map.AddTagAtAsync(@"objects\weapons\rifle\assault_rifle\assault_rifle.weapon", map.Items[0].Position + new Vector3(1, 0, 0.3f));
+                Check(rifle != null, "placed an assault rifle on the new map");
+                await map.SaveCommand.ExecuteAsync(null);
+                Check(_vm.SelectedScenario == map.Scenario, "Play now targets the new map");
+            }
+            Check(_vm.ModGroups.First(g => g.Name == "Maps").Items.Any(e => e.Path.EndsWith("tour_arena.scenario")), "My mod › Maps lists the new map");
+            await Pause(800);
+            Shot("new-map");
+
+            // New gametype from the simple starter template.
+            _vm.OpenNewGametypeFormCommand.Execute(null);
+            Check(_vm.GametypeTemplates.Count > 3, $"New gametype offers {_vm.GametypeTemplates.Count} templates");
+            var script = await _vm.CreateGametypeAsync("Tour Rules", _vm.GametypeTemplates.First());
+            Check(script != null && script.Path.EndsWith(@"mods\kalo_tour_mod\tour_rules.txt"), "created the gametype in the mod's folder");
+            if (script != null)
+            {
+                await script.CompileCommand.ExecuteAsync(null);
+                Check(script.CompileOk, "the new gametype compiles: " + script.CompileSummary);
+                Check(_vm.SelectedGametype?.Path == script.Path, "Play now uses the new gametype");
+            }
+            Check(_vm.ModGroups.First(g => g.Name == "Gametypes").Items.Count == 1, "My mod › Gametypes lists it");
+            await Pause(800);
+            Shot("new-gametype");
+            Say("play: " + _vm.PlaySummary);
+
+            if (play)
+            {
+                var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                _vm.Game!.Loaded += () => loaded.TrySetResult();
+                _vm.Game.Exited += _ => loaded.TrySetException(new Exception("the game exited while loading"));
+                await _vm.PlayCommand.ExecuteAsync(null);
+                if (!Check(_vm.IsGameRunning, "Play started the game")) return;
+                var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+                Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, "the game loaded the new map with the new gametype");
+                Say($"holding the game for {_hold:F0} s");
+                await Task.Delay(TimeSpan.FromSeconds(_hold));
+                _vm.StopGameCommand.Execute(null);
+                await Task.Delay(3000);
+            }
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            var p = projects.Find(TourMod);
+            if (p != null) projects.Delete(p);
+            _vm.RefreshProjects();
+            if (previous != null)
+            {
+                await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == previous));
+                Check(projects.ActiveName == previous, $"'{previous}' is active again");
+            }
+            try { File.Delete(marker); } catch { }
+            string newScenario = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\kalo_tour_mod\tour_arena\tour_arena.scenario");
+            string newScript = System.IO.Path.Combine(_vm.Paths.Workspace, @"data\multiplayer\megalo\mods\kalo_tour_mod\tour_rules.txt");
+            Check(!File.Exists(newScenario) && !File.Exists(newScript), "cleaned up: the mod's map and gametype are gone from the workspace");
+        }
+    }
+
+    /// <summary>--mod-play-test: the new-mod flow, then play the new map with the new gametype in reach_tag_test.</summary>
+    public async Task<int> ModPlayAsync()
+    {
+        Say("mod play test started");
+        await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+        await Section("new mod + play", () => NewModCore(true));
+        Say(_failures == 0 ? "MODPLAY PASS" : $"MODPLAY FAIL ({_failures})");
+        return _failures == 0 ? 0 : 1;
     }
 
     // ---- helpers --------------------------------------------------------------------------------------------

@@ -40,6 +40,7 @@ namespace Kalo.Protocol
         public const string ExportLevelMesh = "exportLevelMesh";
         public const string ExportModelMeshes = "exportModelMeshes";
         public const string DiffTag = "diffTag";
+        public const string CreateMap = "createMap";
         public const string MegaloCompile = "megaloCompile";
         public const string Shutdown = "shutdown";
     }
@@ -398,6 +399,27 @@ namespace Kalo.Protocol
         public List<DiffEntry> Entries { get; set; }
         public int FieldsCompared { get; set; }
         public bool Truncated { get; set; }
+        public long Ms { get; set; }
+    }
+
+    // ---- new content from templates -------------------------------------------------------------
+
+    public sealed class CreateMapParams
+    {
+        /// <summary>Scenario to start from (tag path with extension).</summary>
+        public string Template { get; set; }
+        /// <summary>New scenario path (tag path with extension).</summary>
+        public string NewPath { get; set; }
+        /// <summary>Remove every object except respawn points (an empty map on the template's level).</summary>
+        public bool Empty { get; set; }
+        public int MapId { get; set; }
+    }
+
+    public sealed class CreateMapResult
+    {
+        public string Path { get; set; }
+        public int Kept { get; set; }
+        public int Removed { get; set; }
         public long Ms { get; set; }
     }
 }

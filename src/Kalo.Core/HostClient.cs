@@ -113,6 +113,7 @@ public sealed class HostClient : IAsyncDisposable
         CallAsync<ExportLevelMeshResult>(Methods.ExportLevelMesh, new ExportLevelMeshParams { Scenario = scenario, OutputFile = outputFile }, TimeSpan.FromMinutes(10));
     public Task<DiffTagResult> DiffTagAsync(string path, string vanillaFile) =>
         CallAsync<DiffTagResult>(Methods.DiffTag, new DiffTagParams { Path = path, VanillaFile = vanillaFile }, TimeSpan.FromMinutes(3));
+    public Task<CreateMapResult> CreateMapAsync(CreateMapParams p) => CallAsync<CreateMapResult>(Methods.CreateMap, p, TimeSpan.FromMinutes(3));
     public Task<MegaloCatalog> MegaloCatalogAsync(string objectLists) =>
         CallAsync<MegaloCatalog>(Methods.MegaloCatalog, new MegaloCatalogParams { ObjectLists = objectLists }, TimeSpan.FromMinutes(2));
     public Task<MegaloCompileResult> MegaloCompileAsync(MegaloCompileParams p) =>

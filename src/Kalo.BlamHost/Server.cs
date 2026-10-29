@@ -124,6 +124,8 @@ namespace Kalo.BlamHost
                 case Methods.DiffTag:
                     var diff = Params<DiffTagParams>(r);
                     return tags.Diff(diff.Path, diff.VanillaFile);
+                case Methods.CreateMap:
+                    return scenarios.CreateMap(Params<CreateMapParams>(r));
                 case Methods.Shutdown:
                     return true;
                 default:

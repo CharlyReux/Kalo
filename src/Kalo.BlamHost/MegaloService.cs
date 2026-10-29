@@ -70,7 +70,7 @@ namespace Kalo.BlamHost
                 throw new DirectoryNotFoundException("Include folder not found: " + p.IncludeFolder);
             string include = p.IncludeFolder.TrimEnd('\\') + "\\";
             string output = p.OutputFolder;
-            bool write = !string.IsNullOrEmpty(output);
+            bool write = !string.IsNullOrEmpty(output) || !string.IsNullOrEmpty(p.MgloFile);
             if (write) Directory.CreateDirectory(output);
             else output = Path.Combine(Path.GetTempPath(), "kalo-megalo-scratch");
             Directory.CreateDirectory(output);

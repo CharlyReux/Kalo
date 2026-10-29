@@ -21,12 +21,8 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     public ScriptEditorViewModel(MainViewModel main, string path) : base(path)
     {
         _main = main;
-        _testMap = main.SelectedScenario;
     }
 
-    /// <summary>Maps the gametype can be tested on (the same list as the Play menu).</summary>
-    public ObservableCollection<string> Maps => _main.Scenarios;
-    [ObservableProperty] private string? _testMap;
 
     // ---- completion --------------------------------------------------------------------------
 
@@ -109,15 +105,23 @@ public partial class ScriptEditorViewModel : DocumentViewModel
 
     public async Task LoadAsync()
     {
-        byte[] bytes = await File.ReadAllBytesAsync(FullPath);
-        _encoding = Detect(bytes);
-        string text = _encoding.GetString(bytes);
-        if (text.Length > 0 && text[0] == '﻿') text = text[1..];
+        var (text, encoding) = await Task.Run(() => ReadScript(FullPath));
+        _encoding = encoding;
         _savedText = text;
         Text = text;
         IsDirty = false;
         Status = $"{text.Split('\n').Length:N0} lines · {(_encoding is UnicodeEncoding ? "UTF-16" : "UTF-8")}";
         UpdateCatalog();
+    }
+
+    /// <summary>Reads a Megalo script (usually UTF-16 with a byte order mark).</summary>
+    public static (string Text, Encoding Encoding) ReadScript(string fullPath)
+    {
+        byte[] bytes = File.ReadAllBytes(fullPath);
+        var encoding = Detect(bytes);
+        string text = encoding.GetString(bytes);
+        if (text.Length > 0 && text[0] == '\uFEFF') text = text[1..];
+        return (text, encoding);
     }
 
     private static Encoding Detect(byte[] b)
@@ -218,25 +222,6 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             _main.AddProblem("error", ex.Message, Path);
             if (ex.EngineHalted) await _main.RestartHostAsync();
         }
-    }
-
-    /// <summary>
-    /// Compiles, deploys the engine to maps\megalo\kalo_&lt;name&gt;.mglo in the workspace (as MegaloEdit does for a devkit)
-    /// and starts the selected map with load_binary_game_engine, so the game plays this script.
-    /// </summary>
-    [RelayCommand]
-    private async Task TestInGame()
-    {
-        if (_main.Host == null || _main.Paths == null) return;
-        string name = "kalo_" + System.IO.Path.GetFileNameWithoutExtension(Path);
-        string mglo = System.IO.Path.Combine(_main.Paths.Workspace, "maps", "megalo", name + ".mglo");
-        if (!string.IsNullOrEmpty(TestMap)) _main.SelectedScenario = TestMap;
-        await CompileAsync(mglo);
-        if (!CompileOk) return;
-        if (!File.Exists(mglo)) { CompileSummary = "The compiler did not produce a game engine to deploy."; return; }
-        _main.StartGame(new[] { "load_binary_game_engine " + name },
-            $"Testing {Title} in the game: deployed {mglo} and asked the game to load it before the map starts.");
-        CompileSummary += " Deployed and launched in the game.";
     }
 
     [RelayCommand]

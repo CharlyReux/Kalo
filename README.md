@@ -22,13 +22,23 @@ dotnet build Kalo.sln
 src\Kalo.App\bin\Debug\net8.0\kalo.exe
 ```
 
-- Left: every tag of the shared workspace (Ctrl+P searches by name). Double-click opens it.
+- Start page: create a mod (a name is enough), then New map / New gametype / Tweak a weapon.
+- Left, "My mod": only what your mod contains, grouped as Maps, Gametypes, Weapons & objects, Sounds,
+  UI & text, Effects & visuals. The + of a group creates (maps, gametypes) or opens the game files to pick
+  something to change; right-click a file to compare it with vanilla or take it out of the mod.
+  New map: a Reach level either empty (spawn points only) or fully copied, saved in levels\mods\<mod>\<map>.
+  New gametype: a copy of a template (simple commented starter, Slayer, CTF, KotH, Oddball, Juggernaut...)
+  in data\multiplayer\megalo\mods\<mod>\.
+- Left, "All game files" (advanced): every tag of Halo Reach (Ctrl+P searches). Open one and save it to
+  add it to your mod.
+- Play (F5), top right: plays the chosen map with the chosen gametype. Both follow the tab you work in
+  (a map tab picks the map, a gametype tab the gametype); unsaved changes are saved first and your gametype
+  is compiled and loaded into the game.
 - Middle: the tag editor. "Labeled" shows friendly names and hides engine internals, "Raw fields" shows
   the engine's names and types. Type a value and press Enter: Kalo checks it with the engine right away.
   Save (Ctrl+S) writes the tag into the shared workspace, never into HREK.
-- Play (F5) starts reach_tag_test on the map picked at the top. While it runs, every tag you save is
-  reloaded by the game within a second (change the assault rifle's magazine size and look at its ammo
-  counter).
+- While the game runs, every tag you save is reloaded within a second (change the assault rifle's magazine
+  size and look at its ammo counter). Object placements need a restart: press Play again.
 - The Changes panel (second icon on the left) lists every file that differs from vanilla HREK and puts any
   of them back. "Revert to vanilla" in the editor does the same for the open tag.
 
@@ -57,7 +67,8 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
 
 Self-tests, used through the runner: `kalo.exe --tour .kalo\shots\tour` walks through blocks, references, the
 map view (handles, multi-select, drop), the script editor (autocomplete) and projects (diff, import); nothing is
-saved. `--map-play-test` and `--megalo-play-test` check an edited map and a gametype in reach_tag_test. `kalo.exe --self-test .kalo\shots\selftest` opens the assault rifle,
+saved. `--map-play-test`, `--megalo-play-test` and `--mod-play-test` (new mod → new empty map + new gametype → Play)
+check the game side in reach_tag_test. `kalo.exe --self-test .kalo\shots\selftest` opens the assault rifle,
 sets the magazine size, saves, starts the game, changes it again while the game runs, waits for the game
 to reload it, stops the game, reverts, and checks HREK was not touched. It prints `SELFTEST PASS` or the
 failed checks and saves screenshots of the Kalo window.

@@ -70,7 +70,6 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _gameStatus = "Game not running";
     [ObservableProperty] private IBrush _gameBrush = Brushes.Gray;
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(PlayCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopGameCommand))]
     private bool _isGameRunning;
     [ObservableProperty] private string _statusMessage = "";
@@ -137,6 +136,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
                 ExplorerRoots.Add(new ExplorerNode(d, tagsRoot, true, IsChangedSafe));
             FindScenarios(tagsRoot);
             FindScripts();
+            BuildGametypeChoices();
         }
         else
         {
@@ -376,7 +376,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         string ws = Paths.Workspace;
         IEnumerable<string> files = Directory.EnumerateFiles(root, "*.txt", SearchOption.TopDirectoryOnly)
             .Concat(Directory.Exists(System.IO.Path.Combine(root, "simple")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "simple"), "*.txt", SearchOption.AllDirectories) : Array.Empty<string>())
-            .Concat(Directory.Exists(System.IO.Path.Combine(root, "includes")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "includes"), "*.txt") : Array.Empty<string>());
+            .Concat(Directory.Exists(System.IO.Path.Combine(root, "includes")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "includes"), "*.txt") : Array.Empty<string>())
+            .Concat(Directory.Exists(System.IO.Path.Combine(root, "mods")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "mods"), "*.txt", SearchOption.AllDirectories) : Array.Empty<string>());
         foreach (string f in files.OrderBy(f => f.Contains("includes") ? 1 : 0).ThenBy(f => f, StringComparer.OrdinalIgnoreCase))
         {
             string rel = f.Substring(ws.Length + 1);
@@ -432,12 +433,11 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (messages.Any(m => m.IsError)) BottomPanel = "problems";
     }
 
-    public void PlayScenario(string scenario)
+    public Task PlayScenarioAsync(string scenario)
     {
         if (!Scenarios.Contains(scenario)) Scenarios.Add(scenario);
         SelectedScenario = scenario;
-        if (IsGameRunning) Game?.Stop();
-        PlayCommand.Execute(null);
+        return PlayAsync();
     }
 
     /// <summary>Any document saved: refresh the vanilla markers and the Changes panel.</summary>
@@ -503,6 +503,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         foreach (var c in list) Changes.Add(new ChangeItem { Path = c.Path, Kind = c.Kind.ToString() });
         ChangesSummary = list.Count == 0 ? "No changes from vanilla" : $"{list.Count} changed file{(list.Count == 1 ? "" : "s")}";
         foreach (var root in ExplorerRoots) root.RefreshChanged();
+        BuildModTree(list);
     }
 
     private bool IsChangedSafe(string relative)
@@ -547,20 +548,20 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void FindScenarios(string tagsRoot)
     {
-        string multi = System.IO.Path.Combine(tagsRoot, "levels", "multi");
-        if (!Directory.Exists(multi)) return;
-        foreach (string f in Directory.EnumerateFiles(multi, "*.scenario", SearchOption.AllDirectories).OrderBy(x => x))
+        // Maps made in Kalo (levels\mods) first, then Reach's multiplayer maps.
+        foreach (string folder in new[] { "mods", "multi" })
         {
-            string rel = f.Substring(tagsRoot.Length + 1);
-            Scenarios.Add(rel.Substring(0, rel.Length - ".scenario".Length));
+            string dir = System.IO.Path.Combine(tagsRoot, "levels", folder);
+            if (!Directory.Exists(dir)) continue;
+            foreach (string f in Directory.EnumerateFiles(dir, "*.scenario", SearchOption.AllDirectories).OrderBy(x => x))
+            {
+                string rel = f.Substring(tagsRoot.Length + 1);
+                Scenarios.Add(rel.Substring(0, rel.Length - ".scenario".Length));
+            }
         }
         SelectedScenario = Scenarios.FirstOrDefault(s => s.EndsWith("20_sword_slayer", StringComparison.OrdinalIgnoreCase)) ?? Scenarios.FirstOrDefault();
     }
 
-    private bool CanPlay() => !IsGameRunning;
-
-    [RelayCommand(CanExecute = nameof(CanPlay))]
-    private void Play() => StartGame(Array.Empty<string>(), null);
 
     /// <summary>Starts reach_tag_test on the selected map, optionally running console commands first.</summary>
     public void StartGame(IReadOnlyList<string> initCommands, string? note)
@@ -602,6 +603,9 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         string? active = ModProjects.ActiveName;
         foreach (var p in ModProjects.List())
             Projects.Add(new ProjectItem(p.Name, p.Manifest.Description, p.Manifest.Files.Count, p.Name.Equals(active, StringComparison.OrdinalIgnoreCase), p.Manifest.Updated));
+        OnPropertyChanged(nameof(HasActiveMod));
+        OnPropertyChanged(nameof(NoActiveMod));
+        OnPropertyChanged(nameof(ActiveModName));
         ActiveProjectText = active == null
             ? "No project: edits stay in the workspace until you create one."
             : $"Working on {active}. Every save is recorded in the project.";
@@ -712,6 +716,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (oldValue != null) oldValue.IsActive = false;
         if (newValue != null) newValue.IsActive = true;
+        FollowActiveDocument(newValue);
         OnPropertyChanged(nameof(ActiveTab));
         OnPropertyChanged(nameof(ActiveMap));
         OnPropertyChanged(nameof(ActiveScript));

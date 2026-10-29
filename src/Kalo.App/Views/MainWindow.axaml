@@ -39,17 +39,21 @@
             <MenuItem Header="Problems" Command="{Binding ShowProblemsCommand}" />
           </MenuItem>
           <MenuItem Header="_Play">
-            <MenuItem Header="Play test" InputGesture="F5" Command="{Binding PlayCommand}" />
+            <MenuItem Header="Play (map and gametype chosen at the top)" InputGesture="F5" Command="{Binding PlayCommand}" />
             <MenuItem Header="Stop" InputGesture="Shift+F5" Command="{Binding StopGameCommand}" />
           </MenuItem>
         </Menu>
 
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <TextBlock Text="Map" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" />
-          <ComboBox ItemsSource="{Binding Scenarios}" SelectedItem="{Binding SelectedScenario}" Width="330" MinHeight="26" FontSize="12" />
-          <Button Classes="tool" Command="{Binding PlayCommand}" ToolTip.Tip="Play test in reach_tag_test (F5)">
+          <TextBlock Text="Play" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" />
+          <ComboBox ItemsSource="{Binding Scenarios}" SelectedItem="{Binding SelectedScenario}" Width="300" MinHeight="26" FontSize="12"
+                    ToolTip.Tip="Map to play. Follows the map tab you are working in." />
+          <TextBlock Text="with" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" />
+          <ComboBox ItemsSource="{Binding GametypeChoices}" SelectedItem="{Binding SelectedGametype}" Width="200" MinHeight="26" FontSize="12"
+                    ToolTip.Tip="Gametype to play. 'Map default' plays the map as it is; your own gametypes are compiled and loaded first." />
+          <Button Classes="primary" Command="{Binding PlayCommand}" ToolTip.Tip="{Binding PlaySummary}" Padding="10,3">
             <StackPanel Orientation="Horizontal" Spacing="6">
-              <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" Foreground="{StaticResource KSuccess}" VerticalAlignment="Center" />
+              <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" VerticalAlignment="Center" />
               <TextBlock Text="Play" VerticalAlignment="Center" />
             </StackPanel>
           </Button>
@@ -103,9 +107,6 @@
           <Button Classes="activity" Classes.active="{Binding IsProjectsPanel}" Command="{Binding ShowProjectsCommand}" ToolTip.Tip="Mod projects">
             <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE7B8;" FontSize="18" />
           </Button>
-          <Button Classes="activity" Command="{Binding PlayCommand}" ToolTip.Tip="Play test (F5)">
-            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" FontSize="18" />
-          </Button>
         </StackPanel>
       </Border>
 
@@ -116,8 +117,20 @@
             <TextBlock Text="{Binding SidePanelTitle}" Classes="header" Margin="10,0" VerticalAlignment="Center" />
           </Border>
 
-          <!-- Project explorer + search -->
+          <!-- Project: My mod (default) or all game files (advanced) -->
           <DockPanel IsVisible="{Binding IsExplorer}">
+          <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="6,5">
+            <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" ClipToBounds="True" HorizontalAlignment="Left">
+              <StackPanel Orientation="Horizontal">
+                <ToggleButton Classes="seg" Content="My mod" IsChecked="{Binding IsModTab, Mode=OneWay}" Command="{Binding ShowModTabCommand}" />
+                <ToggleButton Classes="seg" Content="All game files" IsChecked="{Binding IsAllFilesTab, Mode=OneWay}" Command="{Binding ShowAllFilesTabCommand}"
+                              ToolTip.Tip="Every tag of Halo Reach (advanced). Open one and save it to add it to your mod." />
+              </StackPanel>
+            </Border>
+          </Border>
+          <Grid>
+          <views:ModPanel IsVisible="{Binding IsModTab}" />
+          <DockPanel IsVisible="{Binding IsAllFilesTab}">
             <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Search tags (e.g. assault weapon)" Text="{Binding SearchText}" x:Name="SearchBox" />
             <Grid>
               <TreeView x:Name="ExplorerTree" ItemsSource="{Binding ExplorerRoots}" IsVisible="{Binding NotSearching}" DoubleTapped="Explorer_DoubleTapped">
@@ -147,6 +160,9 @@
                 </ListBox.ItemTemplate>
               </ListBox>
             </Grid>
+          </DockPanel>
+
+          </Grid>
           </DockPanel>
 
           <!-- Gametype scripts -->
@@ -261,10 +277,52 @@
           <StackPanel Margin="32,28" Spacing="18" MaxWidth="720" HorizontalAlignment="Left">
             <StackPanel>
               <TextBlock Text="Kalo" FontSize="20" FontWeight="SemiBold" />
-              <TextBlock Text="Halo Reach mod workbench. Open a tag from the project tree or search for one." Foreground="{StaticResource KMuted}" />
+              <TextBlock Text="Halo Reach mod workbench." Foreground="{StaticResource KMuted}" />
             </StackPanel>
+
+            <!-- No mod yet: create one -->
+            <Border IsVisible="{Binding NoActiveMod}" Background="{StaticResource KPanel}" CornerRadius="6" Padding="16" BorderBrush="{StaticResource KBorder}" BorderThickness="1">
+              <StackPanel Spacing="8">
+                <TextBlock Text="Start a mod" FontSize="15" FontWeight="SemiBold" />
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource KMuted}" FontSize="12.5"
+                           Text="A mod holds only what you make or change: new maps, new gametypes, and any game file you tweak. It starts empty; add things from the My mod panel." />
+                <TextBox Classes="compact" Watermark="Mod name (e.g. Rocket Race)" Text="{Binding NewModName}" Width="340" HorizontalAlignment="Left" />
+                <TextBox Classes="compact" Watermark="One line about it (optional)" Text="{Binding NewModDescription}" Width="340" HorizontalAlignment="Left" />
+                <Button Classes="primary" Content="Create the mod" Command="{Binding CreateModCommand}" HorizontalAlignment="Left" />
+              </StackPanel>
+            </Border>
+
+            <!-- A mod is active: what to do next -->
+            <Border IsVisible="{Binding HasActiveMod}" Background="{StaticResource KPanel}" CornerRadius="6" Padding="16" BorderBrush="{StaticResource KBorder}" BorderThickness="1">
+              <StackPanel Spacing="10">
+                <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding ActiveModName, StringFormat='Working on {0}'}" />
+                <WrapPanel>
+                  <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNewMapFormCommand}" Padding="12,8">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="New map" FontWeight="SemiBold" />
+                      <TextBlock Text="Start from a Reach level, empty or full" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+                    </StackPanel>
+                  </Button>
+                  <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNewGametypeFormCommand}" Padding="12,8">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="New gametype" FontWeight="SemiBold" />
+                      <TextBlock Text="Start from a simple script or a Reach mode" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+                    </StackPanel>
+                  </Button>
+                  <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNodeCommand}" CommandParameter="objects\weapons\rifle\assault_rifle\assault_rifle.weapon" Padding="12,8">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Tweak a weapon" FontWeight="SemiBold" />
+                      <TextBlock Text="e.g. the assault rifle's magazine" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+                    </StackPanel>
+                  </Button>
+                </WrapPanel>
+                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource KMuted}" FontSize="12"
+                           Text="Press Play (F5) at the top to try it: pick the map and the gametype there. Other mods are in the Mod projects panel." />
+              </StackPanel>
+            </Border>
+
             <StackPanel Spacing="4">
-              <TextBlock Text="QUICK OPEN" Classes="header" />
+              <TextBlock Text="QUICK OPEN (vanilla tags)" Classes="header" />
               <ItemsControl ItemsSource="{Binding QuickOpen}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="sys:String">
@@ -277,7 +335,7 @@
             <StackPanel Spacing="4">
               <TextBlock Text="HOW IT WORKS" Classes="header" />
               <TextBlock TextWrapping="Wrap" Foreground="{StaticResource KCode}"
-                         Text="Edits go to the shared workspace, never to HREK. Save with Ctrl+S. Press Play (F5) to test a map in reach_tag_test: tags you save while it runs are reloaded by the game. The Changes panel lists everything your mod changed and can put any file back to vanilla." />
+                         Text="Everything you save goes into your mod (Kalo's workspace), never into HREK. Play (F5) saves first, then starts the chosen map and gametype in reach_tag_test; tags you save while it runs are reloaded by the game. My mod lists everything the mod contains; right-click a file to compare it with vanilla or take it out of the mod." />
             </StackPanel>
           </StackPanel>
         </ScrollViewer>
