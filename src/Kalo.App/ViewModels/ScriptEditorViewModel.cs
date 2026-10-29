@@ -264,6 +264,13 @@ public partial class ScriptEditorViewModel : DocumentViewModel
 
     public override Task SaveDocumentAsync() => SaveCommand.ExecuteAsync(null);
 
+    /// <summary>Closing the script also clears its compile errors from the Problems panel.</summary>
+    public override Task CloseAsync()
+    {
+        _main.ReportScriptProblems(this, Array.Empty<ScriptMessage>());
+        return Task.CompletedTask;
+    }
+
     public void Reveal(int line, int start, int length) => RevealRequested?.Invoke(line, start, length);
 }
 
