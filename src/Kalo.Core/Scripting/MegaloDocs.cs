@@ -175,6 +175,8 @@ public static class MegaloDocs
         ["and"] = new("Both conditions must be true. Mixed with or, parentheses are required.", "if a == 1 or (b == 2 and timer_expired(t)) then"),
         ["or"] = new("Either condition may be true. Mixed with and, parentheses are required: (a or b) and c.", "if (a == 1 or b == 2) and c == 3 then"),
         ["not"] = new("Inverts the condition (or the parenthesized group) that follows.", "if not (a == 1 or b == 2) then"),
+        ["enum"] = new("A number whose values have names: declare player.enum{placer, player, spectator} role = spectator, then role == placer, role = player.",
+            "declare player.enum{placer, player, spectator} role = spectator"),
         ["temp"] = new("A temporary variable that only lives during this tick: temp number|player|object|team name = value.",
             "temp player killer = none"),
         ["declare"] = new("A variable kept between ticks: declare [networked|local] global|player|team|object.number|timer|player|object|team name = value. Player, team and object variables exist once per player/team/object (current_player.streak).",

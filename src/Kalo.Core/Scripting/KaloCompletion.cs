@@ -174,6 +174,8 @@ public static class KaloCompletion
         public Dictionary<string, SortedSet<string>> ByKind { get; } = new();
         /// <summary>Per-player / team / object variables: (scope, type, name).</summary>
         public List<(string Scope, string Type, string Name)> Members { get; } = new();
+        /// <summary>enum variables → their value names.</summary>
+        public Dictionary<string, List<string>> Enums { get; } = new(StringComparer.Ordinal);
 
         public void Add(string kind, string name)
         {
@@ -185,6 +187,7 @@ public static class KaloCompletion
     }
 
     private static readonly Regex Declare = new(@"^\s*declare\s+(?:(?:networked\w*|local)\s+)*(global|player|team|object)\.(number|player|object|team|timer)\s+(\w+)", RegexOptions.Multiline);
+    private static readonly Regex DeclareEnum = new(@"^\s*declare\s+(?:(?:networked\w*|local)\s+)*(global|player|team|object)\.enum\s*\{([^}]*)\}\s*(\w+)", RegexOptions.Multiline);
     private static readonly Regex Temp = new(@"\btemp\s+(number|player|object|team|timer)\s+(\w+)");
     private static readonly Regex Named = new(@"^\s*(?:hidden\s+|locked\s+)*(option|constant|traits|widget|objects|alias)\s+(\w+)", RegexOptions.Multiline);
     private static readonly Regex Label = new(@"\blabel\s+""([^""]+)""");
@@ -197,6 +200,13 @@ public static class KaloCompletion
             string scope = m.Groups[1].Value, type = m.Groups[2].Value, name = m.Groups[3].Value;
             if (scope == "global") n.Add(type, name);
             else n.Members.Add((scope, type, name));
+        }
+        foreach (Match m in DeclareEnum.Matches(script))
+        {
+            string scope = m.Groups[1].Value, name = m.Groups[3].Value;
+            n.Enums[name] = m.Groups[2].Value.Split(',').Select(v => v.Trim()).Where(v => v.Length > 0).ToList();
+            if (scope == "global") n.Add("number", name);
+            else n.Members.Add((scope, "number", name));
         }
         foreach (Match m in Temp.Matches(script)) n.Add(m.Groups[1].Value, m.Groups[2].Value);
         foreach (Match m in Named.Matches(script))
@@ -212,6 +222,41 @@ public static class KaloCompletion
         }
         foreach (Match m in Label.Matches(script)) n.Add("label", "\"" + m.Groups[1].Value + "\"");
         return n;
+    }
+
+    /// <summary>
+    /// After "x." (x a player, team or object): its variables and Megalo's own members. Null when x is unknown.
+    /// </summary>
+    public static List<Suggestion>? Members(string baseExpr, string script)
+    {
+        var names = Scan(script);
+        string? scope = baseExpr switch
+        {
+            "current_player" => "player",
+            "current_team" => "team",
+            "current_object" => "object",
+            _ => names.ByKind.FirstOrDefault(k => k.Key is "player" or "team" or "object" && k.Value.Contains(baseExpr)).Key,
+        };
+        if (scope == null && baseExpr.EndsWith(".team", StringComparison.Ordinal)) scope = "team";
+        if (scope == null) return null;
+        var list = names.Members.Where(m => m.Scope == scope)
+            .Select(m => new Suggestion(m.Name, m.Type, names.Enums.TryGetValue(m.Name, out var e) ? "enum: " + string.Join(", ", e) : $"{scope}.{m.Type} declared in this script"))
+            .ToList();
+        if (scope == "player") { list.Add(new Suggestion("score", "number", "the player's score")); list.Add(new Suggestion("team", "team", "the player's team")); }
+        if (scope == "team") list.Add(new Suggestion("score", "number", "the team's score"));
+        if (scope == "object") list.Add(new Suggestion("team", "team", "the object's team"));
+        return list;
+    }
+
+    /// <summary>After "x == " or "x = " where x is an enum variable: its value names.</summary>
+    public static List<Suggestion>? EnumValues(string lineBeforeCaret, string script)
+    {
+        var m = Regex.Match(lineBeforeCaret, @"([\w.]+)\s*(==|!=|=)\s*\w*$");
+        if (!m.Success) return null;
+        string var = m.Groups[1].Value[(m.Groups[1].Value.LastIndexOf('.') + 1)..];
+        return Scan(script).Enums.TryGetValue(var, out var values)
+            ? values.Select(v => new Suggestion(v, "enum value", $"{var} = {v} (stored as {values.IndexOf(v)})")).ToList()
+            : null;
     }
 
     /// <summary>

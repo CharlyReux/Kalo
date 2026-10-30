@@ -189,7 +189,7 @@ internal static class Lexer
                 list.Add(new Tok(T.Word, src[s..i], line, startCol));
                 continue;
             }
-            if (c is '(' or ')' or ',' or '.' or '[' or ']')
+            if (c is '(' or ')' or ',' or '.' or '[' or ']' or '{' or '}')
             {
                 list.Add(new Tok(T.Punct, c.ToString(), line, Col()));
                 i++;
@@ -394,7 +394,8 @@ internal sealed partial class Transpiler
             Next();
             string name = Word("an alias name");
             Expect("=");
-            _aliases[name] = Path();
+            // alias goal_message = "{current_player} reached the goal!": a text used in messages (filled in where used).
+            _aliases[name] = Peek.Kind == T.String ? "\"" + Next().Text + "\"" : Path();
             return;
         }
         if (t.Is("for"))
@@ -440,10 +441,29 @@ internal sealed partial class Transpiler
         Expect(".");
         var typeTok = Peek;
         string type = Word("a type");
-        if (!Types.Contains(type)) throw new ParseError(typeTok, $"'{type}' is not a variable type: use number, timer, object, player or team");
+        List<string>? choices = null;
+        if (type == "enum")
+        {
+            // declare player.enum{placer, player, spectator} applied_trait = spectator: a number whose values have names.
+            Expect("{", "expected { after enum, e.g. enum{red, blue}");
+            choices = new List<string>();
+            while (true)
+            {
+                var c = Peek;
+                string word = Word("a value name");
+                if (choices.Contains(word)) throw new ParseError(c, $"'{word}' is already in this enum");
+                choices.Add(word);
+                if (Peek.Is(",")) { Next(); continue; }
+                break;
+            }
+            Expect("}", "expected } to close the enum");
+            type = "number";
+        }
+        if (!Types.Contains(type)) throw new ParseError(typeTok, $"'{type}' is not a variable type: use number, timer, object, player, team or enum{{a, b}}");
+        var nameTok = Peek;
         string name = Word("a variable name");
         string value = type is "number" or "timer" ? "0" : "none";
-        if (Peek.Is("=")) { Next(); value = Atom(); }
+        if (Peek.Is("=")) { Next(); value = choices != null ? EnumValue(name, Atom(), nameTok) : Atom(); }
         if (_varsAt == int.MaxValue) { _varsAt = _out.Count; _out.Add((VarsMarker, at.Line)); }
         if (!_vars.TryGetValue(scope, out var list)) _vars[scope] = list = new();
         list.Add(($"{network} {type} {name} {value}", at.Line));
@@ -597,7 +617,11 @@ internal sealed partial class Transpiler
         {
             Next();
             if (Peek.Kind == T.End || Peek.Line != op.Line) throw new ParseError(op, $"missing the value after {op.Text}");
+            var valueTok = Peek;
             string value = Atom();
+            if (value.StartsWith('"'))
+                throw new ParseError(valueTok, "Megalo has no text variables. Name a text with alias at the top of the file (alias message = \"{current_player} reached the goal!\") and use the name in the call, or write the text in the call itself");
+            value = EnumValue(path, value, valueTok);
             if (Peek.Kind == T.Op && Arithmetic.TryGetValue(Peek.Text, out string? then) && Peek.Line == op.Line)
             {
                 var arith = Next();
@@ -811,11 +835,45 @@ internal sealed partial class Transpiler
             {
                 int j = k + 1;
                 while (j < _t.Count && _t[j].Kind == T.Word && (_t[j].Text.StartsWith("networked", StringComparison.Ordinal) || _t[j].Text == "local")) j++;
-                if (j + 3 < _t.Count && _t[j + 1].Is(".") && _t[j + 2].Kind == T.Word && _t[j + 3].Kind == T.Word) _types[_t[j + 3].Text] = _t[j + 2].Text;
+                if (j + 3 < _t.Count && _t[j + 1].Is(".") && _t[j + 2].Is("enum") && _t[j + 3].Is("{"))
+                {
+                    // scope.enum{a, b, c} name
+                    var values = new List<string>();
+                    int e = j + 4;
+                    for (; e < _t.Count && !_t[e].Is("}") && _t[e].Kind != T.End; e++) if (_t[e].Kind == T.Word) values.Add(_t[e].Text);
+                    if (e + 1 < _t.Count && _t[e + 1].Kind == T.Word)
+                    {
+                        _types[_t[e + 1].Text] = "number";
+                        _enums[_t[e + 1].Text] = values;
+                    }
+                }
+                else if (j + 3 < _t.Count && _t[j + 1].Is(".") && _t[j + 2].Kind == T.Word && _t[j + 3].Kind == T.Word) _types[_t[j + 3].Text] = _t[j + 2].Text;
             }
             else if (_t[k].Is("temp") && _t[k + 1].Kind == T.Word && Types.Contains(_t[k + 1].Text) && _t[k + 2].Kind == T.Word)
                 _types[_t[k + 2].Text] = _t[k + 1].Text;
+            else if ((_t[k].Is("option") || _t[k].Is("constant")) && (k == 0 || _t[k - 1].Line < _t[k].Line || _t[k - 1].Is("hidden") || _t[k - 1].Is("locked"))
+                     && _t[k + 1].Kind == T.Word && !_types.ContainsKey(_t[k + 1].Text))
+                _types[_t[k + 1].Text] = "number"; // lobby options and constants are numbers
         }
+    }
+
+    /// <summary>Enum variables → their value names (index = value).</summary>
+    private readonly Dictionary<string, List<string>> _enums = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// A value given to (or compared with) an enum variable: its value names become their numbers. Numbers and other
+    /// variables pass through; an unknown bare name is an error listing the names.
+    /// </summary>
+    private string EnumValue(string variable, string value, Tok at)
+    {
+        string last = variable[(variable.LastIndexOf('.') + 1)..];
+        if (!_enums.TryGetValue(last, out var names)) return value;
+        int i = names.IndexOf(value);
+        if (i >= 0) return i.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        bool other = value.Length == 0 || !char.IsLetter(value[0]) && value[0] != '_' || value.Contains('.') || _types.ContainsKey(value)
+            || value is "current_player" or "current_team" or "current_object" or "none";
+        if (!other) throw new ParseError(at, $"'{value}' is not a value of {last}: use {string.Join(", ", names)}");
+        return value;
     }
 
     /// <summary>The declared type of a value written in the script (x, current_player.x), or null.</summary>
@@ -866,7 +924,10 @@ internal sealed partial class Transpiler
             throw new ParseError(op, $"expected a comparison (== != < > <= >=) after {left}");
         }
         Next();
+        var rightTok = Peek;
         string right = Atom();
+        right = EnumValue(left, right, rightTok);
+        left = EnumValue(right, left, t);
         // Megalo compares timers only with < and > (the compiler's message for == is hard to read).
         if (op.Text is "==" or "!=" or "<=" or ">=")
             foreach (string side in new[] { left, right })
@@ -898,7 +959,59 @@ internal sealed partial class Transpiler
             }
         }
         Expect(")", $"expected ')' to close {name}(");
+        // "{current_player} reached the goal!": Megalo's format tokens (%p player, %t team, %n number, %s timer), the
+        // values added after the text. At most two per text.
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (!args[i].StartsWith('"') || !args[i].Contains('{')) continue;
+            var (format, values) = Interpolate(args[i], open);
+            args[i] = format;
+            args.InsertRange(i + 1, values);
+            i += values.Count;
+        }
         return (name, args);
+    }
+
+    private (string Format, List<string> Values) Interpolate(string text, Tok at)
+    {
+        var sb = new StringBuilder();
+        var values = new List<string>();
+        for (int i = 0; i < text.Length; i++)
+        {
+            char c = text[i];
+            if (c == '{' && i + 1 < text.Length && text[i + 1] == '{') { sb.Append('{'); i++; continue; }
+            if (c == '}' && i + 1 < text.Length && text[i + 1] == '}') { sb.Append('}'); i++; continue; }
+            if (c != '{') { sb.Append(c); continue; }
+            int close = text.IndexOf('}', i + 1);
+            if (close < 0) throw new ParseError(at, "a { in a text is not closed (write {{ for a { character)");
+            string expr = text[(i + 1)..close].Trim();
+            if (expr.EndsWith(".name", StringComparison.Ordinal)) expr = expr[..^5]; // {current_player.name}: the player shows as their name
+            expr = Resolve(expr);
+            string? type = expr switch
+            {
+                "current_player" => "player",
+                "current_team" => "team",
+                "current_object" => "object",
+                _ when expr.Length > 0 && (char.IsDigit(expr[0]) || expr[0] == '-') => "number",
+                _ when expr.EndsWith(".score", StringComparison.Ordinal) || expr == "score" => "number",
+                _ when expr.EndsWith(".team", StringComparison.Ordinal) => "team",
+                _ => TypeOf(expr),
+            };
+            string spec = type switch
+            {
+                "player" => "%p",
+                "team" => "%t",
+                "number" => "%n",
+                "timer" => "%s",
+                "object" => throw new ParseError(at, $"{{{expr}}}: objects can't be shown in a text (players, teams, numbers and timers can)"),
+                _ => throw new ParseError(at, $"{{{expr}}}: Kalo doesn't know what {expr} is. Declare it (declare / temp), or use current_player, current_team..."),
+            };
+            sb.Append(spec);
+            values.Add(expr);
+            if (values.Count > 2) throw new ParseError(at, "a text can show at most two values ({...})");
+            i = close;
+        }
+        return (sb.ToString(), values);
     }
 
     /// <summary>

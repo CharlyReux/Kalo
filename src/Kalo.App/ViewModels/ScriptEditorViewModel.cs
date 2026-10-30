@@ -44,7 +44,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     private static readonly string[] KaloKeywords =
     {
         "if", "then", "else", "elseif", "end", "for", "each", "do", "inline", "on", "init", "and", "or", "not", "temp", "declare", "alias",
-        "megalo", "include", "with", "label", "networked", "local", "global", "player", "team", "object", "number", "timer",
+        "megalo", "include", "with", "label", "networked", "local", "global", "player", "team", "object", "number", "timer", "enum",
         "setting", "option", "value", "range", "traits", "hidden", "locked", "objects", "constant", "widget", "stat", "engine", "teams", "loadout",
         "current_player", "current_team", "current_object", "none", "true", "false", "random",
     };
@@ -75,6 +75,18 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         {
             pool = new[] { new CompletionItem("if", "keyword", "condition if <a> <op> <b>: compare two values") }
                 .Concat((catalog?.Conditions ?? new()).Select(c => new CompletionItem(c.Name!, "condition", WithDoc(c.Description, MegaloDocs.Conditions, c.Name!))));
+            contextual = true;
+        }
+        else if (IsKaloScript && lineBeforeCaret[..start].EndsWith('.')
+                 && KaloCompletion.Members(BaseBeforeDot(lineBeforeCaret[..(start - 1)]), Text) is { } members)
+        {
+            // current_player. → its variables (declared in the script) and score / team.
+            pool = members.Select(m => new CompletionItem(m.Text, m.Kind, m.Note));
+            contextual = true;
+        }
+        else if (IsKaloScript && KaloCompletion.EnumValues(lineBeforeCaret, Text) is { } enumValues)
+        {
+            pool = enumValues.Select(m => new CompletionItem(m.Text, m.Kind, m.Note));
             contextual = true;
         }
         else if (IsKaloScript && ArgumentSuggestions(lineBeforeCaret) is { } inCall)
@@ -108,6 +120,14 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             .Take(300)
             .ToList();
         return (start, items);
+    }
+
+    /// <summary>"... killer" → "killer"; "x(current_player" → "current_player": the name before a dot.</summary>
+    private static string BaseBeforeDot(string text)
+    {
+        int b = text.Length;
+        while (b > 0 && (char.IsLetterOrDigit(text[b - 1]) || text[b - 1] == '_' || text[b - 1] == '.')) b--;
+        return text[b..];
     }
 
     /// <summary>The argument hints of the call the caret is in (Kalo Script), or null when not in a known call.</summary>

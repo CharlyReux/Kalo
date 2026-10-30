@@ -204,9 +204,25 @@ temp number distance = 0
 "),
             P("Members: player.score, team.score, player.team, and your own player / team / object variables " +
               "(current_player.streak). A player can be used where an object is expected: it means the player's body."),
-            P("alias gives a short name to something long:"),
+            P("enum gives names to the values of a number: compare and set it with the names (stored as 0, 1, 2...)."),
+            C(@"
+declare player.enum{placer, player, spectator} role = spectator
+
+if current_player.role == placer then
+  current_player.role = player
+end
+"),
+            P("alias gives a short name to something long, or to a text used in messages:"),
             C(@"
 alias leader = global.player_0
+alias goal_message = ""{current_player} reached the goal!""
+"),
+            H("Values in messages"),
+            P("Put a player, team, number or timer in braces inside a text: it is shown in the message (a player as their name). " +
+              "At most two per text. Megalo has no text variables: name a text with alias instead."),
+            C(@"
+hud_post_message(everyone, none, ""{current_player} reached the goal! ({current_player.score} points)"")
+hud_post_message(everyone, ball_taken, goal_message)
 "),
         });
 

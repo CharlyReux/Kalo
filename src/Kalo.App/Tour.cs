@@ -733,6 +733,12 @@ public sealed class Tour
         Check(!doc.CompileOk && memberError?.Line == 3 && memberError.Message.Contains("no player variable called deaths") && memberError.Token == "current_player.deaths",
             $"an undeclared member is explained ({memberError?.Line}: {memberError?.Message})");
 
+        // Enums and values in messages compile through HREK.
+        doc.Text = "declare player.enum{placer, player, spectator} applied_trait = spectator\nalias goal_message = \"{current_player} reached goal!\"\n\nfor each player do\n  if current_player.applied_trait == placer then\n    current_player.applied_trait = player\n    hud_post_message(everyone, ball_taken, \"{current_player.name} reached goal! {current_player.score} points\")\n    hud_post_message(everyone, ball_taken, goal_message)\n  end\nend\n";
+        await doc.CompileCommand.ExecuteAsync(null);
+        Check(doc.CompileOk && doc.GeneratedMegalo.Contains("\"%p reached goal! %n points\" current_player current_player.score") && doc.GeneratedMegalo.Contains("applied_trait == 0"),
+            "enum values and {values} in messages compile: " + doc.CompileSummary);
+
         // An object type that doesn't exist: named, with the real one for a free camera.
         doc.Text = "for each player do\n  temp object mon = none\n  if not object_is_type(current_player, \"free_cam\") then\n    create_object(\"free_cam\", set mon, at current_player)\n  end\nend\n";
         await doc.CompileCommand.ExecuteAsync(null);
@@ -897,6 +903,9 @@ public sealed class Tour
                 "Ctrl+Shift+I formats the file (indentation, spaces, blank lines): " + formatted.Replace("\n", "⏎"));
             doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
             await Pause(200);
+            var members = view.SuggestionsAfter("killer.score += kill_points\n    killer.");
+            Check(members.Contains("streak") && members.Contains("score") && !members.Contains("create_object"),
+                $"after 'killer.' the suggestions are the player's variables ({string.Join(", ", members.Take(6))})");
             var sounds = view.SuggestionsAfter("hud_post_message(player killer, ");
             Check(sounds.Contains("flag_captured") && sounds.Contains("slayer"), $"a message's sound argument offers the game's sounds ({string.Join(", ", sounds.Take(6))}…)");
             var (wav, soundMessage) = await _vm.PrepareMegaloSoundAsync("flag_captured");
