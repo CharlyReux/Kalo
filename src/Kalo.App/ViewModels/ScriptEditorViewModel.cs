@@ -296,6 +296,17 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     public event Action<int, int, int>? RevealRequested;
     /// <summary>The view inserts this text at the caret.</summary>
     public event Action<string>? InsertRequested;
+    /// <summary>Format document (Ctrl+Shift+I): the view applies it as one undo step and keeps the caret's line.</summary>
+    public event Action? FormatRequested;
+
+    [RelayCommand]
+    private void Format() => FormatRequested?.Invoke();
+
+    /// <summary>The script formatted (indentation, spaces, blank lines); only whitespace changes.</summary>
+    public ScriptFormatter.Result Formatted(string text) => ScriptFormatter.Format(text, IsKaloScript);
+
+    /// <summary>Shows what Format did in the status line.</summary>
+    public void FormatDone(string message) => CompileSummary = message + " (Ctrl+Shift+I)";
 
     public async Task LoadAsync()
     {

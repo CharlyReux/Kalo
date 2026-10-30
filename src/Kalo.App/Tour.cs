@@ -838,6 +838,15 @@ public sealed class Tour
             Check(deathTypes.Contains("enemy") && deathTypes.Contains("suicide"), $"player_died's second argument offers death types ({string.Join(", ", deathTypes.Take(8))})");
             var targets = view.SuggestionsAfter("hud_post_message(");
             Check(targets.Contains("player killer") || targets.Contains("player current_player"), $"a message target offers 'player ...' ({string.Join(", ", targets.Take(8))})");
+            // Format document (Ctrl+Shift+I).
+            doc.Text = "for each player do\nif player_died(current_player,enemy) then\n      temp player killer=none\n\n\n\nkiller.score+=1\nend\nend\n";
+            await Pause(200);
+            view.FormatDocument();
+            string formatted = doc.Text.Replace("\r\n", "\n");
+            Check(formatted == "for each player do\n  if player_died(current_player, enemy) then\n    temp player killer = none\n\n    killer.score += 1\n  end\nend\n",
+                "Ctrl+Shift+I formats the file (indentation, spaces, blank lines): " + formatted.Replace("\n", "⏎"));
+            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            await Pause(200);
             var sounds = view.SuggestionsAfter("hud_post_message(player killer, ");
             Check(sounds.Contains("flag_captured") && sounds.Contains("slayer"), $"a message's sound argument offers the game's sounds ({string.Join(", ", sounds.Take(6))}…)");
             var (wav, soundMessage) = await _vm.PrepareMegaloSoundAsync("flag_captured");

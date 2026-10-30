@@ -79,6 +79,12 @@ public partial class ScriptEditorView : UserControl
                 e.Handled = true;
                 return;
             }
+            if (e.Key == Key.I && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+            {
+                FormatDocument();
+                e.Handled = true;
+                return;
+            }
             if (e.Key == Key.Space && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 ShowCompletion(true);
@@ -144,6 +150,43 @@ public partial class ScriptEditorView : UserControl
         string status = await _vm.Main.PlayMegaloSoundAsync(name);
         CallHintText.Text = status;
         CallHintBox.IsVisible = true;
+    }
+
+    /// <summary>Ctrl+Shift+I: formats the whole file as one undo step; the caret stays on its line, after the same code.</summary>
+    public void FormatDocument()
+    {
+        if (_vm == null) return;
+        var doc = Editor.Document;
+        var caret = doc.GetLocation(Editor.CaretOffset);
+        var caretLine = doc.GetLineByNumber(caret.Line);
+        string beforeCaret = doc.GetText(caretLine.Offset, Math.Max(0, Editor.CaretOffset - caretLine.Offset));
+        int codeBefore = beforeCaret.Count(c => !char.IsWhiteSpace(c));
+        var result = _vm.Formatted(doc.Text);
+        if (result.Changed)
+        {
+            // Line numbers before the caret may shift when blank lines are removed: count the code lines above it.
+            int codeLinesAbove = Enumerable.Range(1, caret.Line - 1).Count(n => doc.GetText(doc.GetLineByNumber(n)).Trim().Length > 0);
+            doc.BeginUpdate();
+            doc.Replace(0, doc.TextLength, result.Text);
+            doc.EndUpdate();
+            // Back to the same code line, after the same number of non-space characters.
+            int line = 1, seen = 0;
+            for (; line <= doc.LineCount; line++)
+            {
+                bool code = doc.GetText(doc.GetLineByNumber(line)).Trim().Length > 0;
+                if (code && seen == codeLinesAbove) break;
+                if (code) seen++;
+            }
+            line = Math.Clamp(line, 1, doc.LineCount);
+            var l = doc.GetLineByNumber(line);
+            string text = doc.GetText(l);
+            int col = text.Length - text.TrimStart().Length; // caret in the indentation: start of the code
+            for (int count = 0; codeBefore > 0 && col < text.Length && count < codeBefore; col++)
+                if (!char.IsWhiteSpace(text[col])) count++;
+            Editor.CaretOffset = l.Offset + Math.Min(col, l.Length);
+        }
+        _vm.FormatDone(result.Message);
+        Editor.Focus();
     }
 
     private void UpdateCallHint()
@@ -296,6 +339,7 @@ public partial class ScriptEditorView : UserControl
             _vm.RevealRequested -= Reveal;
             _vm.InsertRequested -= Insert;
             _vm.DiagnosticsChanged -= OnDiagnosticsChanged;
+            _vm.FormatRequested -= FormatDocument;
         }
         _vm = vm;
         _syncing = true;
@@ -321,6 +365,7 @@ public partial class ScriptEditorView : UserControl
             vm.RevealRequested += Reveal;
             vm.InsertRequested += Insert;
             vm.DiagnosticsChanged += OnDiagnosticsChanged;
+            vm.FormatRequested += FormatDocument;
         }
         ShowDiagnostics();
     }

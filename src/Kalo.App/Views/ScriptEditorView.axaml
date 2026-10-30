@@ -7,6 +7,7 @@
              x:DataType="vm:ScriptEditorViewModel">
   <UserControl.KeyBindings>
     <KeyBinding Gesture="F7" Command="{Binding CompileCommand}" />
+    <KeyBinding Gesture="Ctrl+Shift+I" Command="{Binding FormatCommand}" />
   </UserControl.KeyBindings>
 
   <DockPanel>
@@ -21,6 +22,8 @@
                         ToolTip.Tip="Show the Megalo text this Kalo Script turns into (what HREK's compiler gets)" />
           <Button Classes="outline" Content="Export .bin" Command="{Binding ExportBinCommand}"
                   ToolTip.Tip="Save it as an MCC game type file (Kalo\exports\gametypes) to use in Custom Games. Experimental." />
+          <Button Classes="outline" Content="Format" Command="{Binding FormatCommand}"
+                  ToolTip.Tip="Format the file (Ctrl+Shift+I): indentation by block, spaces after commas and around = and ==, no double blank lines. Only spaces change." />
           <Button Classes="outline" Content="Compile (F7)" Command="{Binding CompileCommand}" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
         </StackPanel>
