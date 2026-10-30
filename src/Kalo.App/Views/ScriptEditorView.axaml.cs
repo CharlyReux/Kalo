@@ -39,6 +39,19 @@ public partial class ScriptEditorView : UserControl
             char c = e.Text[^1];
             if (char.IsLetterOrDigit(c) || c == '_' || c == ' ' || c == '(' || c == ',' || c == '.') ShowCompletion(false);
         };
+        // A character that can't be part of a suggestion closes the list (without inserting anything), so a list opened
+        // after "(" or "," doesn't stay open, empty, and swallow the arrow keys once the call is typed.
+        Editor.TextArea.TextEntering += (_, e) =>
+        {
+            if (_completion != null && !string.IsNullOrEmpty(e.Text) && !(char.IsLetterOrDigit(e.Text[0]) || e.Text[0] == '_'))
+                _completion.Close();
+        };
+        // Up / Down with an empty suggestion list move the caret, as they should.
+        Editor.TextArea.AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (_completion != null && e.Key is Key.Up or Key.Down or Key.PageUp or Key.PageDown
+                && (_completion.CompletionList.ListBox?.ItemCount ?? 0) == 0) _completion.Close();
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
         // Sounds in the suggestion list: the one reached with the arrow keys plays after a short pause.
         Editor.TextArea.AddHandler(KeyUpEvent, (_, e) =>
         {
@@ -209,6 +222,17 @@ public partial class ScriptEditorView : UserControl
         Editor.CaretOffset = offset + textBeforeCaret.Length;
         UpdateCallHint();
         return CallHintBox.IsVisible ? CallHintText.Text : null;
+    }
+
+    /// <summary>For tests: types text at the end of a line (as the keyboard would), then presses a key; returns the caret's line after.</summary>
+    public (int Line, bool ListOpen) TypeThenPress(int line, string text, Key key)
+    {
+        Editor.Focus();
+        Editor.CaretOffset = Editor.Document.GetLineByNumber(line).EndOffset;
+        foreach (char c in text) Editor.TextArea.PerformTextInput(c.ToString());
+        var args = new KeyEventArgs { RoutedEvent = KeyDownEvent, Key = key, Source = Editor.TextArea };
+        Editor.TextArea.RaiseEvent(args);
+        return (Editor.TextArea.Caret.Line, _completion != null);
     }
 
     /// <summary>For tests: the suggestions offered with the caret right after a piece of text.</summary>

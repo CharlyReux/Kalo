@@ -32,6 +32,7 @@ public sealed class Tour
     public async Task<int> RunAsync()
     {
         Say("tour started");
+        Directory.CreateDirectory(_dir);
         try
         {
             await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
@@ -859,6 +860,17 @@ public sealed class Tour
             Check(deathTypes.Contains("enemy") && deathTypes.Contains("suicide"), $"player_died's second argument offers death types ({string.Join(", ", deathTypes.Take(8))})");
             var targets = view.SuggestionsAfter("hud_post_message(");
             Check(targets.Contains("player killer") || targets.Contains("player current_player"), $"a message target offers 'player ...' ({string.Join(", ", targets.Take(8))})");
+            // Arrow keys after typing a call (a suggestion list opened at "(" must not keep them).
+            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            await Pause(300);
+            int startLine = Line("player_death_get_killing_player(");
+            var (after, open) = view.TypeThenPress(startLine, "\n    hud_post_message(everyone, flag_captured, \"x\")", Avalonia.Input.Key.Down);
+            Check(after == startLine + 2 && !open, $"Down moves to the next line after typing a call ({startLine + 1} → {after}, list open: {open})");
+            var (back, _) = view.TypeThenPress(after, "", Avalonia.Input.Key.Up);
+            Check(back == startLine + 1, $"Up moves back ({after} → {back})");
+            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            await Pause(200);
+
             // Format document (Ctrl+Shift+I).
             doc.Text = "for each player do\nif player_died(current_player,enemy) then\n      temp player killer=none\n\n\n\nkiller.score+=1\nend\nend\n";
             await Pause(200);
