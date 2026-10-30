@@ -85,6 +85,10 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   Settings (toolbar) shows the settings, lobby options, player traits, map objects and constants as forms, like
   ReachVariantTool; each change rewrites only that line or block of the code. Hovering a word in the code shows its
   help; F1 or Help › Kalo Script documentation opens the guide and a reference of every action and condition.
+  Mistakes are underlined in red as you type (after a short pause; point at one to read it), and inside a call's
+  parentheses the suggestions are what that argument takes. Sound names can be heard: rest the mouse on one in the
+  suggestion list (or press ▶), or hover it in the code. Kalo reads them from the game's FMOD banks (MCC
+  haloreach\fmod\pc, read only) and keeps decoded copies in .kalo\cache\sounds.
 
   ```
   -- title: Streaks

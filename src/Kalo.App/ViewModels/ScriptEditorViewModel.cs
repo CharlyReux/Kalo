@@ -378,11 +378,28 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     /// <summary>The text the diagnostics belong to (the editor maps them onto the current text).</summary>
     public string DiagnosticsText { get; private set; } = "";
 
-    private void PublishDiagnostics(string text)
+    /// <summary>
+    /// Shows a check's messages (list, Problems, underlines). Nothing is redrawn when they did not change. While typing,
+    /// a new error waits for a longer pause first, so half-written lines don't flash red. False when dropped (text changed).
+    /// </summary>
+    private async Task<bool> ApplyMessagesAsync(List<ScriptMessage> fresh, string text, bool live, Func<bool> stale)
     {
-        Diagnostics = Messages.ToList();
-        DiagnosticsText = text;
-        DiagnosticsChanged?.Invoke();
+        if (live && fresh.Any(m => m.IsError && !Messages.Contains(m)))
+        {
+            await Task.Delay(900);
+            if (stale()) return false;
+        }
+        if (!live || !fresh.SequenceEqual(Messages))
+        {
+            Messages.Clear();
+            foreach (var m in fresh) Messages.Add(m);
+            OnPropertyChanged(nameof(HasMessages));
+            _main.ReportScriptProblems(this, Messages, showPanel: !live);
+            Diagnostics = Messages.ToList();
+            DiagnosticsText = text;
+            DiagnosticsChanged?.Invoke();
+        }
+        return true;
     }
 
     /// <summary>Checks the code a moment after typing stops: Kalo Script locally, then HREK's Megalo compiler.</summary>
@@ -414,14 +431,11 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             if (megalo == null)
             {
                 // Kalo Script errors: no need to ask the Megalo compiler.
-                Messages.Clear();
-                foreach (var e in kalo!.Errors) Messages.Add(new ScriptMessage(e.Line, -1, 0, "error", e.Message, null, e.Column));
-                OnPropertyChanged(nameof(HasMessages));
+                var found = kalo!.Errors.Select(e => new ScriptMessage(e.Line, -1, 0, "error", e.Message, null, e.Column)).ToList();
+                if (!await ApplyMessagesAsync(found, text, live, Stale)) return;
                 CompileOk = false;
                 CompileSummary = live ? $"{kalo.Errors.Count} error(s), underlined in red. Point at one to read it."
                     : $"{kalo.Errors.Count} error(s) in the Kalo Script. Fix the first one and compile again.";
-                _main.ReportScriptProblems(this, Messages);
-                PublishDiagnostics(text);
                 if (!live) SelectedMessage = Messages.FirstOrDefault();
                 return;
             }
@@ -437,7 +451,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 BinFile = binFile
             });
             if (Stale()) return;
-            Messages.Clear();
+            var fresh = new List<ScriptMessage>();
             foreach (var m in r.Messages ?? new())
             {
                 if (kalo != null)
@@ -445,10 +459,11 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                     // Point at the Kalo Script line the Megalo line came from.
                     int line = kalo.SourceLine(m.Line);
                     string where = m.Line > 0 && line == 0 ? $" (generated Megalo line {m.Line})" : "";
-                    Messages.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", (m.Message ?? "") + where, m.Token));
+                    fresh.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", (m.Message ?? "") + where, m.Token));
                 }
-                else Messages.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", m.Message ?? "", m.Token));
+                else fresh.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", m.Message ?? "", m.Token));
             }
+            if (!await ApplyMessagesAsync(fresh, text, live, Stale)) return;
             Stats.Clear();
             var stats = r.Stats ?? new();
             void Stat(string label, string key, long? max = null)
@@ -481,8 +496,6 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 : r.Succeeded
                     ? $"Compiled in {r.Ms} ms" + (Messages.Count > 0 ? $" with {Messages.Count} warning(s)" : "") + "."
                     : $"{errors} error(s). Fix the first one and compile again.";
-            _main.ReportScriptProblems(this, Messages);
-            PublishDiagnostics(text);
             if (!live && !r.Succeeded && Messages.Count > 0) SelectedMessage = Messages[0];
         }
         catch (HostException ex)

@@ -838,6 +838,13 @@ public sealed class Tour
             Check(deathTypes.Contains("enemy") && deathTypes.Contains("suicide"), $"player_died's second argument offers death types ({string.Join(", ", deathTypes.Take(8))})");
             var targets = view.SuggestionsAfter("hud_post_message(");
             Check(targets.Contains("player killer") || targets.Contains("player current_player"), $"a message target offers 'player ...' ({string.Join(", ", targets.Take(8))})");
+            var sounds = view.SuggestionsAfter("hud_post_message(player killer, ");
+            Check(sounds.Contains("flag_captured") && sounds.Contains("slayer"), $"a message's sound argument offers the game's sounds ({string.Join(", ", sounds.Take(6))}…)");
+            var (wav, soundMessage) = await _vm.PrepareMegaloSoundAsync("flag_captured");
+            long wavBytes = wav != null && File.Exists(wav) ? new FileInfo(wav).Length : 0;
+            Check(wavBytes > 48000, $"the sound flag_captured is decoded from the game's banks for a preview ({soundMessage}; {wavBytes:N0} bytes)");
+            var (wav2, m2) = await _vm.PrepareMegaloSoundAsync("ball_spawned");
+            Check(wav2 != null, "another sound (ball_spawned → play_ball) is found: " + m2);
             string? hint = view.CallHintAfter("player_death_get_killing_player(current_player, ");
             Check(hint?.Contains("▸<killing_player>") == true, $"the call hint marks the current argument ({hint})");
             await Pause(500);

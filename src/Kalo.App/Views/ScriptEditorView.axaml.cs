@@ -39,6 +39,12 @@ public partial class ScriptEditorView : UserControl
             char c = e.Text[^1];
             if (char.IsLetterOrDigit(c) || c == '_' || c == ' ' || c == '(' || c == ',' || c == '.') ShowCompletion(false);
         };
+        // Sounds in the suggestion list: the one reached with the arrow keys plays after a short pause.
+        Editor.TextArea.AddHandler(KeyUpEvent, (_, e) =>
+        {
+            if (_completion != null && e.Key is Key.Up or Key.Down or Key.PageUp or Key.PageDown
+                && _completion.CompletionList.SelectedItem is MegaloCompletion { Item.Kind: "sound" } c) HoverSound(c.Text);
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
         // The call the caret is in: its arguments, the current one marked.
         Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateCallHint();
         // Hover help: after a short pause over a word, a popup explains it.
@@ -46,7 +52,10 @@ public partial class ScriptEditorView : UserControl
         _hoverTimer.Tick += (_, _) => { _hoverTimer.Stop(); ShowHover(); };
         Editor.TextArea.AddHandler(PointerMovedEvent, (_, e) =>
         {
-            _hoverPoint = e.GetPosition(Editor);
+            var point = e.GetPosition(Editor);
+            // Tiny moves (or the same position re-sent when the popup opens) change nothing.
+            if (_hoverPoint is { } last && Math.Abs(last.X - point.X) < 3 && Math.Abs(last.Y - point.Y) < 3) return;
+            _hoverPoint = point;
             var word = HoverKey(_hoverPoint.Value);
             if (word != _hoverWord) HideHover();
             _hoverTimer.Stop();
@@ -105,6 +114,38 @@ public partial class ScriptEditorView : UserControl
     public IReadOnlyList<(int Line, string Text)> UnderlinedText =>
         _errors.All.Select(m => (Editor.Document.GetLineByOffset(m.StartOffset).LineNumber, Editor.Document.GetText(m.StartOffset, m.Length))).ToList();
 
+    // ---- sound previews ----
+
+    private DispatcherTimer? _soundTimer;
+    private string _soundPending = "";
+    private string _soundPlayed = "";
+
+    /// <summary>The mouse rests on (or the arrow keys select) a sound: it plays after 350 ms. "" cancels.</summary>
+    private void HoverSound(string name)
+    {
+        _soundPending = name;
+        if (_soundTimer == null)
+        {
+            _soundTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+            _soundTimer.Tick += (_, _) =>
+            {
+                _soundTimer!.Stop();
+                if (_soundPending.Length > 0 && _soundPending != _soundPlayed) PlaySound(_soundPending);
+            };
+        }
+        _soundTimer.Stop();
+        if (name.Length > 0) _soundTimer.Start();
+    }
+
+    private async void PlaySound(string name)
+    {
+        if (_vm == null) return;
+        _soundPlayed = name;
+        string status = await _vm.Main.PlayMegaloSoundAsync(name);
+        CallHintText.Text = status;
+        CallHintBox.IsVisible = true;
+    }
+
     private void UpdateCallHint()
     {
         string? hint = null;
@@ -142,8 +183,8 @@ public partial class ScriptEditorView : UserControl
     {
         if (_vm == null) { _errors.Clear(); return; }
         _errors.Set(_vm.Diagnostics, _vm.DiagnosticsText);
-        // The popup of an error that is gone (or moved) closes.
-        if (_hoverWord?.StartsWith("e:") == true) HideHover();
+        // The popup of an error that is gone (or moved) closes; others stay open.
+        if (_hoverWord?.StartsWith("e:") == true && _errors.All.All(m => "e:" + m.StartOffset != _hoverWord)) HideHover();
     }
 
     /// <summary>"line:start:word" under a point of the editor, or null.</summary>
@@ -170,10 +211,24 @@ public partial class ScriptEditorView : UserControl
         var info = _vm.Hover(text, pos.Value.Column - 1);
         var errors = _errors.At(Editor.Document.GetOffset(pos.Value.Location)).SelectMany(m => m.All).ToList();
         if (info == null && errors.Count == 0) return;
-        _hoverWord = HoverKey(_hoverPoint.Value);
+        string? key = HoverKey(_hoverPoint.Value);
+        if (HoverPopup.IsOpen && key == _hoverWord) return; // already showing it: don't reopen (flicker)
+        _hoverWord = key;
         HoverPopup.Child = HoverCard.Build(info, errors);
+        // A sound name in the code: hear it.
+        string word = WordText(text, pos.Value.Column - 1);
+        if (word.Length > 0 && _vm.Main.IsMegaloSound(word)) { _soundPlayed = ""; PlaySound(word); }
         HoverPopup.IsOpen = false;
         HoverPopup.IsOpen = true;
+    }
+
+    private static string WordText(string line, int column)
+    {
+        if (column < 0 || column > line.Length) return "";
+        int a = column, b = column;
+        while (a > 0 && (char.IsLetterOrDigit(line[a - 1]) || line[a - 1] == '_')) a--;
+        while (b < line.Length && (char.IsLetterOrDigit(line[b]) || line[b] == '_')) b++;
+        return line[a..b];
     }
 
     private void HideHover()
@@ -227,9 +282,11 @@ public partial class ScriptEditorView : UserControl
         _completion = new CompletionWindow(Editor.TextArea) { StartOffset = line.Offset + start, Width = 420 };
         _completion.CompletionList.Background = Palette.Panel;
         _completion.CompletionList.Foreground = Palette.Text;
-        foreach (var item in items) _completion.CompletionList.CompletionData.Add(new MegaloCompletion(item));
-        _completion.Closed += (_, _) => _completion = null;
+        foreach (var item in items)
+            _completion.CompletionList.CompletionData.Add(item.Kind == "sound" ? new MegaloCompletion(item, HoverSound, PlaySound) : new MegaloCompletion(item));
+        _completion.Closed += (_, _) => { _completion = null; HoverSound(""); };
         _completion.Show();
+
     }
 
     private void Attach(ScriptEditorViewModel? vm)
@@ -365,21 +422,44 @@ public partial class ScriptEditorView : UserControl
 }
 
 /// <summary>An autocomplete row: the word, its kind on the right, its signature as the tooltip.</summary>
-internal sealed class MegaloCompletion(CompletionItem item) : ICompletionData
+internal sealed class MegaloCompletion(CompletionItem item, Action<string>? hover = null, Action<string>? play = null) : ICompletionData
 {
     public IImage? Image => null;
     public string Text => item.Text;
+    public CompletionItem Item => item;
     // Controls with explicit colors: the popup lives outside the window and does not inherit its text color.
-    public object Content => new StackPanel
+    public object Content
     {
-        Orientation = Avalonia.Layout.Orientation.Horizontal,
-        Spacing = 10,
-        Children =
+        get
         {
-            new TextBlock { Text = item.Text, Foreground = Palette.Text, FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace") },
-            new TextBlock { Text = item.Kind, Foreground = Palette.Muted, FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
-        },
-    };
+            var row = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 10,
+                Background = Brushes.Transparent,
+                Children =
+                {
+                    new TextBlock { Text = item.Text, Foreground = Palette.Text, FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace") },
+                    new TextBlock { Text = item.Kind, Foreground = Palette.Muted, FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
+                },
+            };
+            if (play != null)
+            {
+                // Sounds: a play button, and resting the mouse on the row plays it too.
+                var button = new Button
+                {
+                    Content = "▶", FontSize = 10, Padding = new Avalonia.Thickness(5, 0), MinHeight = 0, Background = Brushes.Transparent,
+                    Foreground = Palette.Code, BorderThickness = new Avalonia.Thickness(0), Focusable = false,
+                };
+                ToolTip.SetTip(button, "Play this sound");
+                button.Click += (_, e) => { e.Handled = true; play(item.Text); };
+                row.Children.Insert(0, button);
+                row.PointerEntered += (_, _) => hover?.Invoke(item.Text);
+                row.PointerExited += (_, _) => hover?.Invoke("");
+            }
+            return row;
+        }
+    }
     public object? Description => new TextBlock
     {
         Text = string.IsNullOrEmpty(item.Description) ? item.Kind

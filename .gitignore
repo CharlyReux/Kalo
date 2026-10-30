@@ -15,3 +15,6 @@ spike-results/*.png
 # Mod projects and exported mods are user data
 projects/
 exports/
+
+# Leftover from an earlier sound-preview build (the table now lives in FsbVorbisSetupData.cs)
+src/Kalo.Core/Audio/fsb_vorbis_setups.bin.gz

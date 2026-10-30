@@ -71,6 +71,12 @@ switch (command)
     case "kscript-starter":
         await KscriptStarter(argsList.ElementAtOrDefault(1));
         break;
+    case "fsb-info":
+        FsbInfo(argsList.ElementAtOrDefault(1) ?? "", int.Parse(argsList.ElementAtOrDefault(2) ?? "20"));
+        break;
+    case "sound-wav":
+        SoundWav(argsList.ElementAtOrDefault(1) ?? @"sound\dialog\multiplayer\capture_the_flag\flag_captured.sound");
+        break;
     case "dump":
         await Dump(argsList.ElementAtOrDefault(1) ?? Weapon, int.Parse(argsList.ElementAtOrDefault(2) ?? "2"));
         break;
@@ -522,4 +528,49 @@ async Task KscriptGuide()
     var missing = names.Where(x => !MegaloDocs.Actions.ContainsKey(x) && !MegaloDocs.Conditions.ContainsKey(x)).ToList();
     Console.WriteLine("without help: " + string.Join(", ", missing));
     Check("every action and condition has help", missing.Count == 0);
+}
+
+// ---- fsb-info: what is in an FMOD sound bank (for the sound preview) ----------------------------------------
+static void FsbInfo(string path, int show)
+{
+    using (var s = File.OpenRead(path))
+    {
+        var head = new byte[96];
+        s.Read(head, 0, head.Length);
+        Console.WriteLine("first bytes: " + BitConverter.ToString(head).Replace("-", " "));
+        // Several banks glued together? List where "FSB5" appears (first 2 MB, then every 64 MB sampled).
+        var buf = new byte[1 << 21];
+        s.Position = 0;
+        int n = s.Read(buf, 0, buf.Length);
+        var hits = new List<long>();
+        for (int i = 0; i + 4 <= n; i++) if (buf[i] == 'F' && buf[i + 1] == 'S' && buf[i + 2] == 'B' && buf[i + 3] == '5') hits.Add(i);
+        Console.WriteLine($"FSB5 marks in the first 2 MB: {hits.Count} at {string.Join(", ", hits.Take(10))}; file {s.Length:N0} bytes");
+    }
+    var fsb = Kalo.Core.Audio.Fsb5.Read(path);
+    Console.WriteLine($"version {fsb.Version}, codec {fsb.Codec}, {fsb.Samples.Count} sounds, data at {fsb.DataStart:N0}");
+    foreach (var x in fsb.Samples.Take(show))
+        Console.WriteLine($"  #{x.Index} {x.Name ?? "(no name)"}  {x.Frequency} Hz  {x.Channels} ch  {x.SampleCount} samples  at {x.DataOffset:N0} size {x.DataSize:N0}  chunks {string.Join(",", x.Chunks.Select(c => $"{c.Type}:{c.Size}"))}");
+    var last = fsb.Samples.LastOrDefault();
+    if (last != null) Console.WriteLine($"  last #{last.Index} {last.Name} at {last.DataOffset:N0} size {last.DataSize:N0}");
+}
+
+// ---- sound-wav: a sound tag's audio from the game's FMOD banks, decoded to .kalo\cache\sounds ------------------
+void SoundWav(string tag)
+{
+    var lib = new Kalo.Core.Audio.SoundLibrary(new[] { Path.Combine(paths.Mcc ?? "", "haloreach", "fmod", "pc"), Path.Combine(paths.Hrek, "fmod", "pc") },
+        Path.Combine(paths.KaloData, "cache", "sounds"));
+    Console.WriteLine("banks: " + lib.Banks);
+    var sw = Stopwatch.StartNew();
+    var found = lib.Find(tag);
+    Check($"{tag} is in a bank ({found?.Bank} #{found?.Index} {found?.Source}, {sw.ElapsedMilliseconds} ms)", found != null);
+    if (found == null) return;
+    sw.Restart();
+    string wav = lib.Wav(found.Value.Bank, found.Value.Index);
+    long size = new FileInfo(wav).Length;
+    using var f = File.OpenRead(wav);
+    var head = new byte[44];
+    f.Read(head, 0, 44);
+    int rate = BitConverter.ToInt32(head, 24), channels = BitConverter.ToInt16(head, 22);
+    double seconds = (size - 44) / 2.0 / channels / rate;
+    Check($"decoded to {wav}: {channels} ch {rate} Hz {seconds:0.00} s ({sw.ElapsedMilliseconds} ms)", seconds > 0.02 && seconds < 60);
 }

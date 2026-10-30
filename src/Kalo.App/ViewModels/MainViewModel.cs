@@ -433,14 +433,15 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
 
     /// <summary>Replaces the Problems entries of one script with its latest compile messages.</summary>
-    public void ReportScriptProblems(ScriptEditorViewModel script, IEnumerable<ScriptMessage> messages)
+    /// <param name="showPanel">Switch the bottom panel to Problems when there are errors (a Compile; not a check while typing).</param>
+    public void ReportScriptProblems(ScriptEditorViewModel script, IEnumerable<ScriptMessage> messages, bool showPanel = true)
     {
         foreach (var p in Problems.Where(p => p.Source == script.Path).ToList()) Problems.Remove(p);
         foreach (var m in messages)
             Problems.Insert(0, new ProblemItem(m.IsError ? "error" : "warning", $"{m.Where}: {m.Display}", script.Path, DateTime.Now.ToString("HH:mm:ss")));
         ErrorCount = Problems.Count(p => p.Severity == "error");
         WarningCount = Problems.Count(p => p.Severity == "warning");
-        if (messages.Any(m => m.IsError)) BottomPanel = "problems";
+        if (showPanel && messages.Any(m => m.IsError)) BottomPanel = "problems";
     }
 
     public Task PlayScenarioAsync(string scenario)
