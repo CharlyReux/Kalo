@@ -830,6 +830,19 @@ public sealed class Tour
             doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
             Check(await Settle(() => view.Underlined.Count(m => m.IsError) == 0), "fixing it removes the underline");
 
+            // Autocomplete by argument: inside a call, what that argument takes.
+            var inCall = view.SuggestionsAfter("player_death_get_killing_player(");
+            Check(inCall.Contains("current_player") && !inCall.Contains("create_object") && !inCall.Contains("for"),
+                $"right after 'player_death_get_killing_player(' the suggestions are players ({string.Join(", ", inCall.Take(8))})");
+            var deathTypes = view.SuggestionsAfter("player_died(current_player, ");
+            Check(deathTypes.Contains("enemy") && deathTypes.Contains("suicide"), $"player_died's second argument offers death types ({string.Join(", ", deathTypes.Take(8))})");
+            var targets = view.SuggestionsAfter("hud_post_message(");
+            Check(targets.Contains("player killer") || targets.Contains("player current_player"), $"a message target offers 'player ...' ({string.Join(", ", targets.Take(8))})");
+            string? hint = view.CallHintAfter("player_death_get_killing_player(current_player, ");
+            Check(hint?.Contains("▸<killing_player>") == true, $"the call hint marks the current argument ({hint})");
+            await Pause(500);
+            Shot("call-hint");
+
             var docs = Views.DocsWindow.Open(_window, _vm, "create_object");
             await Pause(1200);
             Check(docs.Current?.Title == "Actions: Objects", $"F1 on create_object opens its page ({docs.Current?.Title})");

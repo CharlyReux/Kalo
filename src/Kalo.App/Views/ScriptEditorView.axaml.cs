@@ -37,8 +37,10 @@ public partial class ScriptEditorView : UserControl
         {
             if (_completion != null || string.IsNullOrEmpty(e.Text)) return;
             char c = e.Text[^1];
-            if (char.IsLetterOrDigit(c) || c == '_' || c == ' ') ShowCompletion(false);
+            if (char.IsLetterOrDigit(c) || c == '_' || c == ' ' || c == '(' || c == ',' || c == '.') ShowCompletion(false);
         };
+        // The call the caret is in: its arguments, the current one marked.
+        Editor.TextArea.Caret.PositionChanged += (_, _) => UpdateCallHint();
         // Hover help: after a short pause over a word, a popup explains it.
         _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
         _hoverTimer.Tick += (_, _) => { _hoverTimer.Stop(); ShowHover(); };
@@ -102,6 +104,39 @@ public partial class ScriptEditorView : UserControl
     public IReadOnlyList<ScriptMessage> Underlined => _errors.All.Select(m => m.Message).ToList();
     public IReadOnlyList<(int Line, string Text)> UnderlinedText =>
         _errors.All.Select(m => (Editor.Document.GetLineByOffset(m.StartOffset).LineNumber, Editor.Document.GetText(m.StartOffset, m.Length))).ToList();
+
+    private void UpdateCallHint()
+    {
+        string? hint = null;
+        if (_vm != null && Editor.Document.TextLength > 0)
+        {
+            var line = Editor.Document.GetLineByOffset(Editor.CaretOffset);
+            hint = _vm.CallHint(Editor.Document.GetText(line.Offset, Editor.CaretOffset - line.Offset));
+        }
+        CallHintText.Text = hint ?? "";
+        CallHintBox.IsVisible = hint != null;
+    }
+
+    /// <summary>For tests: the call hint shown for the caret at the end of a line's text up to a marker.</summary>
+    public string? CallHintAfter(string textBeforeCaret)
+    {
+        int offset = Editor.Text.IndexOf(textBeforeCaret, StringComparison.Ordinal);
+        if (offset < 0) return null;
+        Editor.CaretOffset = offset + textBeforeCaret.Length;
+        UpdateCallHint();
+        return CallHintBox.IsVisible ? CallHintText.Text : null;
+    }
+
+    /// <summary>For tests: the suggestions offered with the caret right after a piece of text.</summary>
+    public IReadOnlyList<string> SuggestionsAfter(string textBeforeCaret)
+    {
+        if (_vm == null) return Array.Empty<string>();
+        int offset = Editor.Text.IndexOf(textBeforeCaret, StringComparison.Ordinal);
+        if (offset < 0) return Array.Empty<string>();
+        int end = offset + textBeforeCaret.Length;
+        var line = Editor.Document.GetLineByOffset(end);
+        return _vm.Complete(Editor.Document.GetText(line.Offset, end - line.Offset)).Items.Select(i => i.Text).ToList();
+    }
 
     private void ShowDiagnostics()
     {
@@ -185,7 +220,8 @@ public partial class ScriptEditorView : UserControl
         if (_vm == null) return;
         var line = Editor.Document.GetLineByOffset(Editor.CaretOffset);
         string before = Editor.Document.GetText(line.Offset, Editor.CaretOffset - line.Offset);
-        if (!explicitRequest && before.EndsWith(' ') && !before.TrimEnd().EndsWith("action") && !before.TrimEnd().EndsWith("condition")) return;
+        bool inCall = _vm.IsKaloScript && Kalo.Core.Scripting.KaloCompletion.CallAt(before) != null;
+        if (!explicitRequest && !inCall && before.EndsWith(' ') && !before.TrimEnd().EndsWith("action") && !before.TrimEnd().EndsWith("condition")) return;
         var (start, items) = _vm.Complete(before, explicitRequest);
         if (items.Count == 0) return;
         _completion = new CompletionWindow(Editor.TextArea) { StartOffset = line.Offset + start, Width = 420 };

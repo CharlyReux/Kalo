@@ -271,9 +271,13 @@ public static class MegaloDocs
     /// <summary>
     /// The compiler's argument list as a Kalo Script call: "&lt;a&gt; {x|y} [opt]" → name(&lt;a&gt;, {x|y}, [opt]).
     /// </summary>
-    public static string KaloSignature(string name, string? megaloSignature)
+    public static string KaloSignature(string name, string? megaloSignature) =>
+        string.IsNullOrWhiteSpace(megaloSignature) ? name + "()" : $"{name}({string.Join(", ", KaloArguments(megaloSignature))})";
+
+    /// <summary>The compiler's argument list as Kalo Script arguments: "&lt;a&gt; at &lt;b&gt; [x]" → "&lt;a&gt;", "at &lt;b&gt;", "[x]".</summary>
+    public static List<string> KaloArguments(string? megaloSignature)
     {
-        if (string.IsNullOrWhiteSpace(megaloSignature)) return name + "()";
+        if (string.IsNullOrWhiteSpace(megaloSignature)) return new List<string>();
         var parts = new List<string>();
         int depth = 0;
         var current = new System.Text.StringBuilder();
@@ -301,6 +305,6 @@ public static class MegaloDocs
             prefix = "";
         }
         if (prefix.Length > 0) merged.Add(prefix.Trim());
-        return $"{name}({string.Join(", ", merged)})";
+        return merged;
     }
 }

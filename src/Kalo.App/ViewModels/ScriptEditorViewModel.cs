@@ -77,6 +77,12 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 .Concat((catalog?.Conditions ?? new()).Select(c => new CompletionItem(c.Name!, "condition", WithDoc(c.Description, MegaloDocs.Conditions, c.Name!))));
             contextual = true;
         }
+        else if (IsKaloScript && ArgumentSuggestions(lineBeforeCaret) is { } inCall)
+        {
+            // Inside a call's parentheses: what this argument takes (a player, an object type...), not every action.
+            pool = inCall;
+            contextual = true;
+        }
         else if (IsKaloScript)
         {
             // Kalo Script: actions and conditions are called like functions, so offer them everywhere.
@@ -102,6 +108,34 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             .Take(300)
             .ToList();
         return (start, items);
+    }
+
+    /// <summary>The argument hints of the call the caret is in (Kalo Script), or null when not in a known call.</summary>
+    private List<CompletionItem>? ArgumentSuggestions(string lineBeforeCaret)
+    {
+        var catalog = _main.MegaloCatalog;
+        string? SignatureOf(string name) =>
+            catalog?.Actions?.FirstOrDefault(a => a.Name == name)?.Description ?? catalog?.Conditions?.FirstOrDefault(c => c.Name == name && name != "if")?.Description;
+        var r = KaloCompletion.Suggest(lineBeforeCaret, Text, SignatureOf, catalog?.Lists);
+        if (r == null) return null;
+        var (call, slots, items) = r.Value;
+        string signature = MegaloDocs.KaloSignature(call.Name, SignatureOf(call.Name));
+        return items.Select(i => new CompletionItem(i.Text, i.Kind, $"{signature}\nArgument {call.Index + 1}: {i.Note}")).ToList();
+    }
+
+    /// <summary>For the status line while typing in a call: "player_set_unit(<player>, ▸<unit>)" (Kalo Script).</summary>
+    public string? CallHint(string lineBeforeCaret)
+    {
+        if (!IsKaloScript) return null;
+        var call = KaloCompletion.CallAt(lineBeforeCaret);
+        var catalog = _main.MegaloCatalog;
+        string? sig = call == null ? null : catalog?.Actions?.FirstOrDefault(a => a.Name == call.Name)?.Description ?? catalog?.Conditions?.FirstOrDefault(c => c.Name == call.Name)?.Description;
+        if (call == null || sig == null) return null;
+        var args = MegaloDocs.KaloArguments(sig);
+        var slots = KaloCompletion.Slots(sig);
+        var current = KaloCompletion.Candidates(slots, call).FirstOrDefault();
+        int at = current == null ? -1 : slots.IndexOf(current);
+        return $"{call.Name}(" + string.Join(", ", args.Select((a, i) => i == at ? "▸" + a : a)) + ")" + (current == null ? "" : "   " + KaloCompletion.Describe(current.Kind));
     }
 
     // ---- hover help ---------------------------------------------------------------------------
