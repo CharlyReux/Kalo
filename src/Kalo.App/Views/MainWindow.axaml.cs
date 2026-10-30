@@ -22,9 +22,71 @@ public partial class MainWindow : Window
         Opened += OnOpened;
         DataContextChanged += (_, _) =>
         {
-            if (DataContext is MainViewModel vm) vm.OutputLines.CollectionChanged += OnOutputChanged;
+            if (DataContext is MainViewModel vm)
+            {
+                vm.OutputLines.CollectionChanged += OnOutputChanged;
+                vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.Split)) ApplySplit(); };
+                ApplySplit();
+            }
         };
+        Closing += (_, _) => _detached?.Close();
     }
+
+    private EditorWindow? _detached;
+
+    /// <summary>Lays out the editor groups for the current split: one, side by side, stacked, or a second window.</summary>
+    private void ApplySplit()
+    {
+        if (Vm is not { } vm) return;
+        var split = vm.Split;
+        EditorArea.ColumnDefinitions.Clear();
+        EditorArea.RowDefinitions.Clear();
+        bool inside = split is SplitLayout.Right or SplitLayout.Down;
+        // Only one view may show the secondary group at a time (a map view would otherwise render twice).
+        SecondaryGroupView.DataContext = inside ? vm.Secondary : null;
+        SecondaryGroupView.IsVisible = inside;
+        EditorSplitter.IsVisible = inside;
+        foreach (var c in new Control[] { PrimaryGroupView, EditorSplitter, SecondaryGroupView })
+        {
+            Grid.SetColumn(c, 0);
+            Grid.SetRow(c, 0);
+        }
+        if (split == SplitLayout.Right)
+        {
+            // A map needs room for its object list and 3D view: give its side more of the width.
+            EditorArea.ColumnDefinitions = new ColumnDefinitions(vm.Primary.HasMap && !vm.Secondary.HasMap ? "3*,4,2*" : vm.Secondary.HasMap && !vm.Primary.HasMap ? "2*,4,3*" : "*,4,*");
+            EditorSplitter.ResizeDirection = GridResizeDirection.Columns;
+            Grid.SetColumn(EditorSplitter, 1);
+            Grid.SetColumn(SecondaryGroupView, 2);
+        }
+        else if (split == SplitLayout.Down)
+        {
+            EditorArea.RowDefinitions = new RowDefinitions("*,4,*");
+            EditorSplitter.ResizeDirection = GridResizeDirection.Rows;
+            Grid.SetRow(EditorSplitter, 1);
+            Grid.SetRow(SecondaryGroupView, 2);
+        }
+
+        if (split == SplitLayout.Window)
+        {
+            if (_detached == null)
+            {
+                _detached = new EditorWindow(vm, this);
+                // Closed by the user: forget it first, then its tabs come back to this window.
+                _detached.Closed += (_, _) => { _detached = null; vm.OnDetachedWindowClosed(); };
+                _detached.Show();
+            }
+        }
+        else if (_detached != null)
+        {
+            var w = _detached;
+            _detached = null;
+            w.Close();
+        }
+    }
+
+    /// <summary>The detached editor window, if open (for tests).</summary>
+    public Window? DetachedEditor => _detached;
 
     private MainViewModel? Vm => DataContext as MainViewModel;
 
@@ -108,15 +170,30 @@ public partial class MainWindow : Window
         if (Vm?.SelectedPrefab != null) await Vm.PlacePrefabCommand.ExecuteAsync(Vm.SelectedPrefab);
     }
 
-    protected override void OnKeyDown(KeyEventArgs e)
+    protected override async void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
+        if (!e.Handled) await HandleSharedKeysAsync(this, e);
+        if (e.Handled) return;
         if (e.Key == Key.P && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             Vm?.ShowExplorerCommand.Execute(null);
             SearchBox.Focus();
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// Keys shared by the main window and the detached editor window: the map shortcuts work wherever the focus
+    /// is in a map tab (object list, inspector buttons...), except in text boxes and the code editor.
+    /// </summary>
+    public async Task HandleSharedKeysAsync(TopLevel window, KeyEventArgs e)
+    {
+        if (Vm?.ActiveMap is not { } map || window.FocusManager?.GetFocusedElement() is TextBox or AvaloniaEdit.Editing.TextArea) return;
+        var shortcut = map.ShortcutFor(e);
+        if (shortcut == null) return;
+        e.Handled = true;
+        await shortcut();
     }
 
     /// <summary>--screenshot: once Kalo is ready, render this window (only this window) to a PNG.</summary>
@@ -138,13 +215,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>Renders this window (only this window) to a PNG.</summary>
-    public bool SaveShot(string path)
+    public bool SaveShot(string path) => SaveShot(this, path);
+
+    /// <summary>Renders one Kalo window (only that window) to a PNG.</summary>
+    public static bool SaveShot(Window window, string path)
     {
         try
         {
-            var size = new PixelSize((int)Bounds.Width, (int)Bounds.Height);
+            var size = new PixelSize((int)window.Bounds.Width, (int)window.Bounds.Height);
             using var bitmap = new RenderTargetBitmap(size, new Vector(96, 96));
-            bitmap.Render(this);
+            bitmap.Render(window);
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
             bitmap.Save(path);
             Console.WriteLine("Screenshot saved: " + path);

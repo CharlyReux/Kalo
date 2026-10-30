@@ -117,6 +117,8 @@ public sealed class HostClient : IAsyncDisposable
         CallAsync<ObjectInfoResult>(Methods.ObjectInfo, new TagListParams { Tags = tags.ToList() }, TimeSpan.FromMinutes(2));
     public Task<ShaderInfoResult> ShaderInfoAsync(IEnumerable<string> shaders) =>
         CallAsync<ShaderInfoResult>(Methods.ShaderInfo, new TagListParams { Tags = shaders.ToList() }, TimeSpan.FromMinutes(5));
+    public Task<SnapshotResult> SnapshotAsync(string path) => CallAsync<SnapshotResult>(Methods.Snapshot, new SnapshotParams { Path = path });
+    public Task<SnapshotResult> RestoreAsync(string path, int id) => CallAsync<SnapshotResult>(Methods.Restore, new SnapshotParams { Path = path, Id = id });
     public Task<MakeVariantResult> MakeVariantAsync(MakeVariantParams p) => CallAsync<MakeVariantResult>(Methods.MakeVariant, p, TimeSpan.FromMinutes(2));
     public Task<ExportLevelMeshResult> ExportLevelMeshAsync(string scenario, string outputFile) =>
         CallAsync<ExportLevelMeshResult>(Methods.ExportLevelMesh, new ExportLevelMeshParams { Scenario = scenario, OutputFile = outputFile }, TimeSpan.FromMinutes(10));

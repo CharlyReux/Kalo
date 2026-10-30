@@ -29,10 +29,13 @@ public partial class MainViewModel
     {
         var keep = SelectedGametype?.Path;
         GametypeChoices.Clear();
-        GametypeChoices.Add(new GametypeChoice("Map default", null));
+        GametypeChoices.Add(new GametypeChoice("No gametype (no weapons, no score)", null));
         foreach (var s in Scripts.Where(IsGametype).OrderBy(s => s.RelativePath.Contains(@"\mods\", StringComparison.OrdinalIgnoreCase) ? 0 : 1).ThenBy(s => s.Name))
             GametypeChoices.Add(new GametypeChoice(s.Name + (s.RelativePath.Contains(@"\mods\", StringComparison.OrdinalIgnoreCase) ? "  (my mod)" : ""), s.RelativePath));
-        SelectedGametype = GametypeChoices.FirstOrDefault(g => g.Path == keep) ?? GametypeChoices[0];
+        // Default to plain Slayer: without a gametype players spawn with no weapons, which looks like nothing works.
+        SelectedGametype = (keep == null ? null : GametypeChoices.FirstOrDefault(g => g.Path == keep))
+                           ?? GametypeChoices.FirstOrDefault(g => g.Path != null && System.IO.Path.GetFileName(g.Path).Equals("slayer.txt", StringComparison.OrdinalIgnoreCase))
+                           ?? GametypeChoices[0];
     }
 
     /// <summary>Scripts that are whole gametypes (not includes or string tables).</summary>
@@ -66,6 +69,9 @@ public partial class MainViewModel
         try
         {
             foreach (var doc in Tabs.Where(t => t.IsDirty).ToList()) await doc.SaveDocumentAsync();
+            // Warn (without blocking) about objects the game will delete because they are off the level.
+            var openMap = Tabs.OfType<MapEditorViewModel>().FirstOrDefault(m => m.Scenario.Equals(SelectedScenario, StringComparison.OrdinalIgnoreCase));
+            if (openMap?.HasOutside == true) AddProblem("warning", openMap.OutsideText, openMap.Path);
             var commands = new List<string>();
             string note = "";
             if (SelectedGametype?.Path is { } gametype)
@@ -88,7 +94,21 @@ public partial class MainViewModel
     {
         if (Host == null || Paths == null) return null;
         var open = Tabs.OfType<ScriptEditorViewModel>().FirstOrDefault(t => t.Path.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
-        string text = open?.Text ?? ScriptEditorViewModel.ReadScript(System.IO.Path.Combine(Paths.Workspace, relativePath)).Text;
+        string source = open?.Text ?? ScriptEditorViewModel.ReadScript(System.IO.Path.Combine(Paths.Workspace, relativePath)).Text;
+        string text = source;
+        Kalo.Core.Scripting.TranspileResult? kalo = null;
+        if (ScriptEditorViewModel.IsKaloScriptPath(relativePath))
+        {
+            kalo = Kalo.Core.Scripting.KaloScript.Transpile(source);
+            if (!kalo.Succeeded)
+            {
+                var e = kalo.Errors[0];
+                AddProblem("error", $"The gametype {System.IO.Path.GetFileName(relativePath)} has errors: line {e.Line}: {e.Message}", relativePath);
+                if (open == null) await OpenScriptAsync(relativePath);
+                return null;
+            }
+            text = kalo.Megalo;
+        }
         string name = "kalo_" + System.IO.Path.GetFileNameWithoutExtension(relativePath);
         string mglo = System.IO.Path.Combine(Paths.Workspace, "maps", "megalo", name + ".mglo");
         await EnsureMegaloCatalogAsync();
@@ -103,7 +123,8 @@ public partial class MainViewModel
         if (!r.Succeeded || !File.Exists(mglo))
         {
             var first = r.Messages?.FirstOrDefault();
-            AddProblem("error", $"The gametype {System.IO.Path.GetFileName(relativePath)} does not compile" + (first != null ? $": line {first.Line}: {first.Message}" : "."), relativePath);
+            int line = first == null ? 0 : kalo?.SourceLine(first.Line) ?? first.Line;
+            AddProblem("error", $"The gametype {System.IO.Path.GetFileName(relativePath)} does not compile" + (first != null ? $": line {line}: {first.Message}" : "."), relativePath);
             if (open == null) await OpenScriptAsync(relativePath);
             return null;
         }
@@ -133,6 +154,7 @@ public partial class MainViewModel
     {
         ("Maps", "\uE909", "New map…"),
         ("Gametypes", "\uE943", "New gametype…"),
+        ("Painted blocks", "\uE771", "Paint blocks in a map…"),
         ("Weapons & objects", "\uE7FC", "Tweak a weapon or object…"),
         ("Sounds", "\uE767", "Change a sound…"),
         ("UI & text", "\uE8D2", "Change UI or text…"),
@@ -146,6 +168,8 @@ public partial class MainViewModel
         string p = workspacePath.ToLowerInvariant();
         string ext = System.IO.Path.GetExtension(p).TrimStart('.');
         if (ext == "scenario") return "Maps";
+        // A painted block is three tags (object, model, render model); the group shows the object only.
+        if (p.StartsWith(@"tags\levels\mods\") && p.Contains(@"\blocks\")) return ext is "model" or "render_model" ? "" : "Painted blocks";
         if (p.StartsWith(@"data\multiplayer\megalo\")) return "Gametypes";
         if (p.StartsWith(@"tags\ui\") || ext is "multilingual_unicode_string_list" || ext.StartsWith("cui_") || ext.StartsWith("chud")) return "UI & text";
         if (ext.StartsWith("sound") || ext is "sound_looping" or "sound_effect_collection" or "sound_mix" or "sound_classes") return "Sounds";
@@ -200,7 +224,15 @@ public partial class MainViewModel
         foreach (var t in Tabs.Where(t => t.BaselinePath.Equals(entry.Path, StringComparison.OrdinalIgnoreCase)).ToList()) await CloseTab(t);
         try
         {
-            Baseline.Revert(entry.Path);
+            if (GroupOf(entry.Path) == "Painted blocks")
+            {
+                // The whole painted copy goes; a map that still uses it rebuilds it when opened.
+                string dir = System.IO.Path.GetDirectoryName(entry.Path)!;
+                foreach (var c in Changes.Where(c => System.IO.Path.GetDirectoryName(c.Path)!.Equals(dir, StringComparison.OrdinalIgnoreCase)).ToList())
+                    Baseline.Revert(c.Path);
+                Log($"Removed the painted block {System.IO.Path.GetFileNameWithoutExtension(entry.Path)}. Maps that still use it rebuild it when they open.");
+            }
+            else Baseline.Revert(entry.Path);
             Log($"Removed {entry.Path} from the mod (vanilla version restored).");
         }
         catch (Exception ex)
@@ -351,24 +383,35 @@ public partial class MainViewModel
         IsNewGametypeOpen = true;
     }
 
+    /// <summary>New gametypes are written in Kalo Script (modern syntax) unless unticked.</summary>
+    [ObservableProperty] private bool _newGametypeKaloScript = true;
+
     [RelayCommand]
     private async Task CreateGametype()
     {
-        var script = await CreateGametypeAsync(NewGametypeName, NewGametypeTemplate);
+        var script = await CreateGametypeAsync(NewGametypeName, NewGametypeTemplate, NewGametypeKaloScript);
         if (script != null) { IsNewGametypeOpen = false; NewGametypeName = ""; }
     }
 
     /// <summary>A new gametype script in data\multiplayer\megalo\mods\&lt;mod&gt;, copied from a template.</summary>
-    public async Task<ScriptEditorViewModel?> CreateGametypeAsync(string name, GametypeTemplate? template)
+    public async Task<ScriptEditorViewModel?> CreateGametypeAsync(string name, GametypeTemplate? template, bool kaloScript = false)
     {
         if (Paths == null) return null;
         if (string.IsNullOrWhiteSpace(name) || template == null) { AddProblem("warning", "Give the gametype a name and pick a template.", "New gametype"); return null; }
         if (ModProjects?.ActiveName == null) { AddProblem("warning", "Create a mod first (Project panel or start page).", "New gametype"); return null; }
-        string rel = System.IO.Path.Combine("data", "multiplayer", "megalo", "mods", ModSlug, Slug(name) + ".txt");
+        string ext = kaloScript ? Kalo.Core.Scripting.KaloScript.Extension : ".txt";
+        string rel = System.IO.Path.Combine("data", "multiplayer", "megalo", "mods", ModSlug, Slug(name) + ext);
         string full = System.IO.Path.Combine(Paths.Workspace, rel);
         if (File.Exists(full)) { AddProblem("warning", "A gametype with that name already exists in this mod.", "New gametype"); return null; }
         var (text, _) = ScriptEditorViewModel.ReadScript(System.IO.Path.Combine(Paths.Workspace, template.Path));
         string header = $"; {name.Trim()} — made with Kalo from the \"{template.Label}\" template\r\n\r\n";
+        if (kaloScript)
+        {
+            header = $"-- title: {name.Trim()}\r\n-- Made with Kalo from the \"{template.Label}\" template. Kalo Script: if/then/else, for each, f(a, b), x += 1.\r\n\r\n";
+            text = template.Path.EndsWith(@"simple\slayer\2.txt", StringComparison.OrdinalIgnoreCase)
+                ? KaloScriptStarter
+                : Kalo.Core.Scripting.KaloScript.FromMegalo(text);
+        }
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
         var unicode = Encoding.Unicode;
         await File.WriteAllBytesAsync(full, unicode.GetPreamble().Concat(unicode.GetBytes(header + text)).ToArray());
@@ -376,6 +419,31 @@ public partial class MainViewModel
         BuildGametypeChoices();
         SelectedGametype = GametypeChoices.FirstOrDefault(g => g.Path == rel) ?? SelectedGametype;
         Log($"New gametype {rel} from {template.Label}.");
+        await RefreshChangesAsync();
+        _ = AutoCaptureAsync();
+        return await OpenScriptAsync(rel);
+    }
+
+    /// <summary>The Kalo Script starter (points per kill, a streak bonus, a message).</summary>
+    public static string KaloScriptStarter => Kalo.Core.Scripting.KaloScript.Starter;
+
+    /// <summary>A Kalo Script converted from a Megalo script: saved next to the mod's gametypes and opened.</summary>
+    public async Task<ScriptEditorViewModel?> CreateKaloScriptAsync(string baseName, string text)
+    {
+        if (Paths == null) return null;
+        if (ModProjects?.ActiveName == null) { AddProblem("warning", "Create a mod first: the converted script goes into it.", "Kalo Script"); return null; }
+        string folder = System.IO.Path.Combine("data", "multiplayer", "megalo", "mods", ModSlug);
+        string slug = Slug(baseName);
+        string rel = System.IO.Path.Combine(folder, slug + Kalo.Core.Scripting.KaloScript.Extension);
+        for (int n = 2; File.Exists(System.IO.Path.Combine(Paths.Workspace, rel)); n++)
+            rel = System.IO.Path.Combine(folder, $"{slug}_{n}{Kalo.Core.Scripting.KaloScript.Extension}");
+        string full = System.IO.Path.Combine(Paths.Workspace, rel);
+        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
+        var unicode = Encoding.Unicode;
+        await File.WriteAllBytesAsync(full, unicode.GetPreamble().Concat(unicode.GetBytes($"-- title: {baseName}\r\n" + text)).ToArray());
+        Scripts.Add(new ScriptFile(System.IO.Path.GetFileNameWithoutExtension(rel), rel, System.IO.Path.Combine("mods", ModSlug)));
+        BuildGametypeChoices();
+        Log($"Converted to Kalo Script: {rel}.");
         await RefreshChangesAsync();
         _ = AutoCaptureAsync();
         return await OpenScriptAsync(rel);

@@ -41,6 +41,8 @@ public sealed class Tour
                 await Section("map", Map);
                 await Section("script", Script);
                 await Section("studio", Studio);
+                await Section("split", SplitEditors);
+                await Section("kscript", KaloScriptSection);
                 await Section("forge", Forge);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
@@ -151,16 +153,47 @@ public sealed class Tour
             var until = DateTime.UtcNow.AddMinutes(3);
             while ((map.Bsp == null || map.ModelVersion == 0) && DateTime.UtcNow < until) await Task.Delay(500);
             Check(map.Items.Count(i => i.Tag.Contains("respawn_point")) == 4 && map.Items.Any(i => i.Tag.Contains("ff_plat")), $"it has the platform and spawns ({map.Items.Count} objects)");
+            // What Charly reported: start location moved, a weapon and a vehicle added, a scaled block, a weapon tag edit.
+            var start = map.Items.FirstOrDefault(i => i.Category == StartLocations.Category);
+            Check(start != null, "the start location is listed as an object");
+            if (start != null)
+            {
+                map.MoveLocal(start, new Vector3(12, 12, 0.6f));
+                start.SetRotationLocal(225, 0, 0);
+                await map.CommitMoveAsync(start);
+            }
+            var rifle = await map.AddTagAtAsync(@"objects\weapons\rifle\dmr\dmr.weapon", new Vector3(10, 10, 0.2f));
+            var hog = await map.AddTagAtAsync(@"objects\vehicles\human\warthog\warthog.vehicle", new Vector3(6.5f, 8.5f, 0.6f));
+            Check(rifle != null && hog != null, "added a DMR and a Warthog");
+            var block = await map.AddTagAtAsync(@"objects\levels\forge\ff_plat_2x2\ff_plat_2x2.crate", new Vector3(5, 3, 0));
+            if (block != null) { map.SetSelection(new[] { block }); await map.SetScaleCommand.ExecuteAsync("3"); }
+            var block2 = await map.AddTagAtAsync(@"objects\levels\forge\ff_plat_2x2\ff_plat_2x2.crate", new Vector3(3, 6, 0));
+            Check(block2 != null && map.Items.Any(i => Math.Abs(i.PlacedScale - 3) < 0.01f), "two blocks, one scaled ×3");
+            await map.SaveCommand.ExecuteAsync(null);
+            var weapon = await _vm.OpenTagAsync(@"objects\weapons\rifle\assault_rifle\assault_rifle.weapon");
+            var mag = weapon?.FindField("Block:magazines[0]/ShortInteger:rounds loaded maximum");
+            if (weapon != null && mag != null)
+            {
+                mag.Value = "99";
+                await Task.Delay(1500);
+                await weapon.SaveCommand.ExecuteAsync(null);
+                Check(!weapon.IsDirty, "assault rifle magazine set to 99 and saved");
+            }
             map.Shading = ViewShading.Textured;
             await Task.Delay(4000);
+            map.LookFrom(new Vector3(12, 12, 1.3f), 225, -8);
+            await Pause(1500);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "barebone-from-start.png"));
             map.LookFrom(new Vector3(-9, -9, 6), 45, -25);
             await Pause(1500);
             await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "barebone-view.png"));
+            _vm.ActiveDocument = map;
 
             var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _vm.Game!.Loaded += () => loaded.TrySetResult();
             _vm.Game.Exited += _ => { exited.TrySetResult(); loaded.TrySetException(new Exception("the game exited while loading")); };
+            Check(_vm.SelectedGametype?.Path?.EndsWith("slayer.txt") == true, $"Play defaults to Slayer ({_vm.SelectedGametype?.Label})");
             var sw = Stopwatch.StartNew();
             map.PlayHereCommand.Execute(null);
             var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
@@ -179,6 +212,7 @@ public sealed class Tour
         {
             if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
             foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+            try { _vm.Baseline?.Revert(@"tags\objects\weapons\rifle\assault_rifle\assault_rifle.weapon"); Say("assault rifle back to vanilla"); } catch (Exception ex) { Say("revert failed: " + ex.Message); }
             await Task.Delay(1000);
             try { if (Directory.Exists(folder)) Directory.Delete(folder, true); Say("removed the test map"); } catch (Exception ex) { Say("could not remove the test map: " + ex.Message); }
         }
@@ -445,6 +479,32 @@ public sealed class Tour
             await map.DeleteFolderCommand.ExecuteAsync(null);
             Check(map.Folders.Count == folders, "folder deleted (its object stays in the map)");
 
+            // Undo / redo: the folder comes back, then goes again; undoing the paste removes the copy.
+            Check(map.CanUndo, "undo available: " + map.UndoText);
+            await map.UndoAsync();
+            Check(map.Folders.Count == folders + 1, "undo brought the deleted folder back");
+            await map.RedoAsync();
+            Check(map.Folders.Count == folders, "redo deleted it again");
+            int beforeUndo = map.Items.Count;
+            await map.UndoAsync(); // folder delete
+            await map.UndoAsync(); // new folder
+            await map.UndoAsync(); // paste
+            Check(map.Items.Count == beforeUndo - 1, $"three undos removed the pasted copy ({beforeUndo} → {map.Items.Count})");
+            await map.RedoAsync();
+            Check(map.Items.Count == beforeUndo, "redo put the paste back");
+
+            // Multiple selection and shortcuts: Ctrl+D duplicates both selected weapons.
+            var pair = map.Items.Where(i => i.Category == "weapons").Take(2).ToList();
+            map.SetSelection(pair);
+            int beforeDup = map.Items.Count;
+            var ctrlD = new Avalonia.Input.KeyEventArgs { Key = AppSettings.Parse(AppSettings.Current.GestureText("duplicate"))!.Key, KeyModifiers = AppSettings.Parse(AppSettings.Current.GestureText("duplicate"))!.KeyModifiers };
+            var dup = map.ShortcutFor(ctrlD);
+            Check(dup != null, "the duplicate shortcut is recognised (" + AppSettings.Current.GestureText("duplicate") + ")");
+            if (dup != null) await dup();
+            Check(map.Items.Count == beforeDup + 2, $"duplicating a 2-object selection added 2 ({beforeDup} → {map.Items.Count})");
+            await map.UndoAsync();
+            Check(map.Items.Count == beforeDup, "one undo removed both duplicates");
+
             // Prefabs.
             var two = map.Items.Where(i => i.Category == "weapons").Take(2).ToList();
             map.SetSelection(two);
@@ -523,6 +583,120 @@ public sealed class Tour
                 }
                 catch (Exception ex) { Say("could not remove " + dir + ": " + ex.Message); }
             }
+        }
+    }
+
+    // ---- split editors: map and code side by side, stacked, or in a second window -------------------------------
+
+    private async Task SplitEditors()
+    {
+        var map = await _vm.OpenMapAsync(@"levels\multi\20_sword_slayer\20_sword_slayer.scenario");
+        var until = DateTime.UtcNow.AddMinutes(3);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        var file = _vm.Scripts.FirstOrDefault(s => s.Name == "slayer") ?? _vm.Scripts.FirstOrDefault();
+        if (!Check(file != null, "a gametype script to open")) return;
+        var script = await _vm.OpenScriptAsync(file!.RelativePath);
+        try
+        {
+            Check(!_vm.IsSplit && _vm.Primary.Tabs.Contains(map) && _vm.Primary.Tabs.Contains(script), "both open in the main editor");
+
+            _vm.SetSplitCommand.Execute("right");
+            await Pause(800);
+            Check(_vm.IsSplit && _vm.Secondary.Current == script && _vm.Primary.Current == map, "split right: the code moved to the right, the map stays on the left");
+            Check(_vm.ActiveScript == script, "the focused side is the code (inspector shows the script)");
+            _vm.FocusGroup(_vm.Primary);
+            Check(_vm.ActiveMap == map && _vm.Secondary.Current == script, "clicking the map side: inspector follows the map, the code stays shown");
+            await Pause(2500);
+            Shot("split-right");
+
+            _vm.SwapGroupsCommand.Execute(null);
+            await Pause(500);
+            Check(_vm.Primary.Current == script && _vm.Secondary.Current == map && _vm.ActiveMap == map, "swap: code on the left, map on the right, focus kept on the map");
+            _vm.SwapGroupsCommand.Execute(null);
+
+            _vm.SetSplitCommand.Execute("down");
+            await Pause(2000);
+            Check(_vm.Split == SplitLayout.Down && _vm.Secondary.Current == script, "split down keeps the same two sides");
+            Shot("split-down");
+
+            // A file opened while the code side is focused opens there.
+            _vm.FocusGroup(_vm.Secondary);
+            var tag = await _vm.OpenTagAsync(@"objects\weapons\rifle\dmr\dmr.weapon");
+            var dmr = _vm.Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.EndsWith("dmr.weapon"));
+            Check(dmr != null && _vm.EditorGroupOf(dmr) == _vm.Secondary, "a tag opened from the focused second side opens there");
+            if (dmr != null) await _vm.CloseTabCommand.ExecuteAsync(dmr);
+
+            _vm.SetSplitCommand.Execute("window");
+            await Pause(3000);
+            var detached = _window.DetachedEditor;
+            Check(detached != null && detached.IsVisible, "the second editor opened in its own window");
+            if (detached != null) MainWindow.SaveShot(detached, System.IO.Path.Combine(_dir, $"{++_shot:D2}-split-window.png"));
+            Shot("split-window-main");
+            detached?.Close();
+            await Pause(800);
+            Check(!_vm.IsSplit && _vm.Primary.Tabs.Contains(script) && _vm.Primary.Tabs.Contains(map), "closing that window brought its tabs back");
+
+            // Move a tab across and back with the menu action.
+            _vm.MoveToOtherGroup(map);
+            Check(_vm.IsSplit && _vm.Secondary.Current == map, "Move to the other side splits and moves the tab");
+            _vm.MoveToOtherGroup(map);
+            Check(!_vm.IsSplit && _vm.Primary.Tabs.Contains(map), "moving the last tab back closes the split");
+        }
+        finally
+        {
+            if (_vm.IsSplit) _vm.Unsplit();
+            await _vm.CloseTabCommand.ExecuteAsync(script);
+            await _vm.CloseTabCommand.ExecuteAsync(map);
+        }
+    }
+
+    // ---- Kalo Script: the modern gametype language, compiled through Megalo -----------------------------------
+
+    private async Task KaloScriptSection()
+    {
+        await _vm.EnsureMegaloCatalogAsync();
+        // In memory only: nothing is written to the mod.
+        var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\tour.kscript") { Text = Kalo.Core.Scripting.KaloScript.Starter };
+        Check(doc.IsKaloScript && doc.Badge == "kalo", "a .kscript opens as Kalo Script");
+        await doc.CompileCommand.ExecuteAsync(null);
+        Check(doc.CompileOk, "the starter compiles: " + doc.CompileSummary);
+        Check(doc.GeneratedMegalo.Contains("trigger player") && doc.GeneratedMegalo.Contains("action set killer.score += option_kill_points"), "it turns into the expected Megalo");
+
+        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
+        await doc.CompileCommand.ExecuteAsync(null);
+        var first = doc.Messages.FirstOrDefault();
+        int expected = Kalo.Core.Scripting.KaloScript.Starter.Split('\n').ToList().FindIndex(l => l.Contains("killer.streak += 1")) + 2;
+        Check(!doc.CompileOk && first != null && first.Line >= expected - 1 && first.Line <= expected, $"a mistake is reported on the Kalo Script line ({first?.Line}: {first?.Message})");
+
+        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("player_death_get_killing_player", "player_death_get_killing_playr");
+        await doc.CompileCommand.ExecuteAsync(null);
+        first = doc.Messages.FirstOrDefault(m => m.IsError);
+        int callLine = Kalo.Core.Scripting.KaloScript.Starter.Split('\n').ToList().FindIndex(l => l.Contains("player_death_get_killing_player")) + 1;
+        Check(!doc.CompileOk && first?.Line == callLine, $"a Megalo compiler error points at the Kalo Script line ({first?.Line} vs {callLine}: {first?.Message})");
+
+        doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+        string? bin = await doc.ExportBin();
+        Check(bin != null && File.Exists(bin) && Kalo.Core.Scripting.GameVariantFile.HashIsValid(File.ReadAllBytes(bin)), "Export .bin wrote an MCC game type file: " + bin);
+        Check(_vm.NewGametypeKaloScript, "new gametypes default to Kalo Script");
+
+        // Convert a Bungie script and show both in the split view.
+        var koth = _vm.Scripts.FirstOrDefault(s => s.RelativePath.EndsWith(@"megalo\juggernaut.txt", StringComparison.OrdinalIgnoreCase));
+        if (koth != null)
+        {
+            var megalo = await _vm.OpenScriptAsync(koth.RelativePath);
+            string converted = Kalo.Core.Scripting.KaloScript.FromMegalo(megalo!.Text);
+            var kdoc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\juggernaut.kscript") { Text = converted };
+            await kdoc.CompileCommand.ExecuteAsync(null);
+            Check(kdoc.CompileOk, "a converted Bungie script (Juggernaut) compiles: " + kdoc.CompileSummary);
+            _vm.Tabs.Add(kdoc);
+            _vm.ActiveDocument = kdoc;
+            kdoc.ToggleMegaloCommand.Execute(null);
+            _vm.MoveToOtherGroup(megalo);
+            await Pause(1500);
+            Shot("kscript-convert");
+            _vm.Unsplit();
+            await _vm.CloseTabCommand.ExecuteAsync(kdoc);
+            await _vm.CloseTabCommand.ExecuteAsync(megalo);
         }
     }
 
@@ -707,7 +881,8 @@ public sealed class Tour
                 var until = DateTime.UtcNow.AddMinutes(3);
                 while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(300);
                 int spawns = map.Items.Count(i => i.Tag.Contains("respawn_point"));
-                Check(spawns > 0 && map.Items.Count == spawns, $"the empty map keeps only its {spawns} spawn points ({map.Items.Count} objects)");
+                int objects = map.Items.Count(i => i.Category != Kalo.Protocol.StartLocations.Category); // start locations are listed too
+                Check(spawns > 0 && objects == spawns, $"the empty map keeps only its {spawns} spawn points ({objects} objects)");
                 Check(map.Bsp != null, "the new map shows the Sword Slayer level");
                 var rifle = await map.AddTagAtAsync(@"objects\weapons\rifle\assault_rifle\assault_rifle.weapon", map.Items[0].Position + new Vector3(1, 0, 0.3f));
                 Check(rifle != null, "placed an assault rifle on the new map");

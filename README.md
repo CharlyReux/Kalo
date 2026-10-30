@@ -28,7 +28,7 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   something to change; right-click a file to compare it with vanilla or take it out of the mod.
   New map: a Reach level either empty (spawn points only) or fully copied, saved in levels\mods\<mod>\<map>.
   New gametype: a copy of a template (simple commented starter, Slayer, CTF, KotH, Oddball, Juggernaut...)
-  in data\multiplayer\megalo\mods\<mod>\.
+  in data\multiplayer\megalo\mods\<mod>\ (in Kalo Script by default). Play defaults to Slayer.
 - Left, "All game files" (advanced): every tag of Halo Reach (Ctrl+P searches). Open one and save it to
   add it to your mod.
 - Play (F5), top right: plays the chosen map with the chosen gametype. Both follow the tab you work in
@@ -75,6 +75,59 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   value lists (weapons, vehicles, object types, sounds...) and the script's own variables. "Test in game" compiles,
   deploys the engine to maps\megalo\kalo_<name>.mglo in the workspace (as MegaloEdit does for a devkit) and
   starts the map picked at the top with `load_binary_game_engine kalo_<name>` in bonobo_init.txt.
+- Kalo Script (`.kscript`): gametypes in a modern syntax close to ReachVariantTool's, compiled through HREK's
+  own Megalo compiler. New gametypes are written in it by default (untick "Write it in Kalo Script" to get Megalo
+  text), and "To Kalo Script" converts any Megalo script (a new file in your mod; the original stays). "Megalo"
+  shows the text it turns into; compiler errors point at the Kalo Script line. Every Bungie script that compiles
+  converts and compiles back to the same triggers, conditions and actions (`kalo-cli kscript-roundtrip`).
+
+  ```
+  -- title: Streaks
+  megalo [[            -- Megalo declarations (options, traits, map objects...) stay as they are
+  game_options
+  	ranged_option option_kill_points
+  		"Kill Points"
+  		"Points per kill"
+  		1 -10 10
+  	end
+  end
+  ]]
+  declare player.number streak = 0          -- declare [networked|local] global/player/team/object.type name = value
+
+  for each player do                         -- trigger player   (also: team, object, random player, a map object)
+    if player_died(current_player, enemy) then
+      temp player killer = none              -- temporary
+      player_death_get_killing_player(current_player, killer)
+      killer.score += option_kill_points     -- action set killer.score += ...
+      if killer.streak == 4 and not killer.team == none then
+        hud_post_message(player killer, none, "Spree!")   -- several-word arguments are fine
+      elseif killer.streak > 10 then
+        killer.streak = 0
+      else
+        killer.streak += 1
+      end
+    end
+  end
+  on init do ... end                         -- trigger initialization (also local, host_migration, pregame)
+  do ... end                                 -- trigger general (nested: action for_each general)
+  inline ... end                             -- Megalo's begin ... end: a block that uses no trigger
+  for each object with label "koth_hill" do ... end   -- declares the map object for you
+  ```
+  `a.f(b)` is the same as `f(a, b)`; `alias name = path` renames; conditions join left to right with no precedence
+  (`a or b and c` is `(a or b) and c`), as in Megalo.
+- Export .bin (script toolbar): writes the gametype as an MCC game type file in Kalo\exports\gametypes (BLF
+  chdr + mpvr with its SHA-1, built from the compiler's variant). A `-- title: Name` line names it. Copy it into
+  `%USERPROFILE%\AppData\LocalLow\MCC\LocalFiles\<id>\HaloReach\GameType` to pick it in Custom Games.
+  Experimental: not yet tried in MCC.
+- Split editors: the buttons on the right of every tab strip split side by side, top and bottom, or put the second
+  editor in its own window (code on another screen); swap sides, close the split. Right-click a tab (or drag it onto
+  the other side) to move it. The inspector, shortcuts and Save follow the side you last clicked; files you open
+  go to that side.
+- Map editing: Undo/Redo (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, toolbar arrows) for every map edit; Shift+click adds or
+  removes objects from the selection; Ctrl+C/X/V/D, Delete, R, F work anywhere in the map tab (not while typing).
+  Objects outside the level geometry are marked "outside map" in red with a banner: Reach removes them in game.
+  "Start locations (first spawn)" in the object list are where players first appear (respawn points are only used
+  after dying). Scale is ignored by Reach in multiplayer games (the inspector says so).
 - Mod projects (fourth icon): a project is a small folder in Kalo\projects holding only the files your mod
   changes. Every save is recorded in the active project; switching projects puts the shared workspace back to
   vanilla and loads the other project's files; Export zips a project into Kalo\exports; "Import mod…" adds such a

@@ -170,6 +170,7 @@ void main() {
     private PlacementItem? _dragItem;
     private Vector3 _grabOffset;
     private bool _dragVertical, _moved;
+    private PlacementItem? _shiftToggle;
     private uint _gizmoVao, _gizmoVbo;
     private const int RingSegments = 48;
     private int _hoverPart = -1;           // 0..2 axis, 3 ring
@@ -220,7 +221,8 @@ void main() {
             _subscribed.FrameAllRequested -= OnFrameAll;
             _subscribed.CameraRequested -= OnCameraRequested;
             _subscribed.CaptureRequested -= OnCaptureRequested;
-            _subscribed.PlacementPointProvider = null;
+            // Another view may already show this map (moved to the other editor group): keep its provider.
+            if (_subscribed.PlacementPointProvider is { } provider && ReferenceEquals(provider.Target, this)) _subscribed.PlacementPointProvider = null;
         }
         _subscribed = Map;
         if (_subscribed != null)
@@ -968,12 +970,17 @@ void main() {
             else
             {
                 var hit = Pick(o, d);
-                if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+                bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+                _shiftToggle = null;
+                if (e.KeyModifiers.HasFlag(KeyModifiers.Control) || (shift && hit != null && !map.IsSelected(hit)))
                 {
+                    // Ctrl+click or Shift+click: add the object to the selection (Ctrl+click on a selected one removes it).
                     if (hit != null) map.ToggleSelection(hit);
                 }
                 else
                 {
+                    // Shift+click on a selected object: removes it, unless the mouse moves (then it is a vertical drag).
+                    if (shift && hit != null) _shiftToggle = hit;
                     if (hit == null || !map.IsSelected(hit)) map.Selected = hit;
                     else if (map.Selected != hit) map.MakePrimary(hit); // keep the group
                     if (hit != null)
@@ -1071,6 +1078,8 @@ void main() {
     {
         base.OnPointerReleased(e);
         bool edited = (_drag is Drag.Move or Drag.Axis or Drag.Turn) && _moved;
+        if (!_moved && _shiftToggle != null && Map != null && Map.IsSelected(_shiftToggle)) Map.ToggleSelection(_shiftToggle);
+        _shiftToggle = null;
         _drag = Drag.None;
         _dragItem = null;
         e.Pointer.Capture(null);
@@ -1089,25 +1098,14 @@ void main() {
     {
         base.OnKeyDown(e);
         var map = Map;
-        var keys = AppSettings.Current;
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        bool has = map?.Selected != null;
-        if (map != null)
+        var shortcut = map?.ShortcutFor(e, PlacementPoint);
+        if (shortcut != null)
         {
-            if (has && keys.Matches("frameSelection", e)) { OnFocusRequested(map.Selected!.Center, map.Selected.PickRadius); e.Handled = true; return; }
-            if (keys.Matches("frameAll", e)) { OnFrameAll(); e.Handled = true; return; }
-            if (has && keys.Matches("delete", e)) { e.Handled = true; await map.DeleteSelectedCommand.ExecuteAsync(null); return; }
-            if (keys.Matches("selectAll", e)) { foreach (var item in map.OutlinerItems.Where(i => !map.IsSelected(i))) map.ToggleSelection(item); e.Handled = true; return; }
-            if (has && keys.Matches("duplicate", e)) { e.Handled = true; await map.DuplicateSelectedCommand.ExecuteAsync(null); return; }
-            if (has && keys.Matches("copy", e)) { map.CopySelection(); e.Handled = true; return; }
-            if (has && keys.Matches("cut", e)) { e.Handled = true; await map.CutSelectionAsync(); return; }
-            if (keys.Matches("paste", e)) { e.Handled = true; await map.PasteAsync(PlacementPoint()); return; }
-            if (has && keys.Matches("turn", e)) { e.Handled = true; await map.RotateSelectedAsync(15f); return; }
-            if (has && keys.Matches("turnBack", e)) { e.Handled = true; await map.RotateSelectedAsync(-15f); return; }
-            if (keys.Matches("wireframe", e)) { map.Shading = ViewShading.Wireframe; e.Handled = true; return; }
-            // Cycles the shading like Blender's Z menu: wireframe → solid → textured.
-            if (keys.Matches("shading", e)) { map.Shading = (ViewShading)(((int)map.Shading + 1) % 3); e.Handled = true; return; }
-            if (keys.Matches("deselect", e)) { map.Selected = null; e.Handled = true; return; }
+            e.Handled = true;
+            await shortcut();
+            RequestNextFrameRendering();
+            return;
         }
         if (ctrl) return;
         _keys.Add(e.Key);

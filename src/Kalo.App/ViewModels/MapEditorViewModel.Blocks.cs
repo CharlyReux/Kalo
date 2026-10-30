@@ -24,6 +24,8 @@ public partial class MapEditorViewModel
         new("column", "Column", "", "Column", "ff_column"),
         new("bridge", "Bridge", "", "2 × 2 bridge", "ff_bridge_2x2"),
         new("cover", "Cover", "", "Low cover", "ff_cover_2"),
+        new("respawn", "Respawn", "\uE77B", "Respawn point: where players come back after dying", @"objects\multi\spawning\respawn_point.scenery"),
+        new("start", "Start", "\uE768", "Start location: where players appear when the game starts", StartLocations.Category),
     };
 
     [ObservableProperty] private bool _isPaintOpen;
@@ -33,6 +35,7 @@ public partial class MapEditorViewModel
     /// <summary>The object tag of a Forge piece (crate, scenery or machine, whichever the workspace has).</summary>
     private string? BlockTag(BlockTool tool)
     {
+        if (tool.Piece.Contains('\\')) return _main.TagIndex.FirstOrDefault(t => t.Equals(tool.Piece, StringComparison.OrdinalIgnoreCase));
         string folder = $@"objects\levels\forge\{tool.Piece}\{tool.Piece}.";
         return _main.TagIndex.FirstOrDefault(t => t.StartsWith(folder, StringComparison.OrdinalIgnoreCase) && CategoryFor(t) != null);
     }
@@ -40,7 +43,15 @@ public partial class MapEditorViewModel
     [RelayCommand]
     private async Task PlaceBlock(BlockTool? tool)
     {
+        using var edit = await EditAsync("place block");
         if (tool == null) return;
+        if (tool.Piece == StartLocations.Category)
+        {
+            Vector3 spot = PlacementPointProvider?.Invoke() ?? Selected?.Position ?? Vector3.Zero;
+            await RunOpAsync(new PlacementOpParams { Path = Path, Category = StartLocations.Category, Op = PlacementOps.Add, Position = new[] { spot.X, spot.Y, spot.Z + 0.1f } }, StartLocations.Category);
+            Status = "Added a start location. Players appear at one of these when the game starts; respawn points are used after dying.";
+            return;
+        }
         string? tag = BlockTag(tool);
         if (tag == null) { Status = $"The {tool.Name} piece ({tool.Piece}) is not in the workspace."; return; }
         Vector3 at = PlacementPointProvider?.Invoke() ?? Selected?.Position ?? Vector3.Zero;
@@ -60,6 +71,7 @@ public partial class MapEditorViewModel
     [RelayCommand]
     private async Task Paint(MaterialChoice? material)
     {
+        using var edit = await EditAsync("paint");
         if (material == null || _main.Host == null) return;
         if (_selection.Count == 0) { Status = "Select the blocks to paint first."; return; }
         string mod = _main.ModSlugForContent;
@@ -82,6 +94,7 @@ public partial class MapEditorViewModel
                     var r = await _main.Host.MakeVariantAsync(new MakeVariantParams { Object = source, Shader = material.Shader, NewObject = newObject });
                     _main.Log($"Painted copy {newObject}: {r.Materials} material(s) → {material.Name}.");
                 }
+                _main.ModProjects?.UpdateActive(m => m.PaintedBlocks[newObject] = new PaintedBlock(source, material.Shader));
                 var pal = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Category = key.Category, Op = PlacementOps.AddPalette, Tag = newObject });
                 var set = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Category = key.Category, Op = PlacementOps.SetType, Index = key.Index, Type = pal.SelectIndex });
                 if (set.Category != null) ReplaceCategory(set.Category);
@@ -114,6 +127,53 @@ public partial class MapEditorViewModel
         string piece = name[..cut];
         string prefix = $@"objects\levels\forge\{piece}\{piece}{System.IO.Path.GetExtension(tag)}";
         return _main.TagIndex.FirstOrDefault(t => t.Equals(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+}
+
+public partial class MapEditorViewModel
+{
+    /// <summary>
+    /// Painted copies this map uses whose files are gone (removed from the mod, or lost): rebuilt from the record the
+    /// mod keeps (or, for older paints, from the piece and shader names in the copy's path). Returns how many.
+    /// </summary>
+    private async Task<int> RebuildMissingBlocksAsync(ScenarioPlacements data)
+    {
+        if (_main.Host == null || _main.Paths == null) return 0;
+        var records = _main.ModProjects?.Active?.Manifest.PaintedBlocks ?? new Dictionary<string, PaintedBlock>();
+        int rebuilt = 0;
+        foreach (var entry in (data.Categories ?? new()).SelectMany(c => c.Palette ?? new()))
+        {
+            string? tag = entry.Tag;
+            if (string.IsNullOrEmpty(tag) || !tag.Contains(@"\blocks\", StringComparison.OrdinalIgnoreCase)) continue;
+            if (System.IO.File.Exists(System.IO.Path.Combine(_main.Paths.WorkspaceTags, tag))) continue;
+            PaintedBlock? how = records.TryGetValue(tag, out var r) ? r : Guess(tag);
+            if (how == null) { _main.AddProblem("warning", $"{Title} uses {tag}, which is missing (shown as a box).", Path); continue; }
+            try
+            {
+                await _main.Host.MakeVariantAsync(new MakeVariantParams { Object = how.Source, Shader = how.Shader, NewObject = tag });
+                _main.ModProjects?.UpdateActive(m => m.PaintedBlocks[tag] = how);
+                rebuilt++;
+            }
+            catch (HostException ex)
+            {
+                _main.AddProblem("warning", $"Could not rebuild the painted block {tag}: {ex.Message}", Path);
+            }
+        }
+        if (rebuilt > 0) _main.Log($"{Title}: rebuilt {rebuilt} painted block(s) whose files were missing.");
+        return rebuilt;
+    }
+
+    /// <summary>levels\mods\m\blocks\ff_plat__shader_slug\...: the Forge piece, and a shader whose name slugs the same.</summary>
+    private PaintedBlock? Guess(string tag)
+    {
+        string? source = OriginalOf(tag);
+        string name = System.IO.Path.GetFileNameWithoutExtension(tag);
+        int cut = name.IndexOf("__", StringComparison.Ordinal);
+        if (source == null || cut <= 0) return null;
+        string slug = name[(cut + 2)..];
+        string? shader = _main.TagIndex.FirstOrDefault(t => t.EndsWith(".shader", StringComparison.OrdinalIgnoreCase) &&
+                                                            MainViewModel.Slug(System.IO.Path.GetFileNameWithoutExtension(t)) == slug);
+        return shader == null ? null : new PaintedBlock(source, shader);
     }
 }
 

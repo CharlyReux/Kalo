@@ -47,6 +47,8 @@ namespace Kalo.Protocol
         public const string ObjectInfo = "objectInfo";
         public const string ShaderInfo = "shaderInfo";
         public const string MakeVariant = "makeVariant";
+        public const string Snapshot = "snapshot";
+        public const string Restore = "restore";
         public const string MegaloCompile = "megaloCompile";
         public const string Shutdown = "shutdown";
     }
@@ -226,6 +228,8 @@ namespace Kalo.Protocol
         public string OutputFolder { get; set; }
         /// <summary>When set and the script compiles, the engine (as MegaloEdit deploys it, .mglo) is written here.</summary>
         public string MgloFile { get; set; }
+        /// <summary>When set and the script compiles, the compiler's serialized variant (SerializedEngineBin) is written here.</summary>
+        public string BinFile { get; set; }
     }
 
     public sealed class MegaloMessage
@@ -322,6 +326,8 @@ namespace Kalo.Protocol
         public const string Remove = "remove";
         /// <summary>Adds Tag to the category's palette (if missing) and returns its index in SelectIndex.</summary>
         public const string AddPalette = "addPalette";
+        /// <summary>Gives objects with a blank multiplayer block (from older Kalo versions) spawnable settings; SelectIndex = how many.</summary>
+        public const string RepairMultiplayer = "repairMultiplayer";
         /// <summary>Makes placement Index use palette entry Type (another object, e.g. a repainted block).</summary>
         public const string SetType = "setType";
         /// <summary>Puts placement Index in editor folder Folder (-1: none).</summary>
@@ -396,6 +402,22 @@ namespace Kalo.Protocol
         public string Object { get; set; }
         public string RenderModel { get; set; }
         public int Materials { get; set; }
+    }
+
+    // ---- undo: snapshots of a scenario's placement blocks ---------------------------------------------
+
+    public sealed class SnapshotParams
+    {
+        public string Path { get; set; }
+        /// <summary>For restore: the snapshot to put back.</summary>
+        public int Id { get; set; }
+    }
+
+    public sealed class SnapshotResult
+    {
+        public int Id { get; set; }
+        public int Bytes { get; set; }
+        public long Ms { get; set; }
     }
 
     // ---- one block element (object properties) ------------------------------------------------
@@ -528,6 +550,13 @@ namespace Kalo.Protocol
         /// add one platform with spawn points on it.
         /// </summary>
         public bool Barebone { get; set; }
+    }
+
+    public static class StartLocations
+    {
+        /// <summary>Pseudo placement category for the scenario's player starting locations (where players first spawn).</summary>
+        public const string Category = "start locations";
+        public const string Block = "player starting locations";
     }
 
     public static class BareboneMap

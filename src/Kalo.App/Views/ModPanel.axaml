@@ -63,6 +63,10 @@
                 </DataTemplate>
               </ComboBox.ItemTemplate>
             </ComboBox>
+            <CheckBox IsChecked="{Binding NewGametypeKaloScript}" FontSize="12"
+                      ToolTip.Tip="Kalo Script reads like ReachVariantTool: if / then / else, for each player do, f(a, b), x += 1. Untick to get the template's Megalo text.">
+              <TextBlock Text="Write it in Kalo Script (modern syntax)" FontSize="12" TextWrapping="Wrap" />
+            </CheckBox>
             <StackPanel Orientation="Horizontal" Spacing="6">
               <Button Classes="primary" Content="Create gametype" Command="{Binding CreateGametypeCommand}" />
               <Button Classes="tool" Content="Cancel" Command="{Binding CancelNewContentCommand}" />

@@ -8,15 +8,23 @@
   <DockPanel>
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <!-- One row; scrolls sideways when the editor is narrow (split view) instead of wrapping -->
+      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
       <DockPanel Margin="10,5">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+          <Button Classes="tool" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" ToolTip.Tip="{Binding UndoText, StringFormat='{}{0} (Ctrl+Z)'}">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE7A7;" />
+          </Button>
+          <Button Classes="tool" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Redo (Ctrl+Y)">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE7A6;" />
+          </Button>
           <Button Classes="outline" Content="Spawn view" Command="{Binding ViewFromSpawnCommand}" IsEnabled="{Binding HasSpawn}"
                   ToolTip.Tip="Camera where the player spawns, at eye height: compare with the game" />
           <Button Classes="outline" Content="Frame all" Command="{Binding FrameAllCommand}" ToolTip.Tip="Put the camera back over the play space (Home)" />
           <Button Classes="outline" Content="Fields" Command="{Binding OpenFieldsCommand}" ToolTip.Tip="Open the scenario in the tag editor" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
         </StackPanel>
-        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
           <TextBlock Text="Show" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
           <ToggleButton Classes="chip" Content="Level" IsChecked="{Binding ShowGeometry}" />
           <ToggleButton Classes="chip" Content="Scenery" IsChecked="{Binding ShowScenery}" />
@@ -24,8 +32,14 @@
           <ToggleButton Classes="chip" Content="Vehicles" IsChecked="{Binding ShowVehicles}" />
           <ToggleButton Classes="chip" Content="Devices" IsChecked="{Binding ShowDevices}" />
           <ToggleButton Classes="chip" Content="Sound/FX" IsChecked="{Binding ShowSoundAndEffects}" />
-        </WrapPanel>
+        </StackPanel>
       </DockPanel>
+      </ScrollViewer>
+    </Border>
+
+    <!-- Objects off the level geometry: removed by the game -->
+    <Border DockPanel.Dock="Bottom" Background="#3A1D1D" BorderBrush="#E5534B" BorderThickness="0,1,0,0" Padding="10,4" IsVisible="{Binding HasOutside}">
+      <TextBlock Text="{Binding OutsideText}" FontSize="12" Foreground="#F0A8A3" TextWrapping="Wrap" />
     </Border>
 
     <!-- Status line -->
@@ -38,7 +52,7 @@
       </StackPanel>
     </Border>
 
-    <Grid ColumnDefinitions="250,4,*">
+    <Grid ColumnDefinitions="220,4,*">
       <!-- Outliner: editor folders, then loose objects by kind. Colors: green new, amber changed. -->
       <DockPanel Grid.Column="0" Background="{StaticResource KPanel}">
         <DockPanel DockPanel.Dock="Top" Margin="6,6,6,2">

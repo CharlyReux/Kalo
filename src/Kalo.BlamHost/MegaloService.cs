@@ -70,9 +70,8 @@ namespace Kalo.BlamHost
                 throw new DirectoryNotFoundException("Include folder not found: " + p.IncludeFolder);
             string include = p.IncludeFolder.TrimEnd('\\') + "\\";
             string output = p.OutputFolder;
-            bool write = !string.IsNullOrEmpty(output) || !string.IsNullOrEmpty(p.MgloFile);
-            if (write) Directory.CreateDirectory(output);
-            else output = Path.Combine(Path.GetTempPath(), "kalo-megalo-scratch");
+            bool write = !string.IsNullOrEmpty(output) || !string.IsNullOrEmpty(p.MgloFile) || !string.IsNullOrEmpty(p.BinFile);
+            if (string.IsNullOrEmpty(output)) output = Path.Combine(Path.GetTempPath(), "kalo-megalo-scratch");
             Directory.CreateDirectory(output);
             DateTime before = DateTime.UtcNow.AddSeconds(-1);
 
@@ -104,6 +103,12 @@ namespace Kalo.BlamHost
                 Directory.CreateDirectory(Path.GetDirectoryName(p.MgloFile));
                 File.WriteAllBytes(p.MgloFile, r.SerializedEngine);
                 result.OutputFiles.Add(p.MgloFile);
+            }
+            if (r.Succeeded && !string.IsNullOrEmpty(p.BinFile) && r.SerializedEngineBin != null && r.SerializedEngineBin.Length > 0)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(p.BinFile));
+                File.WriteAllBytes(p.BinFile, r.SerializedEngineBin);
+                result.OutputFiles.Add(p.BinFile);
             }
             M.EngineStats s = r.Stats;
             foreach (var f in typeof(M.EngineStats).GetFields())

@@ -98,6 +98,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public MainViewModel(AppArgs args)
     {
+        InitGroups();
         _args = args;
         try
         {
@@ -264,9 +265,15 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     [RelayCommand]
     private async Task CloseTab(DocumentViewModel tab)
     {
-        int index = Tabs.IndexOf(tab);
-        Tabs.Remove(tab);
-        if (ActiveDocument == tab) ActiveDocument = Tabs.Count == 0 ? null : Tabs[Math.Max(0, index - 1)];
+        var group = EditorGroupOf(tab);
+        Tabs.Remove(tab); // also leaves its group, which shows its neighbour
+        if (group != null && !group.IsPrimary && group.Tabs.Count == 0 && IsSplit) Unsplit();
+        else if (ReferenceEquals(ActiveDocument, tab) || ActiveDocument == null)
+        {
+            var next = FocusedGroup.Current ?? Other(FocusedGroup).Current;
+            if (next != null && !ReferenceEquals(FocusedGroup.Current, next)) FocusedGroup = EditorGroupOf(next) ?? Primary;
+            ShowActive(next);
+        }
         // A map and a tag editor can share one open scenario in the Blam Host: close it only when the last one goes.
         if (!Tabs.Any(t => t.Path.Equals(tab.Path, StringComparison.OrdinalIgnoreCase))) await tab.CloseAsync();
     }
@@ -379,7 +386,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         IEnumerable<string> files = Directory.EnumerateFiles(root, "*.txt", SearchOption.TopDirectoryOnly)
             .Concat(Directory.Exists(System.IO.Path.Combine(root, "simple")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "simple"), "*.txt", SearchOption.AllDirectories) : Array.Empty<string>())
             .Concat(Directory.Exists(System.IO.Path.Combine(root, "includes")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "includes"), "*.txt") : Array.Empty<string>())
-            .Concat(Directory.Exists(System.IO.Path.Combine(root, "mods")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "mods"), "*.txt", SearchOption.AllDirectories) : Array.Empty<string>());
+            .Concat(Directory.Exists(System.IO.Path.Combine(root, "mods")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "mods"), "*.txt", SearchOption.AllDirectories) : Array.Empty<string>())
+            .Concat(Directory.Exists(System.IO.Path.Combine(root, "mods")) ? Directory.EnumerateFiles(System.IO.Path.Combine(root, "mods"), "*" + Kalo.Core.Scripting.KaloScript.Extension, SearchOption.AllDirectories) : Array.Empty<string>());
         foreach (string f in files.OrderBy(f => f.Contains("includes") ? 1 : 0).ThenBy(f => f, StringComparer.OrdinalIgnoreCase))
         {
             string rel = f.Substring(ws.Length + 1);
@@ -719,8 +727,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     partial void OnActiveDocumentChanged(DocumentViewModel? oldValue, DocumentViewModel? newValue)
     {
-        if (oldValue != null) oldValue.IsActive = false;
-        if (newValue != null) newValue.IsActive = true;
+        PlaceActive(newValue);
         FollowActiveDocument(newValue);
         OnPropertyChanged(nameof(ActiveTab));
         OnPropertyChanged(nameof(ActiveMap));

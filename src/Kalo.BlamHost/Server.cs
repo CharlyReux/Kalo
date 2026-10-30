@@ -121,6 +121,10 @@ namespace Kalo.BlamHost
                     return LevelMeshService.ShaderInfo(Params<TagListParams>(r));
                 case Methods.MakeVariant:
                     return scenarios.MakeVariant(Params<MakeVariantParams>(r));
+                case Methods.Snapshot:
+                    return scenarios.Snapshot(Params<SnapshotParams>(r));
+                case Methods.Restore:
+                    return scenarios.Restore(Params<SnapshotParams>(r));
                 case Methods.PlacementStatus:
                     return scenarios.Status(Params<PlacementStatusParams>(r));
                 case Methods.ReadElement:

@@ -1,0 +1,1070 @@
+using System.Globalization;
+using System.Text;
+
+namespace Kalo.Core.Scripting;
+
+/// <summary>
+/// Kalo Script: a modern, ReachVariantTool-style language for gametypes (if/then/else, for each, function-call
+/// syntax, operators, named temporaries), turned into the Megalo text that HREK's compiler understands.
+/// Declarations Megalo already writes well (options, traits, map objects, HUD widgets...) go through unchanged
+/// inside <c>megalo [[ ... ]]</c> blocks.
+///
+/// <code>
+/// -- 1 point per kill, 2 for a headshot
+/// declare player.number streak = 0
+///
+/// for each player do
+///   if player_died(current_player, enemy) then
+///     temp player killer = none
+///     player_death_get_killing_player(current_player, killer)
+///     killer.score += 1
+///     killer.streak += 1
+///   else
+///     current_player.streak = 0
+///   end
+/// end
+/// </code>
+///
+/// Mapping: a top-level <c>for each player do</c> is <c>trigger player</c>; <c>on init do</c> is
+/// <c>trigger initialization</c>; a nested <c>for each</c> is <c>action for_each</c>; <c>if</c> is an
+/// <c>action for_each general</c> block whose conditions gate its body (else / elseif use a temporary flag);
+/// <c>a.f(b)</c> is <c>f a b</c>; <c>x += 1</c> is <c>action set x += 1</c>.
+/// Megalo joins conditions left to right with no precedence: <c>a or b and c</c> means (a or b) and c.
+/// </summary>
+public static class KaloScript
+{
+    public const string Extension = ".kscript";
+
+    /// <summary>Top-level Megalo declarations kept as they are when converting from Megalo text.</summary>
+    public static readonly HashSet<string> MegaloDeclarations = new(StringComparer.Ordinal)
+    {
+        "game_options", "map_object", "constants", "teams", "hud_widgets", "game_stats", "engine_data",
+        "map_permissions", "base", "localized_include", "object_filter", "loadout_palettes",
+    };
+
+    /// <summary>What a top-level <c>on X do</c> becomes.</summary>
+    public static readonly IReadOnlyDictionary<string, string> Events = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["init"] = "initialization",
+        ["initialization"] = "initialization",
+        ["local"] = "local",
+        ["host_migration"] = "host_migration",
+        ["double_migration"] = "double_migration",
+        ["pregame"] = "pregame",
+    };
+
+    /// <summary>The starter for new gametypes: points per kill, a streak bonus and a message, with comments.</summary>
+    public const string Starter = """
+    -- Options players can change in the lobby (Megalo declarations stay as they are, inside megalo [[ ]]).
+    megalo [[
+    game_options
+    	ranged_option option_kill_points
+    		"Kill Points"
+    		"How many points you get for killing an enemy"
+    		1 -10 10
+    	end
+    end
+    ]]
+
+    -- Variables: each player keeps their own kill streak.
+    declare player.number streak = 0
+
+    for each player do
+      -- player_died is true on the tick this player was killed by an enemy
+      if player_died(current_player, enemy) then
+        temp player killer = none
+        player_death_get_killing_player(current_player, killer)
+        killer.score += option_kill_points
+        killer.streak += 1
+        current_player.streak = 0
+
+        -- every 5 kills in a row: a bonus point and a message
+        if killer.streak == 5 then
+          killer.score += 1
+          killer.streak = 0
+          hud_post_message(player killer, none, "Killing spree! +1")
+        end
+      end
+    end
+
+    """;
+
+    public static TranspileResult Transpile(string source) => new Transpiler(source).Run();
+
+    /// <summary>Converts Megalo text (a Bungie script or one of yours) to Kalo Script.</summary>
+    public static string FromMegalo(string megalo) => Decompiler.Convert(megalo);
+}
+
+public sealed record ScriptError(int Line, int Column, string Message)
+{
+    public override string ToString() => $"line {Line}: {Message}";
+}
+
+public sealed class TranspileResult
+{
+    /// <summary>The Megalo text for the HREK compiler (empty when there are errors).</summary>
+    public string Megalo { get; init; } = "";
+    public List<ScriptError> Errors { get; init; } = new();
+    /// <summary>For each Megalo line (0-based), the Kalo Script line (1-based) it came from; 0 when generated.</summary>
+    public List<int> LineMap { get; init; } = new();
+    public bool Succeeded => Errors.Count == 0;
+
+    /// <summary>The Kalo Script line for a 1-based Megalo line (compiler messages), or 0.</summary>
+    public int SourceLine(int megaloLine) => megaloLine >= 1 && megaloLine <= LineMap.Count ? LineMap[megaloLine - 1] : 0;
+}
+
+// ---- lexer ------------------------------------------------------------------------------------------------
+
+internal enum T { Word, Number, String, Op, Punct, Raw, End }
+
+internal sealed record Tok(T Kind, string Text, int Line, int Col)
+{
+    public bool Is(string text) => (Kind is T.Word or T.Op or T.Punct) && Text == text;
+    public override string ToString() => Kind == T.End ? "end of file" : Kind == T.String ? $"\"{Text}\"" : Text;
+}
+
+internal static class Lexer
+{
+    private static readonly string[] Ops =
+    {
+        "<<=", ">>=", "==", "!=", "<=", ">=", "+=", "-=", "*=", "/=", "%=", "|=", "&=", "^=", "~=", "<", ">", "=", "+", "-", "*", "/", "%",
+    };
+
+    public static List<Tok> Run(string src, List<ScriptError> errors)
+    {
+        var list = new List<Tok>();
+        int i = 0, line = 1, lineStart = 0;
+        int Col() => i - lineStart + 1;
+        while (i < src.Length)
+        {
+            char c = src[i];
+            if (c == '\n') { i++; line++; lineStart = i; continue; }
+            if (char.IsWhiteSpace(c)) { i++; continue; }
+            if ((c == '-' && At(src, i, "--")) || (c == '/' && At(src, i, "//")))
+            {
+                while (i < src.Length && src[i] != '\n') i++;
+                continue;
+            }
+            // megalo [[ raw text ]]
+            if (At(src, i, "[["))
+            {
+                int startLine = line, startCol = Col();
+                int close = src.IndexOf("]]", i + 2, StringComparison.Ordinal);
+                if (close < 0) { errors.Add(new ScriptError(line, Col(), "[[ without ]]")); close = src.Length; }
+                string raw = src.Substring(i + 2, Math.Min(close, src.Length) - i - 2);
+                list.Add(new Tok(T.Raw, raw, startLine, startCol));
+                for (int k = i; k < Math.Min(close + 2, src.Length); k++)
+                    if (src[k] == '\n') { line++; lineStart = k + 1; }
+                i = Math.Min(close + 2, src.Length);
+                continue;
+            }
+            if (c == '"')
+            {
+                int startCol = Col();
+                var sb = new StringBuilder();
+                i++;
+                while (i < src.Length && src[i] != '"' && src[i] != '\n')
+                {
+                    if (src[i] == '\\' && i + 1 < src.Length && src[i + 1] == '"') { sb.Append('"'); i += 2; continue; }
+                    sb.Append(src[i++]);
+                }
+                if (i >= src.Length || src[i] != '"') errors.Add(new ScriptError(line, startCol, "string without a closing quote"));
+                else i++;
+                list.Add(new Tok(T.String, sb.ToString(), line, startCol));
+                continue;
+            }
+            if (char.IsDigit(c) || (c == '.' && i + 1 < src.Length && char.IsDigit(src[i + 1])))
+            {
+                int s = i, startCol = Col();
+                while (i < src.Length && (char.IsDigit(src[i]) || src[i] == '.')) i++;
+                list.Add(new Tok(T.Number, src[s..i], line, startCol));
+                continue;
+            }
+            if (char.IsLetter(c) || c == '_')
+            {
+                int s = i, startCol = Col();
+                while (i < src.Length && (char.IsLetterOrDigit(src[i]) || src[i] == '_')) i++;
+                list.Add(new Tok(T.Word, src[s..i], line, startCol));
+                continue;
+            }
+            if (c is '(' or ')' or ',' or '.' or '[' or ']')
+            {
+                list.Add(new Tok(T.Punct, c.ToString(), line, Col()));
+                i++;
+                continue;
+            }
+            string? op = Ops.FirstOrDefault(o => At(src, i, o));
+            if (op != null)
+            {
+                list.Add(new Tok(T.Op, op, line, Col()));
+                i += op.Length;
+                continue;
+            }
+            errors.Add(new ScriptError(line, Col(), $"unexpected character '{c}'"));
+            i++;
+        }
+        list.Add(new Tok(T.End, "", line, Col()));
+        return list;
+    }
+
+    private static bool At(string s, int i, string what) => string.CompareOrdinal(s, i, what, 0, what.Length) == 0;
+}
+
+// ---- Kalo Script → Megalo ---------------------------------------------------------------------------------
+
+internal sealed class ParseError(Tok at, string message) : Exception(message)
+{
+    public Tok At { get; } = at;
+}
+
+internal sealed class Transpiler
+{
+    private readonly string _source;
+    private readonly List<ScriptError> _errors = new();
+    private List<Tok> _t = new();
+    private int _p;
+
+    // Output: Megalo lines with the source line each came from.
+    private readonly List<(string Text, int Line)> _out = new();
+    private int _indent;
+
+    // Declarations gathered from the whole file (emitted before the triggers).
+    private readonly Dictionary<string, List<(string Text, int Line)>> _vars = new(StringComparer.Ordinal);
+    private readonly List<(string Name, string Kind, string Value, int Line)> _mapObjects = new();
+    private readonly Dictionary<string, string> _aliases = new(StringComparer.Ordinal);
+    private int _flags;
+    private int _varsAt = int.MaxValue;
+
+    private static readonly HashSet<string> Scopes = new() { "global", "player", "team", "object" };
+    private static readonly HashSet<string> Types = new() { "number", "object", "player", "team", "timer" };
+    private static readonly HashSet<string> Reserved = new()
+    {
+        "if", "then", "else", "elseif", "end", "for", "each", "do", "on", "and", "or", "not", "declare", "alias",
+        "megalo", "include", "with",
+    };
+    /// <summary>Words that can never be a value (others, like on / type / label, can be passed to Megalo).</summary>
+    private static readonly HashSet<string> Structural = new()
+    {
+        "if", "then", "else", "elseif", "end", "for", "do", "and", "or", "not", "declare", "alias", "megalo",
+    };
+    private static readonly HashSet<string> AssignOps = new() { "=", "+=", "-=", "*=", "/=", "%=", "|=", "&=", "^=", "~=", "<<=", ">>=" };
+    private static readonly HashSet<string> CompareOps = new() { "==", "!=", "<", ">", "<=", ">=" };
+    private static readonly Dictionary<string, string> Arithmetic = new() { ["+"] = "+=", ["-"] = "-=", ["*"] = "*=", ["/"] = "/=", ["%"] = "%=" };
+
+    public Transpiler(string source) => _source = source.Replace("\r\n", "\n");
+
+    public TranspileResult Run()
+    {
+        _t = Lexer.Run(_source, _errors);
+        var body = new List<(string, int)>();
+        // Top level: declarations collected, triggers and raw blocks written in order.
+        while (Peek.Kind != T.End)
+        {
+            int before = _p;
+            try
+            {
+                TopLevel();
+            }
+            catch (ParseError e)
+            {
+                _errors.Add(new ScriptError(e.At.Line, e.At.Col, e.Message));
+                SkipToTopLevel();
+            }
+            if (_p == before) _p++;
+        }
+        if (_errors.Count > 0) return new TranspileResult { Errors = _errors.OrderBy(e => e.Line).ToList() };
+
+        // Map objects and variables first, then everything else in source order.
+        var final = new List<(string Text, int Line)>
+        {
+            ("; generated by Kalo from Kalo Script: edit the .kscript file, not this text", 0),
+        };
+        foreach (var m in _mapObjects)
+        {
+            final.Add(($"map_object {m.Name}", m.Line));
+            final.Add(($"\t{m.Kind} \"{m.Value}\"", m.Line));
+            final.Add(("end", m.Line));
+        }
+        // Variables go where the first declare was (they may use options declared above them).
+        var vars = new List<(string Text, int Line)>();
+        foreach (var (scope, lines) in _vars)
+        {
+            vars.Add(($"variables {scope}", lines[0].Line));
+            vars.AddRange(lines.Select(l => ("\t" + l.Text, l.Line)));
+            vars.Add(("end", lines[^1].Line));
+        }
+        final.AddRange(_out.Take(_varsAt));
+        final.AddRange(vars);
+        final.AddRange(_out.Skip(_varsAt));
+        return new TranspileResult
+        {
+            Megalo = string.Join("\r\n", final.Select(l => l.Text)) + "\r\n",
+            LineMap = final.Select(l => l.Line).ToList(),
+            Errors = _errors,
+        };
+    }
+
+    // ---- tokens -------------------------------------------------------------------------------------------
+
+    private Tok Peek => _t[_p];
+    private Tok PeekAt(int k) => _t[Math.Min(_p + k, _t.Count - 1)];
+    private Tok Next() => _t[Math.Min(_p++, _t.Count - 1)];
+
+    private Tok Expect(string text, string? why = null)
+    {
+        var t = Peek;
+        if (!t.Is(text)) throw new ParseError(t, why ?? $"expected '{text}' but found {t}");
+        return Next();
+    }
+
+    private string Word(string what)
+    {
+        var t = Peek;
+        if (t.Kind != T.Word) throw new ParseError(t, $"expected {what} but found {t}");
+        Next();
+        return t.Text;
+    }
+
+    private void SkipToTopLevel()
+    {
+        // Resume at the next line that starts at column 1 with a top-level keyword.
+        while (Peek.Kind != T.End)
+        {
+            var t = Next();
+            var n = Peek;
+            if (n.Col == 1 && n.Line > t.Line && (n.Is("for") || n.Is("on") || n.Is("do") || n.Is("declare") || n.Is("alias") || n.Is("megalo") || n.Is("include"))) return;
+        }
+    }
+
+    private void Emit(string text, int line) => _out.Add((new string('\t', _indent) + text, line));
+
+    // ---- top level ----------------------------------------------------------------------------------------
+
+    private void TopLevel()
+    {
+        var t = Peek;
+        if (t.Is("megalo"))
+        {
+            Next();
+            var raw = Next();
+            if (raw.Kind != T.Raw) throw new ParseError(raw, "expected [[ after megalo");
+            var lines = raw.Text.Split('\n');
+            // Text after [[ on its own line: only a -- comment makes sense there (it isn't Megalo).
+            int dash = lines[0].IndexOf("--", StringComparison.Ordinal);
+            if (dash >= 0) lines[0] = lines[0][..dash];
+            for (int k = 1; k < lines.Length; k++)
+                if (lines[k].TrimStart().StartsWith("--", StringComparison.Ordinal)) lines[k] = lines[k].Replace("--", ";");
+            // Keep the raw text's own line numbers so compiler errors point inside the block.
+            int first = lines.Length > 0 && lines[0].Trim().Length == 0 ? 1 : 0;
+            int last = lines.Length;
+            while (last > first && lines[last - 1].Trim().Length == 0) last--;
+            int common = lines.Skip(first).Take(last - first).Where(l => l.Trim().Length > 0)
+                .Select(l => l.Length - l.TrimStart().Length).DefaultIfEmpty(0).Min();
+            for (int k = first; k < last; k++)
+                _out.Add((lines[k].Length >= common ? lines[k][common..].TrimEnd() : lines[k].TrimEnd(), raw.Line + k));
+            return;
+        }
+        if (t.Is("include"))
+        {
+            Next();
+            var file = Next();
+            if (file.Kind != T.String) throw new ParseError(file, "include needs a file name in quotes");
+            _out.Add(($"include \"{file.Text}\"", t.Line));
+            return;
+        }
+        if (t.Is("declare")) { Declare(); return; }
+        if (t.Is("alias"))
+        {
+            Next();
+            string name = Word("an alias name");
+            Expect("=");
+            _aliases[name] = Path();
+            return;
+        }
+        if (t.Is("for"))
+        {
+            Next();
+            Expect("each");
+            string kind = ForKind(out _);
+            Expect("do");
+            Trigger(kind, t.Line);
+            return;
+        }
+        if (t.Is("on"))
+        {
+            Next();
+            var ev = Peek;
+            string name = Word("an event (init, local, host_migration, double_migration, pregame)");
+            if (!KaloScript.Events.TryGetValue(name, out string? trigger))
+                throw new ParseError(ev, $"unknown event '{name}': use init, local, host_migration, double_migration or pregame");
+            Expect("do");
+            Trigger(trigger, t.Line);
+            return;
+        }
+        if (t.Is("do"))
+        {
+            Next();
+            Trigger("general", t.Line);
+            return;
+        }
+        if (t.Kind == T.Word && !Reserved.Contains(t.Text))
+            throw new ParseError(t, $"'{t.Text}' must be inside a trigger: put it in 'do ... end' or 'for each player do ... end'");
+        throw new ParseError(t, $"unexpected {t} at the top level");
+    }
+
+    /// <summary>declare [networked|local] scope.type name [= value]</summary>
+    private void Declare()
+    {
+        var at = Next();
+        string network = "networked";
+        if (Peek.Kind == T.Word && (Peek.Text.StartsWith("networked", StringComparison.Ordinal) || Peek.Text == "local")) network = Next().Text;
+        var scopeTok = Peek;
+        string scope = Word("global, player, team or object");
+        if (!Scopes.Contains(scope)) throw new ParseError(scopeTok, $"'{scope}' is not a variable scope: use global, player, team or object");
+        Expect(".");
+        var typeTok = Peek;
+        string type = Word("a type");
+        if (!Types.Contains(type)) throw new ParseError(typeTok, $"'{type}' is not a variable type: use number, timer, object, player or team");
+        string name = Word("a variable name");
+        string value = type is "number" or "timer" ? "0" : "none";
+        if (Peek.Is("=")) { Next(); value = Atom(); }
+        if (_varsAt == int.MaxValue) _varsAt = _out.Count;
+        if (!_vars.TryGetValue(scope, out var list)) _vars[scope] = list = new();
+        list.Add(($"{network} {type} {name} {value}", at.Line));
+    }
+
+    /// <summary>After "for each": player, team, object, random player, a map object name, or object with label/type "x".</summary>
+    private string ForKind(out bool isGeneral)
+    {
+        isGeneral = false;
+        var t = Peek;
+        string kind = Word("player, team, object or a map object name");
+        if (kind == "random" && Peek.Is("player")) { Next(); return "random_player"; }
+        if (kind == "object" && Peek.Is("with"))
+        {
+            Next();
+            var what = Peek;
+            string by = Word("label or type");
+            if (by is not ("label" or "type")) throw new ParseError(what, "use 'with label \"name\"' or 'with type \"name\"'");
+            var v = Next();
+            if (v.Kind != T.String) throw new ParseError(v, $"{by} needs a name in quotes");
+            string name = "kalo_" + by + "_" + new string(v.Text.Select(ch => char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : '_').ToArray());
+            if (_mapObjects.All(m => m.Name != name)) _mapObjects.Add((name, by, v.Text, t.Line));
+            return name;
+        }
+        if (kind == "general") isGeneral = true;
+        return kind;
+    }
+
+    private void Trigger(string kind, int line)
+    {
+        Emit("trigger " + kind, line);
+        _indent++;
+        Block();
+        _indent--;
+        Emit("end", Expect("end", "missing 'end' for this trigger").Line);
+    }
+
+    // ---- statements ---------------------------------------------------------------------------------------
+
+    /// <summary>Statements until end / else / elseif.</summary>
+    private void Block()
+    {
+        while (!(Peek.Is("end") || Peek.Is("else") || Peek.Is("elseif") || Peek.Kind == T.End))
+        {
+            int before = _p;
+            try
+            {
+                Statement();
+            }
+            catch (ParseError e)
+            {
+                _errors.Add(new ScriptError(e.At.Line, e.At.Col, e.Message));
+                // Skip the rest of that line.
+                int line = e.At.Line;
+                while (Peek.Kind != T.End && Peek.Line == line && !Peek.Is("end")) Next();
+            }
+            if (_p == before) Next();
+        }
+    }
+
+    private void Statement()
+    {
+        var t = Peek;
+        if (t.Is("if")) { If(); return; }
+        if (t.Is("for"))
+        {
+            Next();
+            Expect("each");
+            string kind = ForKind(out _);
+            Expect("do");
+            Emit("action for_each " + kind, t.Line);
+            _indent++;
+            Block();
+            _indent--;
+            Emit("end", Expect("end", "missing 'end' for this for each").Line);
+            return;
+        }
+        if (t.Is("do"))
+        {
+            Next();
+            Emit("action for_each general", t.Line);
+            _indent++;
+            Block();
+            _indent--;
+            Emit("end", Expect("end", "missing 'end' for this do").Line);
+            return;
+        }
+        if (t.Is("inline") && PeekAt(1).Line > t.Line)
+        {
+            // Megalo's begin ... end: a block that doesn't use a trigger from the budget.
+            Next();
+            Emit("begin", t.Line);
+            _indent++;
+            Block();
+            _indent--;
+            Emit("end", Expect("end", "missing 'end' for this inline block").Line);
+            return;
+        }
+        if (t.Is("temp") && PeekAt(1).Kind == T.Word && Types.Contains(PeekAt(1).Text) && PeekAt(2).Kind == T.Word)
+        {
+            Next();
+            var typeTok = Peek;
+            string type = Word("a type");
+            if (!Types.Contains(type) || type == "timer") throw new ParseError(typeTok, $"'{type}' can't be a temporary: use number, object, player or team");
+            string name = Word("a name");
+            string value = type == "number" ? "0" : "none";
+            if (Peek.Is("=")) { Next(); value = Atom(); }
+            Emit($"temporary {type} {name} {value}", t.Line);
+            return;
+        }
+        if (t.Is("declare") || t.Is("alias")) throw new ParseError(t, $"'{t.Text}' goes at the top of the file, outside triggers");
+        if (t.Is("then") || t.Is("and") || t.Is("or")) throw new ParseError(t, $"unexpected '{t.Text}'");
+        if (t.Kind != T.Word) throw new ParseError(t, $"unexpected {t}");
+
+        // A call, or an assignment.
+        int start = _p;
+        string path = Path();
+        if (Peek.Is("("))
+        {
+            _p = start;
+            var (name, args) = Call();
+            Emit($"action {name}{Args(args)}", t.Line);
+            return;
+        }
+        var op = Peek;
+        if (op.Kind == T.Op && AssignOps.Contains(op.Text))
+        {
+            Next();
+            string value = Atom();
+            if (Peek.Kind == T.Op && Arithmetic.TryGetValue(Peek.Text, out string? then) && Peek.Line == op.Line)
+            {
+                var arith = Next();
+                string right = Atom();
+                if (op.Text != "=") throw new ParseError(arith, "write one operation per line, e.g. x += a then x += b");
+                if (right == path)
+                {
+                    if (arith.Text is "+" or "*") { Emit($"action set {path} {then} {value}", t.Line); return; }
+                    throw new ParseError(arith, $"{path} = {value} {arith.Text} {path} needs a temporary: Megalo applies one operation at a time");
+                }
+                Emit($"action set {path} = {value}", t.Line);
+                Emit($"action set {path} {then} {right}", t.Line);
+                return;
+            }
+            Emit($"action set {path} {op.Text} {value}", t.Line);
+            return;
+        }
+        throw new ParseError(op, $"expected '(' to call {path}, or = += -= to change it");
+    }
+
+    private void If()
+    {
+        var start = Next(); // if
+        var conditions = Conditions();
+        Expect("then", "expected 'then' after the condition");
+        bool chain = Peek.Kind != T.End && HasElse();
+        string? flag = null;
+        if (chain)
+        {
+            flag = $"kalo_if_{++_flags}";
+            Emit($"temporary number {flag} 0", start.Line);
+        }
+        int wrapper = _out.Count;
+        Emit("action for_each general", start.Line);
+        _indent++;
+        foreach (var c in conditions) Emit(c.Text, c.Line);
+        if (flag != null) Emit($"action set {flag} = 1", start.Line);
+        Block();
+        _indent--;
+        Emit("end", Peek.Line);
+        if (flag == null)
+        {
+            Expect("end", "missing 'end' for this if");
+            // An if that ends its block needs no block of its own: Megalo conditions gate what follows them.
+            // (Saves a trigger; converted Bungie scripts compile back to the same structure.)
+            if (_indent > 0 && (Peek.Is("end") || Peek.Is("else") || Peek.Is("elseif")))
+            {
+                _out.RemoveAt(_out.Count - 1);
+                _out.RemoveAt(wrapper);
+                for (int k = wrapper; k < _out.Count; k++)
+                    if (_out[k].Text.StartsWith('\t')) _out[k] = (_out[k].Text[1..], _out[k].Line);
+            }
+            return;
+        }
+        while (Peek.Is("elseif"))
+        {
+            var e = Next();
+            var more = Conditions();
+            Expect("then", "expected 'then' after the condition");
+            Emit("action for_each general", e.Line);
+            _indent++;
+            Emit($"condition if {flag} == 0", e.Line);
+            foreach (var c in more) Emit(c.Text, c.Line);
+            Emit($"action set {flag} = 1", e.Line);
+            Block();
+            _indent--;
+            Emit("end", Peek.Line);
+        }
+        if (Peek.Is("else"))
+        {
+            var e = Next();
+            Emit("action for_each general", e.Line);
+            _indent++;
+            Emit($"condition if {flag} == 0", e.Line);
+            Block();
+            _indent--;
+            Emit("end", Peek.Line);
+        }
+        Expect("end", "missing 'end' for this if");
+    }
+
+    /// <summary>True when the if starting here has an else or elseif at its own level.</summary>
+    private bool HasElse()
+    {
+        int depth = 0;
+        for (int k = _p; k < _t.Count; k++)
+        {
+            var t = _t[k];
+            if (t.Kind == T.End) return false;
+            if (t.Is("if") || t.Is("do") || (t.Is("inline") && k + 1 < _t.Count && _t[k + 1].Line > t.Line)) depth++;
+            else if (t.Is("end"))
+            {
+                if (depth == 0) return false;
+                depth--;
+            }
+            else if (depth == 0 && (t.Is("else") || t.Is("elseif"))) return true;
+        }
+        return false;
+    }
+
+    /// <summary>cond (and|or cond)* → Megalo condition lines ("or" at the end of a line joins it with the next).</summary>
+    private List<(string Text, int Line)> Conditions()
+    {
+        var list = new List<(string Text, int Line)>();
+        while (true)
+        {
+            var t = Peek;
+            bool negate = false;
+            while (Peek.Is("not")) { Next(); negate = !negate; }
+            if (Peek.Is("(")) throw new ParseError(Peek, "Megalo can't group conditions with parentheses: use nested ifs");
+            string text = Condition();
+            list.Add(((negate ? "condition not " : "condition ") + text, t.Line));
+            if (Peek.Is("or")) { Next(); list[^1] = (list[^1].Text + " or", list[^1].Line); continue; }
+            if (Peek.Is("and")) { Next(); continue; }
+            return list;
+        }
+    }
+
+    private string Condition()
+    {
+        var t = Peek;
+        int start = _p;
+        if (t.Kind == T.Word && !Reserved.Contains(t.Text))
+        {
+            Path();
+            if (Peek.Is("("))
+            {
+                _p = start;
+                var (name, args) = Call();
+                return name + Args(args);
+            }
+            _p = start;
+        }
+        string left = Atom();
+        var op = Peek;
+        if (op.Kind != T.Op || !CompareOps.Contains(op.Text))
+        {
+            if (op.Is("=")) throw new ParseError(op, "use == to compare (= changes a value)");
+            throw new ParseError(op, $"expected a comparison (== != < > <= >=) after {left}");
+        }
+        Next();
+        string right = Atom();
+        return $"if {left} {op.Text} {right}";
+    }
+
+    /// <summary>name(args) or subject.name(args) → (name, [subject, args...]).</summary>
+    private (string Name, List<string> Args) Call()
+    {
+        var parts = new List<string> { Word("a name") };
+        while (Peek.Is(".")) { Next(); parts.Add(Word("a name")); }
+        string name = parts[^1];
+        var args = new List<string>();
+        if (parts.Count > 1) args.Add(Resolve(string.Join(".", parts.Take(parts.Count - 1))));
+        var open = Expect("(");
+        if (!Peek.Is(")"))
+        {
+            while (true)
+            {
+                args.Add(Argument(open));
+                if (Peek.Is(",")) { Next(); continue; }
+                break;
+            }
+        }
+        Expect(")", $"expected ')' to close {name}(");
+        return (name, args);
+    }
+
+    /// <summary>
+    /// One argument: usually a value, but Megalo arguments can be several words (player killer, = 1,
+    /// at current_object offset 0 0 5): everything up to the next comma or closing parenthesis.
+    /// </summary>
+    private string Argument(Tok open)
+    {
+        var parts = new List<string>();
+        while (!(Peek.Is(",") || Peek.Is(")")))
+        {
+            var t = Peek;
+            if (t.Kind == T.End || t.Kind == T.Raw || (t.Line != open.Line && parts.Count == 0 && t.Is("end")))
+                throw new ParseError(t, "expected ')' to close the call");
+            if (t.Is("("))
+                throw new ParseError(t, "Megalo can't nest calls: store the result in a temp first");
+            if (t.Kind == T.Op && t.Text == "-" && PeekAt(1).Kind == T.Number) { Next(); parts.Add("-" + Next().Text); continue; }
+            if (t.Kind == T.Word) { parts.Add(t.Text == "end" ? Next().Text : PathOrWord()); continue; }
+            Next();
+            parts.Add(t.Kind == T.String ? "\"" + t.Text + "\"" : t.Text);
+        }
+        if (parts.Count == 0) throw new ParseError(Peek, "missing argument");
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>A name or path inside call arguments, where any word is allowed (not, on, and...).</summary>
+    private string PathOrWord()
+    {
+        var parts = new List<string> { Next().Text };
+        while (Peek.Is(".") && PeekAt(1).Kind == T.Word) { Next(); parts.Add(Next().Text); }
+        return Resolve(string.Join(".", parts));
+    }
+
+    private static string Args(List<string> args) => args.Count == 0 ? "" : " " + string.Join(" ", args);
+
+    /// <summary>a.b.c (variables, members), with aliases applied to the first part.</summary>
+    private string Path()
+    {
+        var t = Peek;
+        if (t.Kind != T.Word) throw new ParseError(t, $"expected a name but found {t}");
+        var parts = new List<string> { Next().Text };
+        while (Peek.Is(".") && PeekAt(1).Kind == T.Word) { Next(); parts.Add(Next().Text); }
+        if (Peek.Is("[")) throw new ParseError(Peek, "Megalo has no arrays: use a named variable");
+        return Resolve(string.Join(".", parts));
+    }
+
+    private string Resolve(string path)
+    {
+        int dot = path.IndexOf('.');
+        string head = dot < 0 ? path : path[..dot];
+        return _aliases.TryGetValue(head, out string? real) ? real + (dot < 0 ? "" : path[dot..]) : path;
+    }
+
+    /// <summary>A value: number, "string", a name or path, or a negative number.</summary>
+    private string Atom()
+    {
+        var t = Peek;
+        switch (t.Kind)
+        {
+            case T.Number:
+                Next();
+                return t.Text;
+            case T.String:
+                Next();
+                return "\"" + t.Text + "\"";
+            case T.Op when t.Text == "-" && PeekAt(1).Kind == T.Number:
+                Next();
+                return "-" + Next().Text;
+            case T.Word when !Structural.Contains(t.Text):
+                return Path();
+            default:
+                throw new ParseError(t, $"expected a value but found {t}");
+        }
+    }
+}
+
+// ---- Megalo → Kalo Script ---------------------------------------------------------------------------------
+
+internal static class Decompiler
+{
+    private static readonly Dictionary<string, string> SetOps = new()
+    {
+        ["set_to"] = "=", ["add"] = "+=", ["subtract"] = "-=", ["multiply"] = "*=", ["divide"] = "/=", ["modulo"] = "%=",
+        ["="] = "=", ["+="] = "+=", ["-="] = "-=", ["*="] = "*=", ["/="] = "/=", ["%="] = "%=",
+    };
+    private static readonly Dictionary<string, string> CompareOps = new()
+    {
+        ["equal_to"] = "==", ["not_equal_to"] = "!=", ["greater_than"] = ">", ["less_than"] = "<",
+        ["greater_than_or_equal_to"] = ">=", ["less_than_or_equal_to"] = "<=",
+        ["=="] = "==", ["!="] = "!=", [">"] = ">", ["<"] = "<", [">="] = ">=", ["<="] = "<=",
+    };
+    private static readonly HashSet<string> TopKeywords = new(KaloScript.MegaloDeclarations) { "trigger", "variables", "include" };
+
+    private sealed record Line(int No, string Text, string Comment, string Raw)
+    {
+        public string[] Words { get; } = Split(Text);
+    }
+
+    public static string Convert(string megalo)
+    {
+        var lines = megalo.Replace("\r\n", "\n").Split('\n')
+            .Select((l, i) => { var (code, comment) = StripComment(l); return new Line(i + 1, code, comment, l.TrimEnd()); }).ToList();
+        var sb = new StringBuilder();
+        sb.AppendLine("-- Kalo Script (converted from Megalo text). Declarations stay as Megalo inside megalo [[ ]].");
+        int i = 0;
+        var raw = new List<string>();
+        void FlushRaw()
+        {
+            while (raw.Count > 0 && raw[^1].Trim().Length == 0) raw.RemoveAt(raw.Count - 1);
+            if (raw.Count == 0) return;
+            sb.AppendLine("megalo [[");
+            foreach (var r in raw) sb.AppendLine(r.TrimEnd());
+            sb.AppendLine("]]");
+            raw.Clear();
+        }
+        while (i < lines.Count)
+        {
+            var l = lines[i];
+            string first = l.Words.FirstOrDefault() ?? "";
+            if (first == "trigger" && l.Words.Length >= 2)
+            {
+                FlushRaw();
+                string kind = l.Words[1];
+                string head = kind switch
+                {
+                    "general" => "do",
+                    "player" or "team" or "object" => $"for each {kind} do",
+                    "random_player" => "for each random player do",
+                    _ => KaloScript.Events.Values.Contains(kind) ? $"on {(kind == "initialization" ? "init" : kind)} do" : $"for each {kind} do",
+                };
+                sb.AppendLine(head + Trail(l.Comment));
+                i++;
+                var body = ReadBlock(lines, ref i);
+                WriteBody(sb, body, 1);
+                sb.AppendLine("end");
+                continue;
+            }
+            if (first == "variables" && l.Words.Length >= 2 && IsUnindented(megalo, l))
+            {
+                FlushRaw();
+                string scope = l.Words[1];
+                i++;
+                while (i < lines.Count && lines[i].Words.FirstOrDefault() != "end")
+                {
+                    var v = lines[i];
+                    if (v.Words.Length >= 3 && (v.Words[0].StartsWith("networked", StringComparison.Ordinal) || v.Words[0] == "local"))
+                        sb.AppendLine($"declare {v.Words[0]} {scope}.{v.Words[1]} {v.Words[2]}" + (v.Words.Length >= 4 ? " = " + v.Words[3] : "") + Trail(v.Comment));
+                    else if (v.Text.Trim().Length > 0)
+                        sb.AppendLine("-- (kept as Megalo) " + v.Text.Trim());
+                    else if (v.Comment.Length > 0) sb.AppendLine("--" + v.Comment);
+                    i++;
+                }
+                i++; // end
+                continue;
+            }
+            if (first == "include" && l.Words.Length >= 2)
+            {
+                FlushRaw();
+                sb.AppendLine($"include {l.Words[1]}" + Trail(l.Comment));
+                i++;
+                continue;
+            }
+            if (l.Text.Trim().Length == 0 && raw.Count == 0)
+            {
+                // Blank lines and comments between top-level items.
+                sb.AppendLine(l.Comment.Length > 0 ? "--" + l.Comment : "");
+                i++;
+                continue;
+            }
+            // Any other top-level declaration: keep the Megalo text until the next top-level item.
+            int from = i;
+            i++;
+            while (i < lines.Count)
+            {
+                var n = lines[i];
+                string w = n.Words.FirstOrDefault() ?? "";
+                if (TopKeywords.Contains(w) && IsUnindented(megalo, n)) break;
+                i++;
+            }
+            // Comment-only lines just before the next item belong to it: give them back.
+            int to = i;
+            while (to > from + 1 && lines[to - 1].Text.Trim().Length == 0) to--;
+            raw.AddRange(lines.Skip(from).Take(to - from).Select(x => x.Raw));
+            FlushRaw();
+            for (int k = to; k < i; k++) sb.AppendLine(lines[k].Comment.Length > 0 ? "--" + lines[k].Comment : "");
+        }
+        FlushRaw();
+        return sb.ToString();
+    }
+
+    private static bool IsUnindented(string _, Line l) => l.Text.Length > 0 && !char.IsWhiteSpace(l.Text[0]);
+
+    private static string Trail(string comment) => comment.Length > 0 ? "  --" + comment : "";
+
+    /// <summary>Lines of a block up to its matching end (consumed).</summary>
+    private static List<Line> ReadBlock(List<Line> lines, ref int i)
+    {
+        var body = new List<Line>();
+        int depth = 0;
+        while (i < lines.Count)
+        {
+            var l = lines[i++];
+            string w0 = l.Words.FirstOrDefault() ?? "";
+            if (w0 == "end")
+            {
+                if (depth == 0) return body;
+                depth--;
+            }
+            else if ((w0 == "action" && l.Words.Length >= 2 && l.Words[1] == "for_each") || w0 == "begin") depth++;
+            body.Add(l);
+        }
+        return body;
+    }
+
+    /// <summary>Writes a Megalo block: a condition gates everything after it, so it becomes an if around the rest.</summary>
+    private static void WriteBody(StringBuilder sb, List<Line> body, int level)
+    {
+        string pad = new string(' ', level * 2);
+        int i = 0;
+        while (i < body.Count)
+        {
+            var l = body[i];
+            var w = l.Words;
+            if (w.Length == 0)
+            {
+                sb.AppendLine(l.Comment.Length > 0 ? pad + "--" + l.Comment : "");
+                i++;
+                continue;
+            }
+            if (w[0] == "condition" || (w[0] == "or" && w.Length > 1 && w[1] == "condition"))
+            {
+                // Consecutive conditions (comments between them allowed) form one if; the rest of the block is its body.
+                var conds = new List<string>();
+                var trailing = new List<string>();
+                static bool IsCondition(string[] w) => w.FirstOrDefault() == "condition" || (w.Length > 1 && w[0] == "or" && w[1] == "condition");
+                while (i < body.Count && (IsCondition(body[i].Words) || body[i].Words.Length == 0))
+                {
+                    if (body[i].Words.Length == 0) { if (body[i].Comment.Length > 0) trailing.Add(body[i].Comment); i++; continue; }
+                    var cw = body[i].Words;
+                    if (cw[0] == "or")
+                    {
+                        // "or condition x" joins x with the condition before it.
+                        if (conds.Count > 0 && !conds[^1].EndsWith(" or", StringComparison.Ordinal)) conds[^1] += " or";
+                        cw = cw[1..];
+                    }
+                    conds.Add(ConditionText(cw));
+                    if (body[i].Comment.Length > 0) trailing.Add(body[i].Comment);
+                    i++;
+                }
+                var text = new StringBuilder();
+                for (int k = 0; k < conds.Count; k++)
+                {
+                    string c = conds[k];
+                    bool or = c.EndsWith(" or", StringComparison.Ordinal);
+                    if (or) c = c[..^3];
+                    text.Append(c);
+                    if (k < conds.Count - 1) text.Append(or ? " or " : " and ");
+                }
+                foreach (var c in trailing) sb.AppendLine(pad + "--" + c);
+                sb.AppendLine($"{pad}if {text} then");
+                WriteBody(sb, body.Skip(i).ToList(), level + 1);
+                sb.AppendLine(pad + "end");
+                return;
+            }
+            if ((w[0] == "action" && w.Length >= 2 && w[1] == "for_each") || (w[0] == "begin" && w.Length == 1))
+            {
+                // "begin ... end" is an inline block (no trigger of its own).
+                string kind = w[0] == "begin" ? "general" : w.Length >= 3 ? w[2] : "general";
+                string head = w[0] == "begin" ? "inline" : kind == "general" ? "do" : kind == "random_player" ? "for each random player do" : $"for each {kind} do";
+                sb.AppendLine(pad + head + Trail(l.Comment));
+                i++;
+                var inner = ReadBlock(body, ref i);
+                WriteBody(sb, inner, level + 1);
+                sb.AppendLine(pad + "end");
+                continue;
+            }
+            sb.AppendLine(pad + StatementText(w) + Trail(l.Comment));
+            i++;
+        }
+    }
+
+    private static string ConditionText(string[] w)
+    {
+        // condition [not] (if a op b | name args) [or]
+        int k = 1;
+        bool or = w[^1] == "or";
+        int end = or ? w.Length - 1 : w.Length;
+        string prefix = "";
+        while (k < end && w[k] == "not") { prefix += "not "; k++; }
+        string body;
+        if (k < end && w[k] == "if" && end - k == 4 && CompareOps.TryGetValue(w[k + 2], out string? op))
+            body = $"{w[k + 1]} {op} {w[k + 3]}";
+        else
+            body = CallText(w[k], w.Skip(k + 1).Take(end - k - 1));
+        return prefix + body + (or ? " or" : "");
+    }
+
+    private static string StatementText(string[] w)
+    {
+        if (w[0] == "temporary" && w.Length >= 3)
+            return $"temp {w[1]} {w[2]}" + (w.Length >= 4 ? " = " + w[3] : "");
+        if (w[0] == "action" && w.Length >= 2)
+        {
+            if (w[1] == "set" && w.Length == 5 && SetOps.TryGetValue(w[3], out string? op))
+                return $"{w[2]} {op} {w[4]}";
+            if (w[1] == "set" && w.Length == 5 && w[3] is "|=" or "&=" or "^=" or "~=" or "<<=" or ">>=")
+                return $"{w[2]} {w[3]} {w[4]}";
+            return CallText(w[1], w.Skip(2));
+        }
+        return "-- (not converted) " + string.Join(" ", w);
+    }
+
+    private static string CallText(string name, IEnumerable<string> args) => $"{name}({string.Join(", ", args)})";
+
+    private static (string Code, string Comment) StripComment(string line)
+    {
+        bool inString = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            if (line[i] == '"') inString = !inString;
+            else if (line[i] == ';' && !inString) return (line[..i].TrimEnd(), line[(i + 1)..].TrimEnd());
+        }
+        return (line.TrimEnd(), "");
+    }
+
+    /// <summary>Splits on whitespace, keeping "quoted strings" whole.</summary>
+    private static string[] Split(string text)
+    {
+        var list = new List<string>();
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (char.IsWhiteSpace(text[i])) { i++; continue; }
+            int s = i;
+            if (text[i] == '"')
+            {
+                i++;
+                while (i < text.Length && text[i] != '"') i++;
+                i = Math.Min(i + 1, text.Length);
+            }
+            else while (i < text.Length && !char.IsWhiteSpace(text[i])) i++;
+            list.Add(text[s..i]);
+        }
+        return list.ToArray();
+    }
+}

@@ -292,4 +292,9 @@ public sealed class ProjectManifest
     public List<string> Deleted { get; set; } = new();
     /// <summary>Maps the mod created → the Reach scenario they were copied from (to tell new and changed objects apart).</summary>
     public Dictionary<string, string> MapTemplates { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Painted block copies (object tag) → how to rebuild them if their files go missing.</summary>
+    public Dictionary<string, PaintedBlock> PaintedBlocks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
+
+/// <summary>A painted block: the Forge piece it copies and the shader its materials use.</summary>
+public sealed record PaintedBlock(string Source, string Shader);

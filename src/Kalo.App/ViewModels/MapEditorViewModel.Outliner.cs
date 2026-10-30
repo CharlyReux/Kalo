@@ -18,7 +18,7 @@ public partial class MapEditorViewModel
     public List<EditorFolder> Folders { get; private set; } = new();
     public ObservableCollection<OutlinerNode> OutlinerRoots { get; } = new();
     public ObservableCollection<FolderChoice> FolderChoices { get; } = new();
-    private readonly HashSet<string> _expanded = new() { "c:weapons", "c:vehicles", "c:equipment" };
+    private readonly HashSet<string> _expanded = new() { "c:" + StartLocations.Category, "c:weapons", "c:vehicles", "c:equipment" };
     private readonly Dictionary<PlacementItem, OutlinerNode> _nodes = new();
 
     /// <summary>Raised when the tree was rebuilt or the selection moved, so the view can sync its selection.</summary>
@@ -26,7 +26,7 @@ public partial class MapEditorViewModel
 
     private static readonly (string Category, string Title)[] Groups =
     {
-        ("weapons", "Weapons"), ("equipment", "Equipment"), ("vehicles", "Vehicles"), ("crates", "Crates and blocks"),
+        (StartLocations.Category, "Start locations (first spawn)"), ("weapons", "Weapons"), ("equipment", "Equipment"), ("vehicles", "Vehicles"), ("crates", "Crates and blocks"),
         ("scenery", "Scenery"), ("machines", "Machines"), ("controls", "Controls"), ("terminals", "Terminals"),
         ("bipeds", "Bipeds"), ("giants", "Giants"), ("effect scenery", "Effects"), ("sound scenery", "Sounds"),
     };
@@ -138,6 +138,7 @@ public partial class MapEditorViewModel
 
     public async Task NewFolderAsync(string name, int parent)
     {
+        using var edit = await EditAsync("new folder");
         var r = await FolderOpAsync(new PlacementOpParams { Path = Path, Op = PlacementOps.AddFolder, Tag = name, Folder = parent });
         if (r == null) return;
         _expanded.Add("f:" + r.SelectIndex);
@@ -149,6 +150,7 @@ public partial class MapEditorViewModel
 
     public async Task RenameFolderAsync(int folder, string name)
     {
+        using var edit = await EditAsync("rename folder");
         if (folder < 0) return;
         await FolderOpAsync(new PlacementOpParams { Path = Path, Op = PlacementOps.RenameFolder, Folder = folder, Tag = name });
         BuildOutliner();
@@ -157,6 +159,7 @@ public partial class MapEditorViewModel
     [RelayCommand]
     private async Task DeleteFolder()
     {
+        using var edit = await EditAsync("delete folder");
         if (SelectedFolder < 0) return;
         var r = await FolderOpAsync(new PlacementOpParams { Path = Path, Op = PlacementOps.DeleteFolder, Folder = SelectedFolder });
         if (r?.Categories != null) foreach (var c in r.Categories) ReplaceCategory(c, rebuild: false);
@@ -167,6 +170,7 @@ public partial class MapEditorViewModel
     [RelayCommand]
     public async Task MoveSelectionToFolderAsync(int folder)
     {
+        using var edit = await EditAsync("move to folder");
         if (_main.Host == null || _selection.Count == 0) return;
         var keys = _selection.Select(i => (i.Category, i.Index)).ToList();
         foreach (var (category, index) in keys)
@@ -212,6 +216,7 @@ public partial class MapEditorViewModel
     /// <summary>Recomputes new / changed marks shortly after edits (several edits in a row trigger one refresh).</summary>
     public void QueueStatusRefresh()
     {
+        RefreshOutsideSummary();
         int generation = ++_statusGeneration;
         _ = Task.Delay(600).ContinueWith(_ => Avalonia.Threading.Dispatcher.UIThread.Post(async () =>
         {
@@ -274,6 +279,7 @@ public partial class MapEditorViewModel
     [RelayCommand]
     public async Task CutSelectionAsync()
     {
+        using var edit = await EditAsync("cut");
         CopySelection();
         await DeleteSelectedCommand.ExecuteAsync(null);
     }
@@ -290,6 +296,7 @@ public partial class MapEditorViewModel
     /// <summary>Places a group of objects (clipboard or prefab) around a point and selects them.</summary>
     public async Task PlaceObjectsAsync(IReadOnlyList<PrefabObject> objects, Vector3 at, string verb)
     {
+        using var edit = await EditAsync("place");
         if (_main.Host == null) return;
         var placed = new List<(string Category, int Index)>();
         foreach (var o in objects)
@@ -338,7 +345,7 @@ public partial class MapEditorViewModel
         if (item == null || _main.Host == null) { Properties.Clear(); HasProperties = false; return; }
         try
         {
-            var doc = await _main.Host.ReadElementAsync(Path, item.Category, item.Index);
+            var doc = await _main.Host.ReadElementAsync(Path, item.Category == StartLocations.Category ? StartLocations.Block : item.Category, item.Index);
             if (generation != _propertiesGeneration) return;
             Properties.Clear();
             void Walk(List<FieldNode>? nodes, string section)
@@ -377,6 +384,7 @@ public partial class MapEditorViewModel
 
     public async Task<string?> SetPropertyAsync(PropertyRow row, string value)
     {
+        using var edit = await EditAsync("change property");
         var item = Selected;
         if (_main.Host == null || item == null) return "No object.";
         try
@@ -398,6 +406,7 @@ public partial class MapEditorViewModel
     [RelayCommand]
     private async Task SetScale(string text)
     {
+        using var edit = await EditAsync("scale");
         if (Selected == null || _main.Host == null) return;
         if (!float.TryParse(text.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float scale) || scale <= 0) return;
         foreach (var item in _selection.ToList())

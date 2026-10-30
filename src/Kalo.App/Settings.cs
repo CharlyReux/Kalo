@@ -41,6 +41,9 @@ public sealed class AppSettings
         new KeyAction("paste", "Paste", "Objects"),
         new KeyAction("selectAll", "Select all", "Objects"),
         new KeyAction("deselect", "Deselect", "Objects"),
+        new KeyAction("undo", "Undo", "Edit"),
+        new KeyAction("redo", "Redo", "Edit"),
+        new KeyAction("redoAlt", "Redo (other key)", "Edit"),
     };
 
     public static readonly IReadOnlyDictionary<string, string> Qwerty = new Dictionary<string, string>
@@ -49,6 +52,7 @@ public sealed class AppSettings
         ["frameSelection"] = "F", ["frameAll"] = "Home", ["shading"] = "Z", ["wireframe"] = "Shift+Z",
         ["turn"] = "R", ["turnBack"] = "Shift+R", ["duplicate"] = "Ctrl+D", ["delete"] = "Delete",
         ["copy"] = "Ctrl+C", ["cut"] = "Ctrl+X", ["paste"] = "Ctrl+V", ["selectAll"] = "Ctrl+A", ["deselect"] = "Escape",
+        ["undo"] = "Ctrl+Z", ["redo"] = "Ctrl+Y", ["redoAlt"] = "Ctrl+Shift+Z",
     };
 
     /// <summary>AZERTY: ZQSD to fly, A/E down/up; shading moves to W (where Z sits on QWERTY).</summary>

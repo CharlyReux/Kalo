@@ -255,6 +255,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task CommitSelectionAsync()
     {
+        using var edit = await EditAsync("move");
         foreach (var item in _selection.ToList()) await CommitMoveAsync(item);
     }
 
@@ -281,6 +282,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     /// <summary>Places any object tag at a point: adds it to the right palette first if needed.</summary>
     public async Task<PlacementItem?> AddTagAtAsync(string tagPath, Vector3 position)
     {
+        using var edit = await EditAsync("add object");
         string? category = CategoryFor(tagPath);
         if (category == null || _main.Host == null)
         {
@@ -332,6 +334,19 @@ public partial class MapEditorViewModel : DocumentViewModel
         try
         {
             var data = await _main.Host.GetPlacementsAsync(Path);
+            bool isModMap = Path.StartsWith(@"levels\mods\", StringComparison.OrdinalIgnoreCase);
+            if (isModMap && await RebuildMissingBlocksAsync(data) > 0) data = await _main.Host.GetPlacementsAsync(Path);
+            if (isModMap)
+            {
+                // Objects placed by older Kalo versions had blank multiplayer settings and never spawned in game.
+                var repair = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Op = PlacementOps.RepairMultiplayer });
+                if (repair.SelectIndex > 0)
+                {
+                    data = await _main.Host.GetPlacementsAsync(Path);
+                    IsDirty = true;
+                    _main.Log($"{Title}: {repair.SelectIndex} object(s) placed by an earlier Kalo now have multiplayer settings, so they spawn in game. Save the map to keep this.");
+                }
+            }
             int keepCategory = -1;
             string? selCat = Selected?.Category; int selIndex = Selected?.Index ?? -1;
             var start = data.SpawnPoints?.FirstOrDefault(p => p.Position is { Length: >= 3 });
@@ -372,6 +387,8 @@ public partial class MapEditorViewModel : DocumentViewModel
             var mesh = await _main.Geometry.LoadLevelAsync(Path, bsps, s => Avalonia.Threading.Dispatcher.UIThread.Post(() => GeometryStatus = s));
             Bsp = mesh;
             GeometryVersion++;
+            foreach (var item in Items) item.RefreshOutside();
+            RefreshOutsideSummary();
             GeometryStatus = mesh == null ? "No level geometry (objects only)." : $"{mesh.TriangleCount:N0} triangles";
             SceneChanged?.Invoke();
             _ = EnsureTexturesAsync();
@@ -383,6 +400,35 @@ public partial class MapEditorViewModel : DocumentViewModel
     }
 
     public int ModelVersion { get; private set; }
+
+    /// <summary>
+    /// True when a point is off the level geometry: beyond its footprint (1 unit of slack) or more than
+    /// 2 units below its lowest point. Reach removes objects out there when the game starts.
+    /// </summary>
+    public bool IsOutsidePlayArea(Vector3 p)
+    {
+        var bsp = Bsp;
+        if (bsp == null || bsp.TriangleCount == 0) return false;
+        const float slack = 1f;
+        return p.X < bsp.Min.X - slack || p.X > bsp.Max.X + slack || p.Y < bsp.Min.Y - slack || p.Y > bsp.Max.Y + slack || p.Z < bsp.Min.Z - 2f;
+    }
+
+    /// <summary>"3 objects are outside the map…" for the toolbar and Play, or "".</summary>
+    public string OutsideText
+    {
+        get
+        {
+            int n = Items.Count(i => i.IsOutside);
+            return n == 0 ? "" : $"{n} object{(n == 1 ? " is" : "s are")} outside the level geometry: Reach removes them in game (and players spawning there die). Move them over the floor.";
+        }
+    }
+    public bool HasOutside => OutsideText.Length > 0;
+
+    public void RefreshOutsideSummary()
+    {
+        OnPropertyChanged(nameof(OutsideText));
+        OnPropertyChanged(nameof(HasOutside));
+    }
 
     private async Task LoadModelsAsync(ScenarioPlacements data)
     {
@@ -427,6 +473,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     private bool LayerVisible(string category) => category switch
     {
+        StartLocations.Category => true,
         "scenery" or "crates" => ShowScenery,
         "weapons" or "equipment" => ShowItems,
         "vehicles" or "bipeds" or "giants" => ShowVehicles,
@@ -456,6 +503,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task CommitMoveAsync(PlacementItem item)
     {
+        using var edit = await EditAsync("move");
         if (_main.Host == null) return;
         try
         {
@@ -478,6 +526,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task RotateSelectedAsync(float degrees)
     {
+        using var edit = await EditAsync("turn");
         foreach (var item in _selection.ToList())
         {
             item.SetRotationLocal(item.Yaw + degrees, item.Pitch, item.Roll);
@@ -492,6 +541,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     [RelayCommand]
     private async Task DuplicateSelected()
     {
+        using var edit = await EditAsync("duplicate");
         if (_selection.Count == 0) return;
         float offset = Math.Max(0.5f, _selection.Max(i => i.PickRadius) * 2f);
         foreach (var k in SelectionKeys())
@@ -501,6 +551,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     [RelayCommand]
     private async Task DeleteSelected()
     {
+        using var edit = await EditAsync("delete");
         if (_selection.Count == 0) return;
         foreach (var k in SelectionKeys())
             await RunOpAsync(new PlacementOpParams { Path = Path, Category = k.Category, Op = PlacementOps.Remove, Index = k.Index }, k.Category);
@@ -511,6 +562,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     [RelayCommand]
     private async Task AddObject()
     {
+        using var edit = await EditAsync("add object");
         if (SelectedPalette == null) { Status = "Pick an object type first."; return; }
         Vector3 at = PlacementPointProvider?.Invoke() ?? CursorPoint ?? Selected?.Position ?? Bsp?.Center ?? Vector3.Zero;
         at += new Vector3(0, 0, 0.1f);
@@ -642,8 +694,23 @@ public partial class PlacementItem : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StateBrush), nameof(StateText))]
     private int _state;
-    public IBrush? StateBrush => State == PlacementStates.New ? NewBrush : State == PlacementStates.Changed ? ChangedBrush : null;
-    public string StateText => State == PlacementStates.New ? "new" : State == PlacementStates.Changed ? "edited" : "";
+    public static readonly IBrush OutsideBrush = new SolidColorBrush(Avalonia.Media.Color.Parse("#E5534B"));
+    public IBrush? StateBrush => IsOutside ? OutsideBrush : State == PlacementStates.New ? NewBrush : State == PlacementStates.Changed ? ChangedBrush : null;
+    public string StateText => IsOutside ? "outside map" : State == PlacementStates.New ? "new" : State == PlacementStates.Changed ? "edited" : "";
+
+    /// <summary>
+    /// Outside the level geometry's footprint (or below it): Reach deletes such objects when the game starts,
+    /// and a player spawning there dies. Only known once the level geometry is loaded.
+    /// </summary>
+    public bool IsOutside => _map.IsOutsidePlayArea(Position);
+
+    /// <summary>Re-evaluates the outside mark (after a move, or once the level geometry loads).</summary>
+    public void RefreshOutside()
+    {
+        OnPropertyChanged(nameof(IsOutside));
+        OnPropertyChanged(nameof(StateBrush));
+        OnPropertyChanged(nameof(StateText));
+    }
 
     public PlacementItem(MapEditorViewModel map, PlacementCategory category, Placement p)
     {
@@ -680,6 +747,7 @@ public partial class PlacementItem : ObservableObject
         OnPropertyChanged(nameof(Display));
         OnPropertyChanged(nameof(Detail));
         OnPropertyChanged(nameof(ScaleText));
+        RefreshOutside();
     }
 
     public string Display => PlacedName is { Length: > 0 } ? $"{PlacedName} ({Name})" : Name;
@@ -734,6 +802,7 @@ public partial class PlacementItem : ObservableObject
             !TryF(YawText, out float yaw) || !TryF(PitchText, out float pitch) || !TryF(RollText, out float roll)) return;
         Position = new Vector3(x, y, z);
         Yaw = yaw; Pitch = pitch; Roll = roll;
+        RefreshOutside();
         _ = _map.CommitMoveAsync(this);
     }
 
@@ -743,6 +812,7 @@ public partial class PlacementItem : ObservableObject
         _suppress = true;
         X = Fmt(p.X); Y = Fmt(p.Y); Z = Fmt(p.Z);
         _suppress = false;
+        RefreshOutside();
     }
 
     public void SetRotationLocal(float yaw, float pitch, float roll)
@@ -760,6 +830,7 @@ public partial class PlacementItem : ObservableObject
 
     private static Vector3 ColorFor(string category, string tag)
     {
+        if (category == StartLocations.Category) return new(0.4f, 0.95f, 1f);
         if (tag.Contains("respawn_point", StringComparison.OrdinalIgnoreCase)) return new(0.35f, 0.85f, 0.55f);
         return category switch
         {

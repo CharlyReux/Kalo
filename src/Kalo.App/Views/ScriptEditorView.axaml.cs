@@ -21,6 +21,7 @@ public partial class ScriptEditorView : UserControl
     {
         InitializeComponent();
         Editor.SyntaxHighlighting = Megalo();
+        MegaloView.SyntaxHighlighting = Megalo();
         Editor.Options.ConvertTabsToSpaces = false;
         Editor.Options.IndentationSize = 4;
         Editor.TextChanged += (_, _) =>
@@ -73,12 +74,17 @@ public partial class ScriptEditorView : UserControl
         }
         _vm = vm;
         _syncing = true;
-        Editor.Text = vm?.Text ?? "";
+        Editor.SyntaxHighlighting = vm?.IsKaloScript == true ? KaloScriptHighlighting() : Megalo();
+        // A new document rather than replacing the text: an editor hidden in the other editor group would
+        // otherwise keep line-number visuals for deleted lines and crash when it is shown again.
+        Editor.Document = new TextDocument(vm?.Text ?? "");
+        MegaloView.Document = new TextDocument(vm?.GeneratedMegalo ?? "");
         _syncing = false;
         if (vm != null)
         {
             vm.PropertyChanged += (_, e) =>
             {
+                if (e.PropertyName == nameof(ScriptEditorViewModel.GeneratedMegalo) && ReferenceEquals(_vm, vm)) MegaloView.Document = new TextDocument(vm.GeneratedMegalo);
                 // Text set from outside the editor (revert, tools): show it.
                 if (e.PropertyName == nameof(ScriptEditorViewModel.Text) && ReferenceEquals(_vm, vm) && Editor.Text != vm.Text)
                 {
@@ -108,6 +114,44 @@ public partial class ScriptEditorView : UserControl
     {
         Editor.Document.Insert(Editor.CaretOffset, text);
         Editor.Focus();
+    }
+
+    private static IHighlightingDefinition? _kalo;
+
+    /// <summary>Kalo Script syntax: -- comments, "strings", if/then/for each..., f(...) calls, megalo [[ ]] blocks.</summary>
+    private static IHighlightingDefinition KaloScriptHighlighting()
+    {
+        if (_kalo != null) return _kalo;
+        const string xshd = @"<SyntaxDefinition name='KaloScript' xmlns='http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008'>
+  <Color name='Comment' foreground='#6A9955' />
+  <Color name='String' foreground='#CE9178' />
+  <Color name='Keyword' foreground='#569CD6' fontWeight='bold' />
+  <Color name='Section' foreground='#C586C0' fontWeight='bold' />
+  <Color name='Call' foreground='#DCDCAA' />
+  <Color name='Number' foreground='#B5CEA8' />
+  <Color name='Member' foreground='#9CDCFE' />
+  <Color name='Raw' foreground='#A9B7C6' />
+  <RuleSet>
+    <Span color='Comment' begin='--' />
+    <Span color='Comment' begin='//' />
+    <Span color='String'><Begin>""</Begin><End>""</End></Span>
+    <Span color='Raw' multiline='true'><Begin>\[\[</Begin><End>\]\]</End></Span>
+    <Keywords color='Section'>
+      <Word>declare</Word><Word>alias</Word><Word>megalo</Word><Word>include</Word><Word>on</Word>
+    </Keywords>
+    <Keywords color='Keyword'>
+      <Word>if</Word><Word>then</Word><Word>else</Word><Word>elseif</Word><Word>end</Word><Word>for</Word><Word>each</Word><Word>do</Word><Word>inline</Word>
+      <Word>and</Word><Word>or</Word><Word>not</Word><Word>temp</Word><Word>with</Word><Word>networked</Word><Word>local</Word>
+      <Word>true</Word><Word>false</Word><Word>none</Word>
+    </Keywords>
+    <Rule color='Call'>[a-z_][a-z0-9_]*(?=\()</Rule>
+    <Rule color='Member'>\.[a-z_][a-z0-9_]*</Rule>
+    <Rule color='Number'>\b-?[0-9]+(\.[0-9]+)?\b</Rule>
+  </RuleSet>
+</SyntaxDefinition>";
+        using var reader = XmlReader.Create(new StringReader(xshd.Replace('\'', '"')));
+        _kalo = HighlightingLoader.Load(reader, HighlightingManager.Instance);
+        return _kalo;
     }
 
     /// <summary>Megalo syntax: ; comments, "strings", numbers, block keywords, the word after action/condition.</summary>

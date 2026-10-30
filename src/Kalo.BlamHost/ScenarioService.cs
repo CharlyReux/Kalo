@@ -76,6 +76,8 @@ namespace Kalo.BlamHost
                         Scale = 1
                     });
                 }
+            var startCategory = StartCategory(tag);
+            if (startCategory != null) result.Categories.Add(startCategory);
             result.Folders = Folders(tag);
             result.Ms = sw.ElapsedMilliseconds;
             return result;
@@ -98,6 +100,17 @@ namespace Kalo.BlamHost
         public Placement Set(SetPlacementParams p)
         {
             TagFile tag = _tags.GetOrOpen(p.Path);
+            if (p.Category == StartLocations.Category)
+            {
+                string sb = "Block:" + StartLocations.Block + "[" + p.Index + "]/";
+                if (p.Position != null) SetFloats(tag.SelectField(sb + "RealPoint3d:position"), p.Position);
+                if (p.Rotation != null && p.Rotation.Length > 0)
+                {
+                    var facing = tag.SelectField(sb + "Angle:facing") as TagFieldElementSingle;
+                    if (facing != null) facing.Data = p.Rotation[0];
+                }
+                return ReadStart(tag, p.Index);
+            }
             string[] k = Kind(p.Category);
             string b = "Block:" + k[0] + "[" + p.Index + "]/Struct:object data[0]/";
             var block = tag.SelectField("Block:" + k[0]) as TagFieldBlock;
@@ -115,11 +128,20 @@ namespace Kalo.BlamHost
         public PlacementOpResult Op(PlacementOpParams p)
         {
             TagFile tag = _tags.GetOrOpen(p.Path);
+            if (p.Category == StartLocations.Category) return StartOp(tag, p);
             switch (p.Op)
             {
                 case PlacementOps.AddFolder: return AddFolder(tag, p);
                 case PlacementOps.RenameFolder: return RenameFolder(tag, p);
                 case PlacementOps.DeleteFolder: return DeleteFolder(tag, p);
+                case PlacementOps.RepairMultiplayer:
+                {
+                    int repaired = RepairMultiplayer(tag) + (EnsureStartingProfile(tag) ? 1 : 0);
+                    var all = new List<PlacementCategory>();
+                    var allNames = ObjectNames(tag);
+                    foreach (string[] kk in Kinds) { var c = Category(tag, kk, allNames); if (c != null) all.Add(c); }
+                    return new PlacementOpResult { SelectIndex = repaired, Categories = all };
+                }
             }
             string[] k = Kind(p.Category);
             var block = tag.SelectField("Block:" + k[0]) as TagFieldBlock;
@@ -133,24 +155,30 @@ namespace Kalo.BlamHost
                     if (count >= block.MaximumElementCount) throw new InvalidOperationException("No room for more " + p.Category + ".");
                     var palette = tag.SelectField("Block:" + k[1]) as TagFieldBlock;
                     if (palette == null || p.Type < 0 || p.Type >= palette.Elements.Count) throw new ArgumentOutOfRangeException("type", "No palette entry " + p.Type);
-                    block.AddElement();
-                    select = count;
+                    // Start from an existing placement of the same object (its multiplayer settings make it spawn in game),
+                    // else from defaults that make a new object appear in every gametype.
+                    int template = -1;
+                    for (int i = 0; i < count && template < 0; i++)
+                        if (Int(tag.SelectField("Block:" + k[0] + "[" + i + "]/ShortBlockIndex:type")) == p.Type) template = i;
+                    select = Append(tag, block, k, template);
                     string e = "Block:" + k[0] + "[" + select + "]/";
                     ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:type")).Value = p.Type;
-                    TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:name")).Value = -1);
+                    if (template < 0)
+                    {
+                        string objectTag = TagService.ValueOf(tag.SelectField("Block:" + k[1] + "[" + p.Type + "]/Reference:name")) ?? "";
+                        MultiplayerDefaults(tag, e, k[0], objectTag);
+                    }
+                    else SetFloats(tag.SelectField(e + "Struct:object data[0]/RealEulerAngles3d:rotation"), new[] { 0f, 0f, 0f });
                     if (p.Position != null) SetFloats(tag.SelectField(e + "Struct:object data[0]/RealPoint3d:position"), p.Position);
-                    NewObjectId(tag, e, k[2]);
                     break;
                 }
                 case PlacementOps.Duplicate:
                 {
                     if (count >= block.MaximumElementCount) throw new InvalidOperationException("No room for more " + p.Category + ".");
                     if (p.Index < 0 || p.Index >= count) throw new ArgumentOutOfRangeException("index");
-                    block.DuplicateElement(p.Index);
-                    select = p.Index + 1;
+                    // Appended (not inserted after the original) so no other placement changes index.
+                    select = Append(tag, block, k, p.Index);
                     string e = "Block:" + k[0] + "[" + select + "]/";
-                    TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:name")).Value = -1); // names must stay unique
-                    NewObjectId(tag, e, k[2]);
                     if (p.Position != null) SetFloats(tag.SelectField(e + "Struct:object data[0]/RealPoint3d:position"), p.Position);
                     break;
                 }
@@ -276,7 +304,31 @@ namespace Kalo.BlamHost
                 starts.AddElement();
                 SetFloats(tag.SelectField("Block:player starting locations[0]/RealPoint3d:position"), new[] { 0f, 0f, 0.6f });
             }
+            EnsureStartingProfile(tag);
             result.Kept = spots.Length;
+        }
+
+        /// <summary>
+        /// Players spawn with the map's starting profile unless the gametype gives a loadout (Slayer doesn't).
+        /// Test levels like box have none, so players spawned empty-handed: give them what Reach's MP maps give
+        /// (assault rifle, magnum, 2 frag grenades). Returns true when one was added.
+        /// </summary>
+        public static bool EnsureStartingProfile(TagFile tag)
+        {
+            var block = tag.SelectField("Block:player starting profile") as TagFieldBlock;
+            if (block == null || block.Elements.Count > 0) return false;
+            block.AddElement();
+            const string e = "Block:player starting profile[0]/";
+            TrySet(() => ((TagFieldElementString)tag.SelectField(e + "String:name")).Data = "kalo default");
+            SetReference(tag, e + "Reference:primary weapon", @"objects\weapons\rifle\assault_rifle\assault_rifle.weapon");
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(e + "ShortInteger:primaryrounds loaded")).Data = 32);
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(e + "ShortInteger:primaryrounds total")).Data = 96);
+            SetReference(tag, e + "Reference:secondary weapon", @"objects\weapons\pistol\magnum\magnum.weapon");
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(e + "ShortInteger:secondaryrounds loaded")).Data = 8);
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(e + "ShortInteger:secondaryrounds total")).Data = 24);
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(e + "CharInteger:starting fragmentation grenade count")).Data = 2);
+            TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:editor folder")).Value = -1);
+            return true;
         }
 
         private static void SetReference(TagFile tag, string field, string path)
@@ -305,6 +357,159 @@ namespace Kalo.BlamHost
             TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:name")).Value = -1);
             SetFloats(tag.SelectField(e + "Struct:object data[0]/RealPoint3d:position"), position);
             NewObjectId(tag, e, k[2]);
+            string objectTag = TagService.ValueOf(tag.SelectField("Block:" + k[1] + "[" + type + "]/Reference:name")) ?? "";
+            MultiplayerDefaults(tag, e, k[0], objectTag);
+        }
+
+        /// <summary>
+        /// Objects added by earlier Kalo versions kept a blank multiplayer block (quota 0, team defender, no spawn
+        /// time) and never appeared in game. Gives those the defaults new objects get; returns how many were fixed.
+        /// </summary>
+        public int RepairMultiplayer(TagFile tag)
+        {
+            int fixedCount = 0;
+            foreach (string[] k in Kinds)
+            {
+                var block = tag.SelectField("Block:" + k[0]) as TagFieldBlock;
+                if (block == null) continue;
+                for (int i = 0; i < block.Elements.Count; i++)
+                {
+                    string e = "Block:" + k[0] + "[" + i + "]/";
+                    string mp = e + "Struct:multiplayer data[0]/";
+                    var team = tag.SelectField(mp + "CharEnum:owner team") as TagFieldEnum;
+                    if (team == null || team.Value != 0) continue;
+                    int quota = Int(tag.SelectField(mp + "CharInteger:quota maximum"));
+                    int spawnTime = Int(tag.SelectField(mp + "ShortInteger:spawn time"));
+                    string label = Safe(() => TagService.ValueOf(tag.SelectField(mp + "String:megalo label"))) ?? "";
+                    int flags = Int(tag.SelectField(mp + "ByteFlags:spawn flags"));
+                    if (quota != 0 || spawnTime != 0 || label.Length > 0 || flags > 0) continue;
+                    int type = Int(tag.SelectField(e + "ShortBlockIndex:type"));
+                    string objectTag = TagService.ValueOf(tag.SelectField("Block:" + k[1] + "[" + type + "]/Reference:name")) ?? "";
+                    bool spawnPoint = objectTag.IndexOf("spawn", StringComparison.OrdinalIgnoreCase) >= 0;
+                    // Vanilla objects with this exact blank block are props that should not spawn in multiplayer:
+                    // only fix what can be placed in multiplayer (weapons, vehicles, equipment, spawns, Forge pieces).
+                    bool placeable = spawnPoint || k[0] == "weapons" || k[0] == "vehicles" || k[0] == "equipment" ||
+                                     objectTag.IndexOf(@"\forge\", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                     objectTag.StartsWith(@"levels\mods\", StringComparison.OrdinalIgnoreCase);
+                    if (!placeable) continue;
+                    MultiplayerDefaults(tag, e, k[0], objectTag);
+                    fixedCount++;
+                }
+            }
+            return fixedCount;
+        }
+
+        // ---- undo snapshots ---------------------------------------------------------------------------
+
+        private readonly Dictionary<int, KeyValuePair<string, List<KeyValuePair<string, byte[]>>>> _snapshots =
+            new Dictionary<int, KeyValuePair<string, List<KeyValuePair<string, byte[]>>>>();
+        private int _nextSnapshot = 1;
+
+        /// <summary>Every block a map edit can touch: placements, palettes, folders, names, start locations.</summary>
+        private static IEnumerable<string> SnapshotBlocks()
+        {
+            foreach (string[] k in Kinds) { yield return k[0]; yield return k[1]; }
+            yield return "editor folders";
+            yield return "object names";
+            yield return StartLocations.Block;
+        }
+
+        public SnapshotResult Snapshot(SnapshotParams p)
+        {
+            var sw = Stopwatch.StartNew();
+            TagFile tag = _tags.GetOrOpen(p.Path);
+            var blocks = new List<KeyValuePair<string, byte[]>>();
+            int bytes = 0;
+            foreach (string name in SnapshotBlocks())
+            {
+                var block = tag.SelectField("Block:" + name) as TagFieldBlock;
+                if (block == null) continue;
+                byte[] data = block.SerializeEntireBlock();
+                bytes += data == null ? 0 : data.Length;
+                blocks.Add(new KeyValuePair<string, byte[]>(name, data));
+            }
+            int id = _nextSnapshot++;
+            _snapshots[id] = new KeyValuePair<string, List<KeyValuePair<string, byte[]>>>(p.Path, blocks);
+            // Keep the memory bounded: the 80 most recent snapshots.
+            foreach (int old in _snapshots.Keys.Where(k => k <= id - 80).ToList()) _snapshots.Remove(old);
+            return new SnapshotResult { Id = id, Bytes = bytes, Ms = sw.ElapsedMilliseconds };
+        }
+
+        public SnapshotResult Restore(SnapshotParams p)
+        {
+            var sw = Stopwatch.StartNew();
+            KeyValuePair<string, List<KeyValuePair<string, byte[]>>> snap;
+            if (!_snapshots.TryGetValue(p.Id, out snap)) throw new InvalidOperationException("That undo step is no longer available.");
+            if (!string.Equals(snap.Key, p.Path, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("That undo step belongs to another map.");
+            TagFile tag = _tags.GetOrOpen(p.Path);
+            foreach (var b in snap.Value)
+            {
+                var block = tag.SelectField("Block:" + b.Key) as TagFieldBlock;
+                if (block == null) continue;
+                if (b.Value == null || b.Value.Length == 0) block.RemoveAllElements();
+                else block.DeserializeEntireBlock(b.Value);
+            }
+            return new SnapshotResult { Id = p.Id, Ms = sw.ElapsedMilliseconds };
+        }
+
+        // ---- player starting locations (where players first appear) ------------------------------------
+
+        private PlacementCategory StartCategory(TagFile tag)
+        {
+            var block = tag.SelectField("Block:" + StartLocations.Block) as TagFieldBlock;
+            if (block == null) return null;
+            // Shown with the respawn point's model so they look like spawn markers.
+            var marker = Info(@"objects\multi\spawning\respawn_point.scenery");
+            var c = new PlacementCategory
+            {
+                Name = StartLocations.Category,
+                Palette = new List<PaletteEntry> { new PaletteEntry { Tag = "start location", RenderModel = marker.RenderModel, BoundingRadius = 0.5f } },
+                Items = new List<Placement>()
+            };
+            for (int i = 0; i < block.Elements.Count; i++) c.Items.Add(ReadStart(tag, i));
+            return c;
+        }
+
+        private static Placement ReadStart(TagFile tag, int i)
+        {
+            string b = "Block:" + StartLocations.Block + "[" + i + "]/";
+            return new Placement
+            {
+                Index = i,
+                Type = 0,
+                Position = Floats(tag.SelectField(b + "RealPoint3d:position")),
+                Rotation = new[] { Float(tag.SelectField(b + "Angle:facing")), 0f, 0f },
+                Scale = 1,
+                Folder = -1,
+                UniqueId = -1 - i,
+            };
+        }
+
+        private PlacementOpResult StartOp(TagFile tag, PlacementOpParams p)
+        {
+            var block = tag.SelectField("Block:" + StartLocations.Block) as TagFieldBlock;
+            if (block == null) throw new InvalidOperationException("This scenario has no player starting locations.");
+            int select = -1;
+            switch (p.Op)
+            {
+                case PlacementOps.Add:
+                case PlacementOps.Duplicate:
+                {
+                    byte[] data = p.Op == PlacementOps.Duplicate && p.Index >= 0 && p.Index < block.Elements.Count ? block.SerializeElement(p.Index) : null;
+                    block.AddElement();
+                    select = block.Elements.Count - 1;
+                    if (data != null) block.DeserializeElement(select, data);
+                    if (p.Position != null) SetFloats(tag.SelectField("Block:" + StartLocations.Block + "[" + select + "]/RealPoint3d:position"), p.Position);
+                    break;
+                }
+                case PlacementOps.Remove:
+                    if (p.Index < 0 || p.Index >= block.Elements.Count) throw new ArgumentOutOfRangeException("index");
+                    block.RemoveElement(p.Index);
+                    break;
+                default:
+                    throw new ArgumentException("Start locations cannot " + p.Op + ".");
+            }
+            return new PlacementOpResult { Category = StartCategory(tag), SelectIndex = select };
         }
 
         // ---- editor folders ----------------------------------------------------------------------
@@ -612,6 +817,41 @@ namespace Kalo.BlamHost
         }
 
         // ---- writing ---------------------------------------------------------------------------
+
+        /// <summary>
+        /// Appends a placement: a copy of element <paramref name="copyOf"/> (every setting) or a blank one, with a new
+        /// object id and no name (names must stay unique). Returns its index.
+        /// </summary>
+        private int Append(TagFile tag, TagFieldBlock block, string[] k, int copyOf)
+        {
+            byte[] data = copyOf >= 0 ? block.SerializeElement(copyOf) : null;
+            block.AddElement();
+            int index = block.Elements.Count - 1;
+            if (data != null) block.DeserializeElement(index, data);
+            string e = "Block:" + k[0] + "[" + index + "]/";
+            TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:name")).Value = -1);
+            NewObjectId(tag, e, k[2]);
+            return index;
+        }
+
+        /// <summary>
+        /// Multiplayer settings for a new object with nothing to copy from. A blank element has quota 0 (never
+        /// spawns) and team "defender"; these make it appear for every team in every gametype.
+        /// </summary>
+        private static void MultiplayerDefaults(TagFile tag, string element, string category, string objectTag)
+        {
+            string mp = element + "Struct:multiplayer data[0]/";
+            bool spawnPoint = objectTag.IndexOf("spawn", StringComparison.OrdinalIgnoreCase) >= 0;
+            TrySet(() => ((TagFieldEnum)tag.SelectField(mp + "CharEnum:owner team")).SetValue("neutral"));
+            if (spawnPoint) return;
+            int spawnTime = category == "vehicles" ? 60 : category == "weapons" || category == "equipment" ? 30 : 0;
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(mp + "CharInteger:quota maximum")).Data = 1);
+            if (spawnTime > 0)
+            {
+                TrySet(() => ((TagFieldElementInteger)tag.SelectField(mp + "ShortInteger:spawn time")).Data = spawnTime);
+                TrySet(() => ((TagFieldElementInteger)tag.SelectField(mp + "ShortInteger:abandonment time")).Data = 20);
+            }
+        }
 
         private void NewObjectId(TagFile tag, string element, string typeName)
         {

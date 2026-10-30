@@ -10,16 +10,23 @@
 
   <DockPanel>
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
-      <DockPanel Margin="10,5">
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+      <Grid Margin="10,5" ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="8,0,0,0">
+          <Button Classes="outline" Content="To Kalo Script" Command="{Binding ConvertToKaloScriptCommand}" IsVisible="{Binding IsMegaloText}"
+                  ToolTip.Tip="Write this gametype in Kalo Script (if/then/else, for each, f(a, b)): a new .kscript in your mod; this file stays as it is" />
+          <ToggleButton Classes="chip" Content="Megalo" IsChecked="{Binding ShowMegalo, Mode=OneWay}" Command="{Binding ToggleMegaloCommand}" IsVisible="{Binding IsKaloScript}"
+                        ToolTip.Tip="Show the Megalo text this Kalo Script turns into (what HREK's compiler gets)" />
+          <Button Classes="outline" Content="Export .bin" Command="{Binding ExportBinCommand}"
+                  ToolTip.Tip="Save it as an MCC game type file (Kalo\exports\gametypes) to use in Custom Games. Experimental." />
           <Button Classes="outline" Content="Compile (F7)" Command="{Binding CompileCommand}" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
         </StackPanel>
-        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" ClipToBounds="True">
           <Ellipse Width="8" Height="8" Fill="{StaticResource KSuccess}" IsVisible="{Binding CompileOk}" />
-          <TextBlock Text="{Binding CompileSummary}" Foreground="{StaticResource KMuted}" FontSize="12" />
+          <TextBlock Text="{Binding CompileSummary}" Foreground="{StaticResource KMuted}" FontSize="12" TextTrimming="CharacterEllipsis"
+                     ToolTip.Tip="{Binding CompileSummary}" />
         </StackPanel>
-      </DockPanel>
+      </Grid>
     </Border>
 
     <Border DockPanel.Dock="Bottom" MaxHeight="160" BorderBrush="{StaticResource KBorder}" BorderThickness="0,1,0,0" Background="{StaticResource KPanel}"
@@ -38,8 +45,21 @@
       </ListBox>
     </Border>
 
-    <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontFamily="{StaticResource KMono}" FontSize="13"
-                   Background="{StaticResource KBg}" Foreground="{StaticResource KText}" LineNumbersForeground="{StaticResource KFaint}"
-                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4" />
+    <Grid ColumnDefinitions="*,Auto">
+      <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontFamily="{StaticResource KMono}" FontSize="13"
+                     Background="{StaticResource KBg}" Foreground="{StaticResource KText}" LineNumbersForeground="{StaticResource KFaint}"
+                     HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4" />
+      <!-- Kalo Script: the generated Megalo, read only -->
+      <DockPanel Grid.Column="1" Width="460" IsVisible="{Binding ShowMegalo}" Background="{StaticResource KPanel}">
+        <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="1,0,0,1" Padding="10,4">
+          <TextBlock Text="GENERATED MEGALO (read only)" Classes="header" />
+        </Border>
+        <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1,0,0,0">
+          <ae:TextEditor x:Name="MegaloView" IsReadOnly="True" ShowLineNumbers="True" FontFamily="{StaticResource KMono}" FontSize="12"
+                         Background="{StaticResource KPanel}" Foreground="{StaticResource KText}" LineNumbersForeground="{StaticResource KFaint}"
+                         HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4" />
+        </Border>
+      </DockPanel>
+    </Grid>
   </DockPanel>
 </UserControl>

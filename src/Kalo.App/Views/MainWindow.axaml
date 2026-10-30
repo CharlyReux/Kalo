@@ -222,134 +222,19 @@
       <GridSplitter Grid.Column="2" Background="{StaticResource KBorder}" ResizeDirection="Columns" />
 
       <!-- Center: tabs, editor, bottom panel -->
-      <Grid Grid.Column="3" RowDefinitions="34,28,*,4,210">
+      <Grid Grid.Column="3" RowDefinitions="*,4,210">
 
-        <Border Grid.Row="0" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
-          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-            <ItemsControl ItemsSource="{Binding Tabs}">
-              <ItemsControl.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <StackPanel Orientation="Horizontal" />
-                </ItemsPanelTemplate>
-              </ItemsControl.ItemsPanel>
-              <ItemsControl.ItemTemplate>
-                <DataTemplate DataType="vm:DocumentViewModel">
-                  <Border Classes="tab" Classes.active="{Binding IsActive}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,1,0">
-                    <StackPanel Orientation="Horizontal">
-                      <Button Classes="tool" Padding="12,0,4,0" MinHeight="32" CornerRadius="0"
-                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActivateTabCommand}" CommandParameter="{Binding}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                          <Border IsVisible="{Binding HasBadge}" Background="{StaticResource KSelection}" CornerRadius="3" Padding="4,0" VerticalAlignment="Center">
-                            <TextBlock Text="{Binding Badge}" FontSize="10.5" Foreground="{StaticResource KAccentText}" />
-                          </Border>
-                          <TextBlock Text="{Binding Title}" FontSize="12.5" VerticalAlignment="Center" />
-                          <TextBlock Text="●" FontSize="10" Foreground="{StaticResource KWarning}" IsVisible="{Binding IsDirty}" VerticalAlignment="Center" />
-                        </StackPanel>
-                      </Button>
-                      <Button Classes="tool" Padding="6,0" MinHeight="32" CornerRadius="0" Content="×" Foreground="{StaticResource KFaint}"
-                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CloseTabCommand}" CommandParameter="{Binding}" />
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-              <ItemsControl.Styles>
-                <Style Selector="Border.tab">
-                  <Setter Property="Background" Value="Transparent" />
-                </Style>
-                <Style Selector="Border.tab.active">
-                  <Setter Property="Background" Value="{StaticResource KBg}" />
-                </Style>
-              </ItemsControl.Styles>
-            </ItemsControl>
-          </ScrollViewer>
-        </Border>
+        <!-- Editor groups: one, or two split side by side / top and bottom (the second can also be its own window) -->
+        <Grid x:Name="EditorArea" Grid.Row="0">
+          <views:EditorGroupView x:Name="PrimaryGroupView" DataContext="{Binding Primary}" />
+          <GridSplitter x:Name="EditorSplitter" Background="{StaticResource KBorder}" IsVisible="False" />
+          <views:EditorGroupView x:Name="SecondaryGroupView" IsVisible="False" />
+        </Grid>
 
-        <Border Grid.Row="1" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
-          <DockPanel Margin="12,0">
-            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" IsVisible="{Binding HasDocument}">
-              <TextBlock Text="{Binding ActiveDocument.Status, FallbackValue=''}" Foreground="{StaticResource KMuted}" FontSize="12" />
-              <TextBlock Text="  · changed from vanilla" Foreground="{StaticResource KWarning}" FontSize="12" IsVisible="{Binding ActiveDocument.DiffersFromVanilla, FallbackValue=False}" />
-            </StackPanel>
-            <TextBlock VerticalAlignment="Center" Classes="mono" Foreground="{StaticResource KMuted}" TextTrimming="CharacterEllipsis" Text="{Binding ActiveDocument.Breadcrumb, FallbackValue='Kalo › Start'}" />
-          </DockPanel>
-        </Border>
-
-        <!-- Editor or start page -->
-        <views:TagEditorView Grid.Row="2" DataContext="{Binding ActiveTab}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasTab}" />
-        <views:MapEditorView Grid.Row="2" DataContext="{Binding ActiveMap}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasMap}" />
-        <views:ScriptEditorView Grid.Row="2" DataContext="{Binding ActiveScript}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasScript}" />
-        <views:DiffView Grid.Row="2" DataContext="{Binding ActiveDiff}" IsVisible="{Binding $parent[Window].((vm:MainViewModel)DataContext).HasDiff}" />
-        <ScrollViewer Grid.Row="2" IsVisible="{Binding NoTab}">
-          <StackPanel Margin="32,28" Spacing="18" MaxWidth="720" HorizontalAlignment="Left">
-            <StackPanel>
-              <TextBlock Text="Kalo" FontSize="20" FontWeight="SemiBold" />
-              <TextBlock Text="Halo Reach mod workbench." Foreground="{StaticResource KMuted}" />
-            </StackPanel>
-
-            <!-- No mod yet: create one -->
-            <Border IsVisible="{Binding NoActiveMod}" Background="{StaticResource KPanel}" CornerRadius="6" Padding="16" BorderBrush="{StaticResource KBorder}" BorderThickness="1">
-              <StackPanel Spacing="8">
-                <TextBlock Text="Start a mod" FontSize="15" FontWeight="SemiBold" />
-                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource KMuted}" FontSize="12.5"
-                           Text="A mod holds only what you make or change: new maps, new gametypes, and any game file you tweak. It starts empty; add things from the My mod panel." />
-                <TextBox Classes="compact" Watermark="Mod name (e.g. Rocket Race)" Text="{Binding NewModName}" Width="340" HorizontalAlignment="Left" />
-                <TextBox Classes="compact" Watermark="One line about it (optional)" Text="{Binding NewModDescription}" Width="340" HorizontalAlignment="Left" />
-                <Button Classes="primary" Content="Create the mod" Command="{Binding CreateModCommand}" HorizontalAlignment="Left" />
-              </StackPanel>
-            </Border>
-
-            <!-- A mod is active: what to do next -->
-            <Border IsVisible="{Binding HasActiveMod}" Background="{StaticResource KPanel}" CornerRadius="6" Padding="16" BorderBrush="{StaticResource KBorder}" BorderThickness="1">
-              <StackPanel Spacing="10">
-                <TextBlock FontSize="15" FontWeight="SemiBold" Text="{Binding ActiveModName, StringFormat='Working on {0}'}" />
-                <WrapPanel>
-                  <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNewMapFormCommand}" Padding="12,8">
-                    <StackPanel Spacing="2">
-                      <TextBlock Text="New map" FontWeight="SemiBold" />
-                      <TextBlock Text="Start from a Reach level, empty or full" FontSize="11.5" Foreground="{StaticResource KMuted}" />
-                    </StackPanel>
-                  </Button>
-                  <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNewGametypeFormCommand}" Padding="12,8">
-                    <StackPanel Spacing="2">
-                      <TextBlock Text="New gametype" FontWeight="SemiBold" />
-                      <TextBlock Text="Start from a simple script or a Reach mode" FontSize="11.5" Foreground="{StaticResource KMuted}" />
-                    </StackPanel>
-                  </Button>
-                  <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNodeCommand}" CommandParameter="objects\weapons\rifle\assault_rifle\assault_rifle.weapon" Padding="12,8">
-                    <StackPanel Spacing="2">
-                      <TextBlock Text="Tweak a weapon" FontWeight="SemiBold" />
-                      <TextBlock Text="e.g. the assault rifle's magazine" FontSize="11.5" Foreground="{StaticResource KMuted}" />
-                    </StackPanel>
-                  </Button>
-                </WrapPanel>
-                <TextBlock TextWrapping="Wrap" Foreground="{StaticResource KMuted}" FontSize="12"
-                           Text="Press Play (F5) at the top to try it: pick the map and the gametype there. Other mods are in the Mod projects panel." />
-              </StackPanel>
-            </Border>
-
-            <StackPanel Spacing="4">
-              <TextBlock Text="QUICK OPEN (vanilla tags)" Classes="header" />
-              <ItemsControl ItemsSource="{Binding QuickOpen}">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="sys:String">
-                    <Button Classes="tool" HorizontalAlignment="Left" Content="{Binding}" FontFamily="{StaticResource KMono}" Foreground="{StaticResource KBlue}"
-                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).OpenNodeCommand}" CommandParameter="{Binding}" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </StackPanel>
-            <StackPanel Spacing="4">
-              <TextBlock Text="HOW IT WORKS" Classes="header" />
-              <TextBlock TextWrapping="Wrap" Foreground="{StaticResource KCode}"
-                         Text="Everything you save goes into your mod (Kalo's workspace), never into HREK. Play (F5) saves first, then starts the chosen map and gametype in reach_tag_test; tags you save while it runs are reloaded by the game. My mod lists everything the mod contains; right-click a file to compare it with vanilla or take it out of the mod." />
-            </StackPanel>
-          </StackPanel>
-        </ScrollViewer>
-
-        <GridSplitter Grid.Row="3" Background="{StaticResource KBorder}" ResizeDirection="Rows" />
+        <GridSplitter Grid.Row="1" Background="{StaticResource KBorder}" ResizeDirection="Rows" />
 
         <!-- Bottom tool window -->
-        <DockPanel Grid.Row="4" Background="{StaticResource KBg}">
+        <DockPanel Grid.Row="2" Background="{StaticResource KBg}">
           <Border DockPanel.Dock="Top" Height="30" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
             <DockPanel>
               <StackPanel Orientation="Horizontal" Margin="4,0">
@@ -519,6 +404,8 @@
                     <TextBox x:Name="ScaleBox" Classes="compact mono" Text="{Binding ActiveMap.Selected.ScaleText, Mode=OneWay, FallbackValue=''}" Margin="0,0,4,0"
                              ToolTip.Tip="Size multiplier (1 = normal). Press Set to apply it to every selected object." />
                   </DockPanel>
+                  <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KWarning}"
+                             Text="Reach ignores this scale in multiplayer games: objects spawn at normal size (it only shows here). Scaling in game needs a gametype script (set_scale)." />
                   <!-- Every other property of this object, as saved in the map -->
                   <StackPanel Spacing="4" IsVisible="{Binding ActiveMap.HasProperties, FallbackValue=False}">
                     <TextBlock Text="PROPERTIES" Classes="header" Margin="0,8,0,0" />

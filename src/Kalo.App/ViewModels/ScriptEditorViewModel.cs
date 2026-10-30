@@ -3,6 +3,7 @@ using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
+using Kalo.Core.Scripting;
 using Kalo.Protocol;
 
 namespace Kalo.App.ViewModels;
@@ -35,6 +36,13 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         "current_player", "current_team", "current_object", "for_each", "designator",
     };
 
+    private static readonly string[] KaloKeywords =
+    {
+        "if", "then", "else", "elseif", "end", "for", "each", "do", "inline", "on", "init", "and", "or", "not", "temp", "declare", "alias",
+        "megalo", "include", "with", "label", "networked", "local", "global", "player", "team", "object", "number", "timer",
+        "current_player", "current_team", "current_object", "none", "true", "false", "random",
+    };
+
     private readonly HashSet<string> _scriptNames = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -63,6 +71,15 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 .Concat((catalog?.Conditions ?? new()).Select(c => new CompletionItem(c.Name!, "condition", c.Description)));
             contextual = true;
         }
+        else if (IsKaloScript)
+        {
+            // Kalo Script: actions and conditions are called like functions, so offer them everywhere.
+            pool = KaloKeywords.Select(k => new CompletionItem(k, "keyword", null))
+                .Concat((catalog?.Actions ?? new()).Select(a => new CompletionItem(a.Name!, "action", a.Description)))
+                .Concat((catalog?.Conditions ?? new()).Where(c => c.Name != "if").Select(c => new CompletionItem(c.Name!, "condition", c.Description)))
+                .Concat(_scriptNames.Select(n => new CompletionItem(n, "script", "Declared in this script (from the last compile)")))
+                .Concat((catalog?.Lists ?? new()).SelectMany(kv => kv.Value.Select(v => new CompletionItem(v, kv.Key, null))));
+        }
         else
         {
             pool = Keywords.Select(k => new CompletionItem(k, "keyword", null))
@@ -81,7 +98,27 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         return (start, items);
     }
 
-    public override string Badge => "script";
+    public override string Badge => IsKaloScript ? "kalo" : "script";
+
+    /// <summary>Kalo Script (.kscript, modern syntax) rather than Megalo text (.txt).</summary>
+    public bool IsKaloScript => IsKaloScriptPath(Path);
+    public bool IsMegaloText => !IsKaloScript;
+    public static bool IsKaloScriptPath(string path) => path.EndsWith(KaloScript.Extension, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>For Kalo Script: the Megalo text it turns into (shown with "Megalo" in the toolbar).</summary>
+    [ObservableProperty] private string _generatedMegalo = "";
+    [ObservableProperty] private bool _showMegalo;
+    private TranspileResult? _lastTranspile;
+
+    /// <summary>The text for HREK's compiler: the script itself, or Kalo Script turned into Megalo (null + errors when it can't be).</summary>
+    public (string? Megalo, TranspileResult? Kalo) MegaloText()
+    {
+        if (!IsKaloScript) return (Text, null);
+        var r = KaloScript.Transpile(Text);
+        _lastTranspile = r;
+        if (r.Succeeded) GeneratedMegalo = r.Megalo;
+        return (r.Succeeded ? r.Megalo : null, r);
+    }
     public override string Breadcrumb => string.Join(" › ", Path.Split('\\'));
     public override string BaselinePath => Path;
     public string FullPath => System.IO.Path.Combine(_main.Paths!.Workspace, Path);
@@ -159,30 +196,55 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     [RelayCommand]
     private void Insert(MegaloEntry? entry)
     {
-        if (entry?.Name != null) InsertRequested?.Invoke(entry.Name + " ");
+        if (entry?.Name == null) return;
+        // Kalo Script calls actions and conditions like functions: "action set_score" → "set_score(".
+        InsertRequested?.Invoke(IsKaloScript ? entry.Name[(entry.Name.IndexOf(' ') + 1)..] + "(" : entry.Name + " ");
     }
 
     [RelayCommand]
     public Task Compile() => CompileAsync(null);
 
-    private async Task CompileAsync(string? mgloFile)
+    private async Task CompileAsync(string? mgloFile, string? binFile = null)
     {
         if (_main.Host == null || _main.Paths == null) return;
         CompileSummary = "Compiling…";
         try
         {
             string output = System.IO.Path.Combine(_main.Paths.KaloData, "megalo", System.IO.Path.GetFileNameWithoutExtension(Path));
+            var (megalo, kalo) = MegaloText();
+            if (megalo == null)
+            {
+                // Kalo Script errors: no need to ask the Megalo compiler.
+                Messages.Clear();
+                foreach (var e in kalo!.Errors) Messages.Add(new ScriptMessage(e.Line, -1, 0, "error", e.Message, null));
+                OnPropertyChanged(nameof(HasMessages));
+                CompileOk = false;
+                CompileSummary = $"{kalo.Errors.Count} error(s) in the Kalo Script. Fix the first one and compile again.";
+                _main.ReportScriptProblems(this, Messages);
+                SelectedMessage = Messages.FirstOrDefault();
+                return;
+            }
             var r = await _main.Host.MegaloCompileAsync(new MegaloCompileParams
             {
                 ObjectLists = _main.Paths.MegaloObjectLists,
                 IncludeFolder = _main.Paths.MegaloSource,
-                Text = Text,
+                Text = megalo,
                 OutputFolder = output,
-                MgloFile = mgloFile
+                MgloFile = mgloFile,
+                BinFile = binFile
             });
             Messages.Clear();
             foreach (var m in r.Messages ?? new())
-                Messages.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", m.Message ?? "", m.Token));
+            {
+                if (kalo != null)
+                {
+                    // Point at the Kalo Script line the Megalo line came from.
+                    int line = kalo.SourceLine(m.Line);
+                    string where = m.Line > 0 && line == 0 ? $" (generated Megalo line {m.Line})" : "";
+                    Messages.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", (m.Message ?? "") + where, m.Token));
+                }
+                else Messages.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", m.Message ?? "", m.Token));
+            }
             Stats.Clear();
             var stats = r.Stats ?? new();
             void Stat(string label, string key, long? max = null)
@@ -222,6 +284,75 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             _main.AddProblem("error", ex.Message, Path);
             if (ex.EngineHalted) await _main.RestartHostAsync();
         }
+    }
+
+    /// <summary>
+    /// Writes the gametype as an MCC custom game type file (.bin) in Kalo\exports\gametypes, ready to copy into
+    /// MCC's game type folder. Experimental: built from the HREK compiler's variant.
+    /// </summary>
+    [RelayCommand]
+    public async Task<string?> ExportBin()
+    {
+        if (_main.Paths == null) return null;
+        string name = System.IO.Path.GetFileNameWithoutExtension(Path);
+        string compiled = System.IO.Path.Combine(_main.Paths.KaloData, "megalo-bin", name + ".bin");
+        try { if (File.Exists(compiled)) File.Delete(compiled); } catch { }
+        await CompileAsync(null, compiled);
+        if (!CompileOk || !File.Exists(compiled))
+        {
+            _main.AddProblem("error", "Export .bin: the gametype has to compile first.", Path);
+            return null;
+        }
+        try
+        {
+            string title = TitleFromScript() ?? name.Replace('_', ' ');
+            byte[] mcc = GameVariantFile.ToMcc(await File.ReadAllBytesAsync(compiled), title, "Made with Kalo");
+            string folder = System.IO.Path.Combine(_main.Paths.Repo, "exports", "gametypes");
+            Directory.CreateDirectory(folder);
+            string file = System.IO.Path.Combine(folder, name + ".bin");
+            await File.WriteAllBytesAsync(file, mcc);
+            CompileSummary = $"Exported {name}.bin ({mcc.Length:N0} bytes) to Kalo\\exports\\gametypes.";
+            _main.Log($"Exported {file}. To try it in MCC, copy it into your Halo Reach game types folder " +
+                      @"(%USERPROFILE%\AppData\LocalLow\MCC\LocalFiles\<your id>\HaloReach\GameType) and pick it in Custom Games. Experimental.");
+            return file;
+        }
+        catch (Exception ex)
+        {
+            _main.AddProblem("error", "Export .bin failed: " + ex.Message, Path);
+            return null;
+        }
+    }
+
+    /// <summary>A "-- title: My Mode" line at the top of the script names the exported game type.</summary>
+    private string? TitleFromScript()
+    {
+        foreach (var raw in Text.Split('\n').Take(10))
+        {
+            string l = raw.Trim().TrimStart('-', ';', '/').Trim();
+            if (l.StartsWith("title:", StringComparison.OrdinalIgnoreCase)) return l[6..].Trim();
+        }
+        return null;
+    }
+
+    /// <summary>Megalo text → a new Kalo Script file in the active mod (the original stays as it is).</summary>
+    [RelayCommand]
+    private async Task ConvertToKaloScript()
+    {
+        if (IsKaloScript) return;
+        string kscript = KaloScript.FromMegalo(Text);
+        var check = KaloScript.Transpile(kscript);
+        if (!check.Succeeded)
+        {
+            _main.AddProblem("warning", $"Converted with {check.Errors.Count} problem(s) to fix by hand (first: line {check.Errors[0].Line}: {check.Errors[0].Message}).", Path);
+        }
+        await _main.CreateKaloScriptAsync(System.IO.Path.GetFileNameWithoutExtension(Path), kscript);
+    }
+
+    [RelayCommand]
+    private void ToggleMegalo()
+    {
+        if (!ShowMegalo) MegaloText();
+        ShowMegalo = !ShowMegalo;
     }
 
     [RelayCommand]

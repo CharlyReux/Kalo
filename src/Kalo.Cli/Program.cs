@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Kalo.Core;
 using Kalo.Protocol;
+using Kalo.Core.Scripting;
 
 // kalo-cli <command>
 //   host-test   start the Blam Host, open a weapon tag, edit, save as a test copy, check, clean up
@@ -49,8 +50,23 @@ switch (command)
     case "level-mesh-test":
         await LevelMeshTest(argsList.ElementAtOrDefault(1) ?? @"levels\multi\20_sword_slayer\20_sword_slayer.scenario");
         break;
+    case "map-report":
+        await MapReport(argsList.ElementAtOrDefault(1) ?? @"levels\mods\test_project\ulti\ulti.scenario");
+        break;
     case "materials-report":
         await MaterialsReport(argsList.ElementAtOrDefault(1) ?? @"levels\multi\forge_halo\forge_halo.scenario");
+        break;
+    case "megalo-catalog":
+        await MegaloCatalogDump(argsList.ElementAtOrDefault(1) ?? Path.Combine(paths.KaloData, "megalo-catalog.json"));
+        break;
+    case "megalo-bin":
+        await MegaloBin(argsList.ElementAtOrDefault(1) ?? "slayer.txt", argsList.Skip(2).ToList());
+        break;
+    case "kscript-roundtrip":
+        await KscriptRoundTrip(argsList.ElementAtOrDefault(1));
+        break;
+    case "kscript-starter":
+        await KscriptStarter(argsList.ElementAtOrDefault(1));
         break;
     case "dump":
         await Dump(argsList.ElementAtOrDefault(1) ?? Weapon, int.Parse(argsList.ElementAtOrDefault(2) ?? "2"));
@@ -222,6 +238,37 @@ async Task LevelMeshTest(string scenario)
     Check("level has triangles", r.Triangles > 1000);
 }
 
+// A map's placements: per palette entry, whether its tag exists, its render model, and whether the model exports.
+async Task MapReport(string scenario)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+    var data = await host.GetPlacementsAsync(scenario);
+    var models = new Kalo.Core.Geometry.ModelLibrary(paths);
+    foreach (var c in data.Categories ?? new())
+    {
+        if ((c.Items?.Count ?? 0) == 0) continue;
+        Console.WriteLine($"== {c.Name}: {c.Items!.Count} placed");
+        for (int i = 0; i < (c.Palette?.Count ?? 0); i++)
+        {
+            var p = c.Palette![i];
+            int used = c.Items.Count(x => x.Type == i);
+            if (used == 0) continue;
+            bool exists = p.Tag != null && File.Exists(Path.Combine(paths.WorkspaceTags, p.Tag));
+            string model = "-";
+            if (p.RenderModel != null)
+            {
+                await models.LoadAsync(host, new[] { p.RenderModel });
+                var m = models.Get(p.RenderModel);
+                model = m == null ? "EXPORT FAILED" : $"{m.TriangleCount} tris";
+            }
+            Console.WriteLine($"  [{i}] x{used} {p.Tag} exists={exists} render={p.RenderModel ?? "NONE"} {model}");
+        }
+        foreach (var it in c.Items.Take(40))
+            Console.WriteLine($"    #{it.Index} type {it.Type} at {string.Join(", ", (it.Position ?? new float[0]).Select(v => v.ToString("0.##")))} scale {it.Scale} folder {it.Folder}");
+    }
+    foreach (var sp in data.SpawnPoints ?? new()) Console.WriteLine($"  start location at {string.Join(", ", sp.Position!.Select(v => v.ToString("0.##")))}");
+}
+
 // Every material of a level: triangles, blend mode, color map and whether that bitmap decodes (for the textured view).
 async Task MaterialsReport(string scenario)
 {
@@ -323,5 +370,123 @@ static IEnumerable<FieldNode> Flatten(List<FieldNode>? nodes)
     {
         yield return n;
         foreach (var c in Flatten(n.Children)) yield return c;
+    }
+}
+
+async Task MegaloCatalogDump(string output)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+    var cat = await host.MegaloCatalogAsync(paths.MegaloObjectLists);
+    Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
+    File.WriteAllText(output, System.Text.Json.JsonSerializer.Serialize(cat, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+    Console.WriteLine($"Catalog written to {output}: {cat.Actions?.Count} actions, {cat.Conditions?.Count} conditions");
+    foreach (var c in cat.Conditions ?? new()) Console.WriteLine($"condition {c.Name}: {c.Description}");
+    foreach (var a in cat.Actions ?? new()) Console.WriteLine($"action {a.Name}: {a.Description}");
+    Check("catalog dumped", cat.Actions?.Count > 0);
+}
+
+/// <summary>Compiles a script and writes the compiler's serialized variant (.bin), then shows its chunks next to an MCC variant's.</summary>
+async Task MegaloBin(string file, List<string> compare)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+    string source = Path.Combine(paths.MegaloSource, file);
+    string text = File.ReadAllText(source);
+    string bin = Path.Combine(paths.KaloData, "megalo-bin", Path.GetFileNameWithoutExtension(file) + ".bin");
+    var r = await host.MegaloCompileAsync(new MegaloCompileParams { ObjectLists = paths.MegaloObjectLists, IncludeFolder = paths.MegaloSource, Text = text, BinFile = bin });
+    Console.WriteLine($"Compiled {file}: succeeded={r.Succeeded}; files: {string.Join(", ", r.OutputFiles ?? new())}");
+    foreach (var kv in r.Stats ?? new()) Console.Write($"{kv.Key}={kv.Value} ");
+    Console.WriteLine();
+    Check("the compiler produced a .bin", File.Exists(bin));
+    foreach (string f in new[] { bin }.Concat(compare))
+    {
+        if (!File.Exists(f)) { Console.WriteLine("missing " + f); continue; }
+        byte[] d = File.ReadAllBytes(f);
+        Console.WriteLine($"== {f}: {d.Length} bytes");
+        Console.WriteLine("   head: " + Convert.ToHexString(d, 0, Math.Min(96, d.Length)));
+        int i = 0;
+        while (i + 12 <= d.Length)
+        {
+            string tag = System.Text.Encoding.ASCII.GetString(d, i, 4);
+            int size = (d[i + 4] << 24) | (d[i + 5] << 16) | (d[i + 6] << 8) | d[i + 7];
+            if (size <= 0 || !tag.All(ch => ch >= 32 && ch < 127)) { Console.WriteLine($"   no chunk at {i} ({tag})"); break; }
+            Console.WriteLine($"   chunk {tag} at {i}: {size} bytes, version {Convert.ToHexString(d, i + 8, 4)}");
+            i += size;
+        }
+    }
+}
+
+/// <summary>
+/// Every Bungie gametype script: compile it, convert it to Kalo Script, turn that back into Megalo, compile again,
+/// and compare what the compiler built (triggers, conditions, actions, encoded size).
+/// </summary>
+async Task KscriptRoundTrip(string? only)
+{
+    await using var host = await HostClient.StartAsync(paths, line => { if (!line.Contains("Megalo")) return; Console.WriteLine("  host> " + line); });
+    var files = Directory.EnumerateFiles(paths.MegaloSource, "*.txt", SearchOption.TopDirectoryOnly)
+        .Concat(Directory.EnumerateFiles(Path.Combine(paths.MegaloSource, "simple"), "*.txt", SearchOption.AllDirectories))
+        .Where(f => only == null || f.Contains(only, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(f => f).ToList();
+    int same = 0, differ = 0, skipped = 0, failed = 0;
+    string outDir = Path.Combine(paths.KaloData, "kscript-roundtrip");
+    Directory.CreateDirectory(outDir);
+    async Task<MegaloCompileResult> Compile(string text) => await host.MegaloCompileAsync(new MegaloCompileParams { ObjectLists = paths.MegaloObjectLists, IncludeFolder = paths.MegaloSource, Text = text });
+    string Key(MegaloCompileResult r) => string.Join(" ", new[] { "TriggersUsed", "ConditionsUsed", "ActionsUsed", "EncodedSize" }.Select(k => $"{k[..4]}={r.Stats?.GetValueOrDefault(k)}"));
+    foreach (string f in files)
+    {
+        string rel = Path.GetRelativePath(paths.MegaloSource, f);
+        string text = File.ReadAllText(f);
+        var original = await Compile(text);
+        if (!original.Succeeded) { skipped++; continue; } // includes and broken scripts do not compile alone
+        string ks = KaloScript.FromMegalo(text);
+        var t = KaloScript.Transpile(ks);
+        string safe = rel.Replace('\\', '_');
+        File.WriteAllText(Path.Combine(outDir, safe + KaloScript.Extension), ks);
+        if (!t.Succeeded)
+        {
+            failed++;
+            Console.WriteLine($"  FAIL {rel}: Kalo Script errors: {string.Join("; ", t.Errors.Take(3))}");
+            continue;
+        }
+        var back = await Compile(t.Megalo);
+        if (!back.Succeeded)
+        {
+            failed++;
+            File.WriteAllText(Path.Combine(outDir, safe + ".megalo.txt"), t.Megalo);
+            var m = back.Messages?.FirstOrDefault(x => x.Severity?.Contains("rror") == true) ?? back.Messages?.FirstOrDefault();
+            Console.WriteLine($"  FAIL {rel}: does not compile back: Megalo line {m?.Line} (Kalo Script line {t.SourceLine(m?.Line ?? 0)}): {m?.Message} '{m?.Token}'");
+            continue;
+        }
+        if (Key(original) == Key(back)) same++;
+        else { differ++; Console.WriteLine($"  DIFF {rel}: {Key(original)}  vs  {Key(back)}"); }
+    }
+    Console.WriteLine($"Round trip: {same} identical, {differ} different, {failed} failed, {skipped} skipped (do not compile alone) of {files.Count}");
+    Check("every compiling script converts and compiles back", failed == 0);
+    Check("the compiled result is the same size and shape", differ == 0);
+}
+
+/// <summary>Compiles a Kalo Script file (default: Kalo's starter), plays it through Megalo and exports the MCC .bin.</summary>
+async Task KscriptStarter(string? file)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+    string text = file != null ? File.ReadAllText(file) : KaloScript.Starter;
+    var t = KaloScript.Transpile(text);
+    Check("Kalo Script turns into Megalo", t.Succeeded);
+    foreach (var e in t.Errors) Console.WriteLine("  " + e);
+    Console.WriteLine(t.Megalo);
+    string bin = Path.Combine(paths.KaloData, "megalo-bin", "kscript_starter.bin");
+    var r = await host.MegaloCompileAsync(new MegaloCompileParams { ObjectLists = paths.MegaloObjectLists, IncludeFolder = paths.MegaloSource, Text = t.Megalo, BinFile = bin });
+    foreach (var m in r.Messages ?? new()) Console.WriteLine($"  {m.Severity} Megalo line {m.Line} (Kalo Script line {t.SourceLine(m.Line)}): {m.Message} '{m.Token}'");
+    Check("HREK's compiler accepts it", r.Succeeded);
+    if (!File.Exists(bin)) return;
+    byte[] mcc = GameVariantFile.ToMcc(File.ReadAllBytes(bin), "Kalo starter", "Made with Kalo");
+    string outFile = Path.Combine(paths.Repo, "exports", "gametypes", "kalo_starter_test.bin");
+    Directory.CreateDirectory(Path.GetDirectoryName(outFile)!);
+    File.WriteAllBytes(outFile, mcc);
+    Console.WriteLine($"MCC file: {outFile}, {mcc.Length} bytes, chunks {string.Join(" ", GameVariantFile.Chunks(mcc).Select(c => c.Tag))}");
+    Check("the MCC file's hash is valid", GameVariantFile.HashIsValid(mcc));
+    if (paths.Mcc is { } mccDir)
+    {
+        string vanilla = Path.Combine(mccDir, "haloreach", "game_variants", "slayer_054.bin");
+        if (File.Exists(vanilla)) Check("MCC's own slayer variant reads the same way (hash valid)", GameVariantFile.HashIsValid(File.ReadAllBytes(vanilla)));
     }
 }

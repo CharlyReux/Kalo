@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             xmlns:views="using:Kalo.App.Views"
+             x:Class="Kalo.App.Views.EditorGroupView"
+             x:DataType="vm:EditorGroup"
+             DragDrop.AllowDrop="True">
+  <!-- One editor group: its tab strip, the breadcrumb line, and the editor of the tab it shows. -->
+  <DockPanel>
+
+    <!-- Tab strip, with the split buttons on the right -->
+    <Border DockPanel.Dock="Top" Height="34" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <Panel>
+        <!-- Focus mark when split: the inspector and the shortcuts follow this group -->
+        <Border Height="2" VerticalAlignment="Top" Background="{StaticResource KAccent}" IsVisible="{Binding ShowFocusMark}" />
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="4,0">
+            <Button Classes="tool" FontFamily="{StaticResource KIcons}" Content="&#xE90D;" ToolTip.Tip="Split: show two editors side by side (the current tab moves right)"
+                    Command="{Binding Main.SetSplitCommand}" CommandParameter="right" />
+            <Button Classes="tool" FontFamily="{StaticResource KIcons}" Content="&#xE90E;" ToolTip.Tip="Split: one editor above the other"
+                    Command="{Binding Main.SetSplitCommand}" CommandParameter="down" />
+            <Button Classes="tool" FontFamily="{StaticResource KIcons}" Content="&#xE8A7;" ToolTip.Tip="Open the second editor in its own window (e.g. code on another screen)"
+                    Command="{Binding Main.SetSplitCommand}" CommandParameter="window" IsVisible="{Binding !Main.IsDetached}" />
+            <Button Classes="tool" FontFamily="{StaticResource KIcons}" Content="&#xE8AB;" ToolTip.Tip="Swap the two sides"
+                    Command="{Binding Main.SwapGroupsCommand}" IsVisible="{Binding Main.IsSplit}" />
+            <Button Classes="tool" FontFamily="{StaticResource KIcons}" Content="&#xE8BB;" ToolTip.Tip="Close the split (its tabs join the main editor)"
+                    Command="{Binding Main.UnsplitCommand}" IsVisible="{Binding Main.IsSplit}" />
+          </StackPanel>
+          <ScrollViewer x:Name="TabScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <ItemsControl x:Name="TabStrip" ItemsSource="{Binding Tabs}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:DocumentViewModel">
+                  <Border Classes="tab" Classes.active="{Binding IsActive}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,1,0">
+                    <Border.ContextMenu>
+                      <ContextMenu>
+                        <MenuItem Header="Move to the other side" Click="MoveTab_Click" />
+                        <MenuItem Header="Split right with this tab" Click="SplitRight_Click" />
+                        <MenuItem Header="Split down with this tab" Click="SplitDown_Click" />
+                        <MenuItem Header="Open in a new window" Click="SplitWindow_Click" />
+                        <Separator />
+                        <MenuItem Header="Close" Click="CloseTab_Click" />
+                      </ContextMenu>
+                    </Border.ContextMenu>
+                    <StackPanel Orientation="Horizontal">
+                      <Button Classes="tool" Padding="12,0,4,0" MinHeight="32" CornerRadius="0" Click="Tab_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <Border IsVisible="{Binding HasBadge}" Background="{StaticResource KSelection}" CornerRadius="3" Padding="4,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Badge}" FontSize="10.5" Foreground="{StaticResource KAccentText}" />
+                          </Border>
+                          <TextBlock Text="{Binding Title}" FontSize="12.5" VerticalAlignment="Center" />
+                          <TextBlock Text="●" FontSize="10" Foreground="{StaticResource KWarning}" IsVisible="{Binding IsDirty}" VerticalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
+                      <Button Classes="tool" Padding="6,0" MinHeight="32" CornerRadius="0" Content="×" Foreground="{StaticResource KFaint}" Click="CloseTab_Click" />
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+              <ItemsControl.Styles>
+                <Style Selector="Border.tab">
+                  <Setter Property="Background" Value="Transparent" />
+                </Style>
+                <Style Selector="Border.tab.active">
+                  <Setter Property="Background" Value="{StaticResource KBg}" />
+                </Style>
+              </ItemsControl.Styles>
+            </ItemsControl>
+          </ScrollViewer>
+        </DockPanel>
+      </Panel>
+    </Border>
+
+    <!-- Breadcrumb and status of the shown tab -->
+    <Border DockPanel.Dock="Top" Height="28" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <DockPanel Margin="12,0">
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
+                    IsVisible="{Binding Current, Converter={x:Static ObjectConverters.IsNotNull}}">
+          <TextBlock Text="{Binding Current.Status, FallbackValue=''}" Foreground="{StaticResource KMuted}" FontSize="12" />
+          <TextBlock Text="  · changed from vanilla" Foreground="{StaticResource KWarning}" FontSize="12" IsVisible="{Binding Current.DiffersFromVanilla, FallbackValue=False}" />
+        </StackPanel>
+        <TextBlock VerticalAlignment="Center" Classes="mono" Foreground="{StaticResource KMuted}" TextTrimming="CharacterEllipsis"
+                   Text="{Binding Current.Breadcrumb, FallbackValue='Kalo › Start'}" />
+      </DockPanel>
+    </Border>
+
+    <!-- The editor of the shown tab, the start page, or a hint -->
+    <Panel>
+      <views:TagEditorView DataContext="{Binding CurrentTag}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasTag}" />
+      <views:MapEditorView DataContext="{Binding CurrentMap}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasMap}" />
+      <views:ScriptEditorView DataContext="{Binding CurrentScript}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasScript}" />
+      <views:DiffView DataContext="{Binding CurrentDiff}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasDiff}" />
+      <views:StartPage DataContext="{Binding Main}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).ShowStart}" />
+      <StackPanel IsVisible="{Binding ShowEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6" MaxWidth="360">
+        <TextBlock Text="Second editor" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" />
+        <TextBlock TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource KMuted}" FontSize="12.5"
+                   Text="Drag a tab here, or right-click a tab › Move to the other side. Files you open while this side is focused open here." />
+      </StackPanel>
+    </Panel>
+  </DockPanel>
+</UserControl>
