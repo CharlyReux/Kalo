@@ -389,6 +389,14 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     /// <summary>The text the diagnostics belong to (the editor maps them onto the current text).</summary>
     public string DiagnosticsText { get; private set; } = "";
 
+    /// <summary>HREK's compiler messages in plain words where they are cryptic (the original follows).</summary>
+    private static string Friendly(string message)
+    {
+        if (message.Contains("'less_than', 'greater_than'") && !message.Contains("'equal_to'"))
+            return "A timer can only be compared with < or > (or tested with timer_expired). " + message;
+        return message;
+    }
+
     /// <summary>
     /// Shows a check's messages (list, Problems, underlines). Nothing is redrawn when they did not change. While typing,
     /// a new error waits for a longer pause first, so half-written lines don't flash red. False when dropped (text changed).
@@ -470,9 +478,9 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                     // Point at the Kalo Script line the Megalo line came from.
                     int line = kalo.SourceLine(m.Line);
                     string where = m.Line > 0 && line == 0 ? $" (generated Megalo line {m.Line})" : "";
-                    fresh.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", (m.Message ?? "") + where, m.Token));
+                    fresh.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", Friendly(m.Message ?? "") + where, m.Token));
                 }
-                else fresh.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", m.Message ?? "", m.Token));
+                else fresh.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", Friendly(m.Message ?? ""), m.Token));
             }
             if (!await ApplyMessagesAsync(fresh, text, live, Stale)) return;
             Stats.Clear();

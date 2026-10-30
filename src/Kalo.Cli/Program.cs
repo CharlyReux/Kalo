@@ -77,6 +77,24 @@ switch (command)
     case "sound-wav":
         SoundWav(argsList.ElementAtOrDefault(1) ?? @"sound\dialog\multiplayer\capture_the_flag\flag_captured.sound");
         break;
+    case "kscript-show":
+    {
+        // kscript-show <file> <from> <to>: the Kalo Script lines and the Megalo they turn into (for diagnosing compiler messages).
+        string file = argsList[1];
+        int from = int.Parse(argsList.ElementAtOrDefault(2) ?? "1"), to = int.Parse(argsList.ElementAtOrDefault(3) ?? "99999");
+        string text = File.ReadAllText(file);
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        for (int n = from; n <= Math.Min(to, lines.Length); n++) Console.WriteLine($"{n,5}| {lines[n - 1]}");
+        var r = KaloScript.Transpile(text);
+        Console.WriteLine(r.Succeeded ? "--- Megalo:" : "--- errors: " + string.Join("; ", r.Errors));
+        var megalo = r.Megalo.Replace("\r\n", "\n").Split('\n');
+        for (int m = 1; m <= megalo.Length; m++)
+        {
+            int src = r.SourceLine(m);
+            if (src >= from && src <= to) Console.WriteLine($"{src,5}> {megalo[m - 1]}");
+        }
+        break;
+    }
     case "kscript-check":
     {
         // Transpile Kalo Script files and list their errors (no compiler needed).

@@ -258,6 +258,7 @@ internal sealed partial class Transpiler
     public TranspileResult Run()
     {
         _t = Lexer.Run(_source, _errors);
+        ScanTypes();
         var body = new List<(string, int)>();
         // Top level: declarations collected, triggers and raw blocks written in order.
         while (Peek.Kind != T.End)
@@ -495,11 +496,35 @@ internal sealed partial class Transpiler
             catch (ParseError e)
             {
                 _errors.Add(new ScriptError(e.At.Line, e.At.Col, e.Message));
-                // Skip the rest of that line.
-                int line = e.At.Line;
-                while (Peek.Kind != T.End && Peek.Line == line && !Peek.Is("end")) Next();
+                var first = _t[before];
+                if (first.Is("if") || first.Is("for") || first.Is("do") || first.Is("inline"))
+                {
+                    // A block whose header failed: skip it to its own end, so its body and end aren't
+                    // read as the rest of the enclosing block (no knock-on errors further down).
+                    _p = before;
+                    SkipBlock();
+                }
+                else
+                {
+                    // Skip the rest of that line.
+                    int line = e.At.Line;
+                    while (Peek.Kind != T.End && Peek.Line == line && !Peek.Is("end")) Next();
+                }
             }
             if (_p == before) Next();
+        }
+    }
+
+    /// <summary>Skips a block statement (if / for each / do / inline) up to and including its matching end.</summary>
+    private void SkipBlock()
+    {
+        int depth = 0;
+        while (Peek.Kind != T.End)
+        {
+            var t = Next();
+            bool opens = t.Is("if") || t.Is("do") || (t.Is("inline") && Peek.Line > t.Line);
+            if (opens) depth++;
+            else if (t.Is("end") && --depth <= 0) return;
         }
     }
 
@@ -775,6 +800,49 @@ internal sealed partial class Transpiler
         }
     }
 
+    /// <summary>Declared variable names → type (number, timer, object, player, team), from declare and temp anywhere in the script.</summary>
+    private readonly Dictionary<string, string> _types = new(StringComparer.Ordinal);
+
+    private void ScanTypes()
+    {
+        for (int k = 0; k + 2 < _t.Count; k++)
+        {
+            if (_t[k].Is("declare"))
+            {
+                int j = k + 1;
+                while (j < _t.Count && _t[j].Kind == T.Word && (_t[j].Text.StartsWith("networked", StringComparison.Ordinal) || _t[j].Text == "local")) j++;
+                if (j + 3 < _t.Count && _t[j + 1].Is(".") && _t[j + 2].Kind == T.Word && _t[j + 3].Kind == T.Word) _types[_t[j + 3].Text] = _t[j + 2].Text;
+            }
+            else if (_t[k].Is("temp") && _t[k + 1].Kind == T.Word && Types.Contains(_t[k + 1].Text) && _t[k + 2].Kind == T.Word)
+                _types[_t[k + 2].Text] = _t[k + 1].Text;
+        }
+    }
+
+    /// <summary>The declared type of a value written in the script (x, current_player.x), or null.</summary>
+    private string? TypeOf(string value)
+    {
+        string last = value[(value.LastIndexOf('.') + 1)..];
+        return _types.TryGetValue(last, out var type) ? type : null;
+    }
+
+    /// <summary>A declared name close to this one (one or two letters different), for "did you mean".</summary>
+    private string? SimilarName(string name, string type)
+    {
+        static int Distance(string a, string b)
+        {
+            var d = new int[a.Length + 1, b.Length + 1];
+            for (int i = 0; i <= a.Length; i++) d[i, 0] = i;
+            for (int j = 0; j <= b.Length; j++) d[0, j] = j;
+            for (int i = 1; i <= a.Length; i++)
+                for (int j = 1; j <= b.Length; j++)
+                    d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+            return d[a.Length, b.Length];
+        }
+        string last = name[(name.LastIndexOf('.') + 1)..];
+        return _types.Where(kv => kv.Value == type && kv.Key != last).Select(kv => (kv.Key, D: Distance(kv.Key, last)))
+            .Where(x => x.D <= 2).OrderBy(x => x.D).Select(x => x.Key).FirstOrDefault();
+    }
+
     private string Condition()
     {
         var t = Peek;
@@ -799,6 +867,15 @@ internal sealed partial class Transpiler
         }
         Next();
         string right = Atom();
+        // Megalo compares timers only with < and > (the compiler's message for == is hard to read).
+        if (op.Text is "==" or "!=" or "<=" or ">=")
+            foreach (string side in new[] { left, right })
+                if (TypeOf(side) == "timer")
+                {
+                    string? other = SimilarName(side, "number");
+                    throw new ParseError(op, $"{side} is a timer: a timer can only be compared with < or > (e.g. {side} < 5), or tested with timer_expired({side})."
+                        + (other != null ? $" Did you mean the number {other}?" : ""));
+                }
         return $"if {left} {op.Text} {right}";
     }
 

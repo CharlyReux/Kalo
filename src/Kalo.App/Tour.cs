@@ -718,6 +718,13 @@ public sealed class Tour
         Check(doc.CompileOk && doc.GeneratedMegalo.Contains("condition if killer.streak == 5 or"),
             "an if with parentheses compiles: " + doc.CompileSummary);
 
+        // A timer compared with == : a clear message, with the number that was probably meant.
+        doc.Text = "declare global.number placing_time = 0\ndeclare global.timer placing_timer = 30\ndo\n  if placing_timer == 1 then\n    placing_time = 0\n  end\nend\n";
+        await doc.CompileCommand.ExecuteAsync(null);
+        var timerError = doc.Messages.FirstOrDefault();
+        Check(!doc.CompileOk && doc.Messages.Count == 1 && timerError?.Line == 4 && timerError.Message.Contains("Did you mean the number placing_time"),
+            $"comparing a timer with == explains it ({timerError?.Line}: {timerError?.Message})");
+
         doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
         await doc.CompileCommand.ExecuteAsync(null);
         var first = doc.Messages.FirstOrDefault();
