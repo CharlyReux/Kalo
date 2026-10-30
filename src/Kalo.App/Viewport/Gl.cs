@@ -189,7 +189,7 @@ internal sealed unsafe class Gl
         return t;
     }
     public void DeleteTexture(uint t) { if (t != 0) _deleteTextures(1, &t); }
-    public void BindTexture(uint t) { _activeTexture(TEXTURE0); _bindTexture(TEXTURE_2D, t); }
+    public void BindTexture(uint t, int unit = 0) { _activeTexture(TEXTURE0 + unit); _bindTexture(TEXTURE_2D, t); }
     public void UniformInt(int loc, int v) => _uniform1i(loc, v);
 
     public int Uniform(uint program, string name)

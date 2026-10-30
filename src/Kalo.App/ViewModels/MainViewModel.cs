@@ -656,6 +656,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             IsSwitching = false;
             RefreshProjects();
+            RefreshPrefabs();
             await RefreshChangesAsync();
         }
     }
@@ -712,6 +713,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         OnPropertyChanged(nameof(IsOutput));
         OnPropertyChanged(nameof(IsProblems));
+        OnPropertyChanged(nameof(IsObjects));
+        OnPropertyChanged(nameof(IsPrefabs));
     }
 
     partial void OnActiveDocumentChanged(DocumentViewModel? oldValue, DocumentViewModel? newValue)

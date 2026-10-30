@@ -46,15 +46,28 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   References: select one and pick a tag of an allowed type in the inspector, or open the referenced tag.
 - Maps: double-click a .scenario (or search for one). The map view shows the level (read from the
   structure_bsp tags, cached in .kalo\cache\geometry) and every object placement with its model (or a box).
-  Shading, top right of the view (Z cycles, Shift+Z wireframe): Wireframe (edges only, see-through), Solid
-  (blockout shading with a 1-unit floor grid) or Textured (each shader's color map, decoded once by the Blam Host
-  into .kalo\cache\textures; glass, decals and lights blended like in the game). "Edges" overlays triangle edges.
-  Right-drag looks around, WASD/QE fly (Shift faster), click selects, drag moves (Shift: up/down, Ctrl: snap
-  to 0.25), R turns 15°, Ctrl+D duplicates, Delete removes, F frames, Home frames the play space. The selected
-  object shows handles: drag an arrow to move along that axis, drag the ring to turn it. Ctrl+click adds objects
-  to the selection (Ctrl+A selects everything listed); moves, turns, duplicate and delete apply to the whole
-  selection. Drag any object tag (weapon, vehicle, scenery, crate...) from the project tree or the search results
-  onto the map to place it. The inspector edits exact position and rotation and adds objects from the palettes.
+  Shading, top right of the view (Z cycles, Shift+Z wireframe; W on AZERTY): Wireframe, Solid, or Textured
+  (each shader's color map with its tiling, terrain layers blended by their blend map, water tinted, glass,
+  decals and lights blended like in the game). "Edges" overlays triangle edges.
+  Right-drag looks around, WASD/QE fly (ZQSD/AE on AZERTY; Shift faster), click selects, drag moves (Shift: up/down,
+  Ctrl: snap to 0.25), R turns 15°, Ctrl+C / Ctrl+X / Ctrl+V copy, cut and paste, Ctrl+D duplicates, Delete
+  removes, F frames, Home frames the play space. Every key can be changed in Settings (gear, top right).
+  New objects (Add, paste, prefabs, the Objects tab) go on the surface in front of the camera.
+- Object list (left of the map): the map's Sapien editor folders, then the objects in no folder grouped by kind.
+  Green = new, amber = changed compared with the map it came from (Reach's own file, or the level a new map was
+  copied from). Double-click goes to the object. Right-click: copy, cut, paste, duplicate, delete, new folder
+  (the selection goes in it), move to folder, rename/delete folder, create prefab.
+- Inspector: position, rotation, scale and every other property of the selected object (flags, team, variant,
+  colors...), each edited directly in the map.
+- Block tools (left edge of the map view): Floor, Block, Wall, Ramp, Stairs, Column, Bridge, Cover place Forge
+  pieces in front of the camera (snapped to a half-unit grid). Paint: pick any of ~230 Reach level materials;
+  Kalo saves a painted copy of each piece in your mod (levels\mods\<mod>\blocks\...) and swaps the object to it.
+  Blocks are objects, so they are instant and playable; baking them into real level geometry comes later.
+- Objects tab (bottom, next to Output): every placeable object by category (Forge blocks, weapons, vehicles,
+  spawning...), searchable, with a 3D preview you can turn. Double-click, Add to map, or drag it onto the map.
+- Prefabs tab: groups of objects saved with the mod (projects\<mod>\prefabs). Place one in front of the camera.
+- New map: Barebone (a platform with 4 spawn points on HREK's open test floor, made a multiplayer map),
+  Empty Reach level (spawns only) or Remix (full copy).
 - Gametypes (third icon on the left): the Megalo scripts from data\multiplayer\megalo. F7 compiles with
   HREK's own compiler: errors with line numbers, the gametype budget, declared variables, and a searchable list
   of every action and condition with its description (double-click inserts it). Autocomplete pops up after

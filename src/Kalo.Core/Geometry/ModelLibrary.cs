@@ -10,7 +10,7 @@ public sealed class ModelLibrary
 
     public ModelLibrary(KaloPaths paths) => _paths = paths;
 
-    public string Folder => Path.Combine(_paths.KaloData, "cache", "models-v5"); // v5: + texcoords, materials (tiling, blend mode), rigid node transforms
+    public string Folder => Path.Combine(_paths.KaloData, "cache", "models-v9"); // v9: shader tiling; v8: animated tiling; v7: default tiling; v6: + texcoords, materials (tiling, blend mode), rigid node transforms
 
     public Mesh? Get(string? renderModel) => renderModel != null && _meshes.TryGetValue(renderModel, out var m) ? m : null;
 

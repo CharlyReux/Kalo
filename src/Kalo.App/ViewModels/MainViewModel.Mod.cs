@@ -239,9 +239,14 @@ public partial class MainViewModel
     [ObservableProperty] private bool _isNewMapOpen;
     [ObservableProperty] private string _newMapName = "";
     [ObservableProperty] private string? _newMapBase;
-    [ObservableProperty] private bool _newMapEmpty = true;
-    public bool NewMapFull { get => !NewMapEmpty; set => NewMapEmpty = !value; }
-    partial void OnNewMapEmptyChanged(bool value) => OnPropertyChanged(nameof(NewMapFull));
+    /// <summary>New map starting point: "barebone" (a platform and spawns), "empty" (a Reach level, spawns only) or "full".</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NewMapEmpty), nameof(NewMapFull), nameof(NewMapBarebone), nameof(NeedsBaseLevel))]
+    private string _newMapKind = "barebone";
+    public bool NewMapBarebone { get => NewMapKind == "barebone"; set { if (value) NewMapKind = "barebone"; } }
+    public bool NewMapEmpty { get => NewMapKind == "empty"; set { if (value) NewMapKind = "empty"; } }
+    public bool NewMapFull { get => NewMapKind == "full"; set { if (value) NewMapKind = "full"; } }
+    public bool NeedsBaseLevel => NewMapKind != "barebone";
 
     /// <summary>Reach multiplayer levels a new map can start from.</summary>
     public IEnumerable<string> BaseLevels => Scenarios.Where(s => s.StartsWith(@"levels\multi\", StringComparison.OrdinalIgnoreCase));
@@ -261,11 +266,16 @@ public partial class MainViewModel
     [RelayCommand]
     private async Task CreateMap()
     {
-        var map = await CreateMapAsync(NewMapName, NewMapBase, NewMapEmpty);
+        var map = NewMapBarebone
+            ? await CreateMapAsync(NewMapName, BareboneMap.Template[..^".scenario".Length], empty: true, barebone: true)
+            : await CreateMapAsync(NewMapName, NewMapBase, NewMapEmpty);
         if (map != null) { IsNewMapOpen = false; NewMapName = ""; }
     }
 
     private string ModSlug => Slug(ModProjects?.ActiveName ?? "my_mod");
+    /// <summary>Folder name of the active mod under levels\mods (for tags Kalo creates for it).</summary>
+    public string ModSlugForContent => ModSlug;
+    public void RefreshChangesAfterEdit() => _ = RefreshChangesAsync();
 
     public static string Slug(string name)
     {
@@ -277,7 +287,7 @@ public partial class MainViewModel
     }
 
     /// <summary>A new map in levels\mods\&lt;mod&gt;\&lt;map&gt;, from a Reach level (empty: spawns only; or a full copy).</summary>
-    public async Task<MapEditorViewModel?> CreateMapAsync(string name, string? baseScenario, bool empty)
+    public async Task<MapEditorViewModel?> CreateMapAsync(string name, string? baseScenario, bool empty, bool barebone = false)
     {
         if (Host == null || Paths == null) return null;
         if (string.IsNullOrWhiteSpace(name) || baseScenario == null) { AddProblem("warning", "Give the map a name and pick a level to start from.", "New map"); return null; }
@@ -289,8 +299,11 @@ public partial class MainViewModel
         try
         {
             int mapId = 7000 + (int)((uint)path.GetHashCode() % 2000);
-            var r = await Host.CreateMapAsync(new CreateMapParams { Template = baseScenario + ".scenario", NewPath = path, Empty = empty, MapId = mapId });
-            Log(empty
+            var r = await Host.CreateMapAsync(new CreateMapParams { Template = baseScenario + ".scenario", NewPath = path, Empty = empty, MapId = mapId, Barebone = barebone });
+            ModProjects.UpdateActive(m => m.MapTemplates[path] = baseScenario + ".scenario");
+            Log(barebone
+                ? $"New map {path}: a platform with {r.Kept} spawn points under an open sky."
+                : empty
                 ? $"New map {path} on the {System.IO.Path.GetFileName(baseScenario)} level: {r.Removed} objects removed, {r.Kept} spawn points kept."
                 : $"New map {path}: a full copy of {System.IO.Path.GetFileName(baseScenario)}.");
             string scenario = path[..^".scenario".Length];

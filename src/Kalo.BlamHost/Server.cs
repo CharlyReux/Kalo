@@ -115,6 +115,17 @@ namespace Kalo.BlamHost
                     return scenarios.Set(Params<SetPlacementParams>(r));
                 case Methods.PlacementOp:
                     return scenarios.Op(Params<PlacementOpParams>(r));
+                case Methods.ObjectInfo:
+                    return scenarios.ObjectInfo(Params<TagListParams>(r));
+                case Methods.ShaderInfo:
+                    return LevelMeshService.ShaderInfo(Params<TagListParams>(r));
+                case Methods.MakeVariant:
+                    return scenarios.MakeVariant(Params<MakeVariantParams>(r));
+                case Methods.PlacementStatus:
+                    return scenarios.Status(Params<PlacementStatusParams>(r));
+                case Methods.ReadElement:
+                    var el = Params<ReadElementParams>(r);
+                    return tags.ReadElement(el.Path, el.Block, el.Index);
                 case Methods.ExportLevelMesh:
                     var mesh = Params<ExportLevelMeshParams>(r);
                     return LevelMeshService.Export(tags, mesh.Scenario, mesh.OutputFile);

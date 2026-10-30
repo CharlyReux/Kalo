@@ -14,7 +14,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         // Tags can be dragged from the project tree and the search results (onto the map view).
-        foreach (var source in new Control[] { ExplorerTree, SearchList })
+        foreach (var source in new Control[] { ExplorerTree, SearchList, ObjectList })
         {
             source.AddHandler(PointerPressedEvent, DragSource_Pressed, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
             source.AddHandler(PointerMovedEvent, DragSource_Moved, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
@@ -38,6 +38,7 @@ public partial class MainWindow : Window
         {
             ExplorerNode { IsFolder: false, TagPath: { } t } => t,
             SearchResult r => r.TagPath,
+            ObjectEntry o => o.Tag,
             _ => null,
         };
         if (_dragTag != null && e.GetCurrentPoint(this).Properties.IsLeftButtonPressed) _dragStart = e.GetPosition(this);
@@ -95,6 +96,18 @@ public partial class MainWindow : Window
             await Vm.ActiveTab.PickReferenceCommand.ExecuteAsync(tag);
     }
 
+    private async void Settings_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Dialogs.ShowSettingsAsync(this);
+
+    private async void ObjectList_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (Vm != null && ObjectList.SelectedItem is ObjectEntry) await Vm.AddSelectedObjectCommand.ExecuteAsync(null);
+    }
+
+    private async void Prefab_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (Vm?.SelectedPrefab != null) await Vm.PlacePrefabCommand.ExecuteAsync(Vm.SelectedPrefab);
+    }
+
     protected override void OnKeyDown(KeyEventArgs e)
     {
         base.OnKeyDown(e);
@@ -112,7 +125,7 @@ public partial class MainWindow : Window
         var args = AppArgs.Current;
         if ((!string.IsNullOrEmpty(args.SelfTest) || !string.IsNullOrEmpty(args.Tour)) && Vm != null)
         {
-            int code = args.ModPlay ? await new Tour(this, Vm, args).ModPlayAsync() : args.MegaloPlay ? await new Tour(this, Vm, args).MegaloPlayAsync() : args.MapPlay ? await new Tour(this, Vm, args).MapPlayAsync() : !string.IsNullOrEmpty(args.Tour) ? await new Tour(this, Vm, args).RunAsync() : await new SelfTest(this, Vm, args).RunAsync();
+            int code = args.BarebonePlay ? await new Tour(this, Vm, args).BarebonePlayAsync() : args.ModPlay ? await new Tour(this, Vm, args).ModPlayAsync() : args.MegaloPlay ? await new Tour(this, Vm, args).MegaloPlayAsync() : args.MapPlay ? await new Tour(this, Vm, args).MapPlayAsync() : !string.IsNullOrEmpty(args.Tour) ? await new Tour(this, Vm, args).RunAsync() : await new SelfTest(this, Vm, args).RunAsync();
             if (Avalonia.Application.Current?.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime life)
                 life.Shutdown(code);
             return;

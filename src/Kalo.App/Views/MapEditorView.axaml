@@ -33,28 +33,140 @@
       <StackPanel Orientation="Horizontal" Spacing="14" Margin="10,0" VerticalAlignment="Center">
         <TextBlock Text="{Binding GeometryStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
         <TextBlock Text="{Binding RendererStatus}" FontSize="11.5" Foreground="{StaticResource KFaint}" />
-        <TextBlock Text="Right-drag look · WASD/QE fly (Shift faster) · click select · drag move (Shift up/down, Ctrl snap) · R turn · Ctrl+D duplicate · Del delete · F frame · Z shading"
-                   FontSize="11.5" Foreground="{StaticResource KFaint}" />
+        <TextBlock Text="{Binding ChangesText}" FontSize="11.5" Foreground="{StaticResource KWarning}" />
+        <TextBlock Text="{Binding KeyHint}" FontSize="11.5" Foreground="{StaticResource KFaint}" />
       </StackPanel>
     </Border>
 
     <Grid ColumnDefinitions="250,4,*">
-      <!-- Outliner -->
+      <!-- Outliner: editor folders, then loose objects by kind. Colors: green new, amber changed. -->
       <DockPanel Grid.Column="0" Background="{StaticResource KPanel}">
-        <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Filter objects" Text="{Binding Filter}" />
-        <ListBox ItemsSource="{Binding OutlinerItems}" SelectedItem="{Binding Selected}" Background="Transparent">
-          <ListBox.ItemTemplate>
-            <DataTemplate DataType="vm:PlacementItem">
-              <StackPanel Spacing="0">
-                <TextBlock Text="{Binding Display}" FontSize="12.5" TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Detail}" FontSize="11" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" TextTrimming="CharacterEllipsis" />
-              </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+        <DockPanel DockPanel.Dock="Top" Margin="6,6,6,2">
+          <Button DockPanel.Dock="Right" Classes="tool" Padding="6,2" Click="NewFolder_Click" ToolTip.Tip="New folder (the selected objects go in it)">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE8F4;" />
+          </Button>
+          <TextBox Classes="compact" Watermark="Filter objects" Text="{Binding Filter}" Margin="0,0,4,0" />
+        </DockPanel>
+        <TreeView x:Name="Outliner" ItemsSource="{Binding OutlinerRoots}" SelectionMode="Multiple" Background="Transparent"
+                  SelectionChanged="Outliner_SelectionChanged" DoubleTapped="Outliner_DoubleTapped">
+          <TreeView.ItemTemplate>
+            <TreeDataTemplate DataType="vm:OutlinerNode" ItemsSource="{Binding Children}">
+              <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding Summary}" FontSize="11" Foreground="{Binding StateBrush, FallbackValue={StaticResource KFaint}, TargetNullValue={StaticResource KFaint}}"
+                           IsVisible="{Binding !IsItem}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Right" Text="{Binding StateText}" FontSize="11" Foreground="{Binding StateBrush}"
+                           IsVisible="{Binding IsItem}" Margin="6,0,0,0" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Left" FontFamily="{StaticResource KIcons}" Text="{Binding Icon}" FontSize="12" Margin="0,0,6,0"
+                           Foreground="{StaticResource KMuted}" IsVisible="{Binding !IsItem}" VerticalAlignment="Center" />
+                <StackPanel Spacing="0" VerticalAlignment="Center">
+                  <TextBlock Text="{Binding Name}" FontSize="12.5" TextTrimming="CharacterEllipsis"
+                             Foreground="{Binding StateBrush, TargetNullValue={StaticResource KText}, FallbackValue={StaticResource KText}}" />
+                  <TextBlock Text="{Binding Detail}" FontSize="10.5" Foreground="{StaticResource KFaint}" FontFamily="{StaticResource KMono}"
+                             TextTrimming="CharacterEllipsis" IsVisible="{Binding IsItem}" />
+                </StackPanel>
+              </DockPanel>
+            </TreeDataTemplate>
+          </TreeView.ItemTemplate>
+          <TreeView.Styles>
+            <Style Selector="TreeViewItem" x:DataType="vm:OutlinerNode">
+              <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+              <Setter Property="MinHeight" Value="22" />
+            </Style>
+          </TreeView.Styles>
+          <TreeView.ContextMenu>
+            <ContextMenu>
+              <MenuItem Header="Go to (double-click)" Click="GoTo_Click" />
+              <Separator />
+              <MenuItem Header="Copy" Command="{Binding CopySelectionCommand}" />
+              <MenuItem Header="Cut" Command="{Binding CutSelectionCommand}" />
+              <MenuItem Header="Paste in front of the camera" Command="{Binding PasteCommand}" />
+              <MenuItem Header="Duplicate" Command="{Binding DuplicateSelectedCommand}" />
+              <MenuItem Header="Delete" Command="{Binding DeleteSelectedCommand}" />
+              <Separator />
+              <MenuItem Header="New folder…" Click="NewFolder_Click" />
+              <MenuItem Header="Move to folder" ItemsSource="{Binding FolderChoices}">
+                <MenuItem.ItemContainerTheme>
+                  <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:FolderChoice">
+                    <Setter Property="Header" Value="{Binding Path}" />
+                    <Setter Property="Command" Value="{Binding $parent[UserControl].((vm:MapEditorViewModel)DataContext).MoveSelectionToFolderCommand}" />
+                    <Setter Property="CommandParameter" Value="{Binding Index}" />
+                  </ControlTheme>
+                </MenuItem.ItemContainerTheme>
+              </MenuItem>
+              <MenuItem Header="Rename folder…" Click="RenameFolder_Click" IsEnabled="{Binding HasSelectedFolder}" />
+              <MenuItem Header="Delete folder (keeps its objects)" Command="{Binding DeleteFolderCommand}" IsEnabled="{Binding HasSelectedFolder}" />
+              <Separator />
+              <MenuItem Header="Create prefab from selection…" Click="CreatePrefab_Click" />
+            </ContextMenu>
+          </TreeView.ContextMenu>
+        </TreeView>
       </DockPanel>
       <GridSplitter Grid.Column="1" Background="{StaticResource KBorder}" ResizeDirection="Columns" />
       <vp:MapViewport Grid.Column="2" x:Name="Viewport" />
+      <!-- Block tools, left edge of the view like Blender's toolbar: place Forge pieces, paint them. -->
+      <StackPanel Grid.Column="2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="8,8,0,0" Orientation="Horizontal" Spacing="6">
+        <Border Background="#CC232427" BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="6" Padding="3" VerticalAlignment="Top">
+          <StackPanel Spacing="2">
+            <ItemsControl ItemsSource="{Binding Tools}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:BlockTool">
+                  <Button Classes="block" Command="{Binding $parent[UserControl].((vm:MapEditorViewModel)DataContext).PlaceBlockCommand}" CommandParameter="{Binding}"
+                          ToolTip.Tip="{Binding Tip}" ToolTip.Placement="Right">
+                    <StackPanel Spacing="1">
+                      <TextBlock FontFamily="{StaticResource KIcons}" Text="{Binding Icon}" FontSize="15" HorizontalAlignment="Center" />
+                      <TextBlock Text="{Binding Name}" FontSize="9.5" HorizontalAlignment="Center" />
+                    </StackPanel>
+                  </Button>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <Border Height="1" Background="{StaticResource KBorder}" Margin="2,3" />
+            <ToggleButton Classes="block" IsChecked="{Binding IsPaintOpen, Mode=OneWay}" Command="{Binding TogglePaintCommand}"
+                          ToolTip.Tip="Paint the selected blocks with a material" ToolTip.Placement="Right">
+              <StackPanel Spacing="1">
+                <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE771;" FontSize="15" HorizontalAlignment="Center" />
+                <TextBlock Text="Paint" FontSize="9.5" HorizontalAlignment="Center" />
+              </StackPanel>
+            </ToggleButton>
+            <ToggleButton Classes="block" IsChecked="{Binding SnapToGrid}" ToolTip.Tip="Snap new blocks to a half-unit grid" ToolTip.Placement="Right">
+              <StackPanel Spacing="1">
+                <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE80A;" FontSize="15" HorizontalAlignment="Center" />
+                <TextBlock Text="Snap" FontSize="9.5" HorizontalAlignment="Center" />
+              </StackPanel>
+            </ToggleButton>
+          </StackPanel>
+        </Border>
+        <!-- Materials -->
+        <Border IsVisible="{Binding IsPaintOpen}" Background="#EE232427" BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="6"
+                Padding="8" Width="300" MaxHeight="460" VerticalAlignment="Top">
+          <DockPanel>
+            <TextBlock DockPanel.Dock="Top" Text="MATERIALS" Classes="header" Margin="0,0,0,2" />
+            <TextBlock DockPanel.Dock="Top" Text="Select blocks, then click a material. Kalo saves a painted copy of each piece in your mod."
+                       TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KMuted}" Margin="0,0,0,6" />
+            <ScrollViewer>
+              <ItemsControl ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).Materials}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <WrapPanel />
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="vm:MaterialChoice">
+                    <Button Classes="swatch" Command="{Binding $parent[UserControl].((vm:MapEditorViewModel)DataContext).PaintCommand}" CommandParameter="{Binding}"
+                            ToolTip.Tip="{Binding Shader}">
+                      <StackPanel Width="62" Spacing="2">
+                        <Image Source="{Binding Swatch}" Width="62" Height="62" Stretch="UniformToFill" />
+                        <TextBlock Text="{Binding Name}" FontSize="9.5" TextTrimming="CharacterEllipsis" Foreground="{StaticResource KMuted}" />
+                      </StackPanel>
+                    </Button>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
+      </StackPanel>
+
       <!-- Viewport shading, top right like Blender's header: Wireframe / Solid / Textured, plus an edge overlay. -->
       <StackPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,10,0" Spacing="4">
         <Border Background="#CC232427" BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="6" Padding="3"
@@ -78,6 +190,26 @@
   </DockPanel>
 
   <UserControl.Styles>
+    <Style Selector="Button.block, ToggleButton.block">
+      <Setter Property="Width" Value="52" />
+      <Setter Property="Height" Value="44" />
+      <Setter Property="Padding" Value="2" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{StaticResource KText}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="ToggleButton.block:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource KAccent}" />
+    </Style>
+    <Style Selector="Button.swatch">
+      <Setter Property="Padding" Value="2" />
+      <Setter Property="Margin" Value="0,0,4,4" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+    </Style>
     <Style Selector="Button.seg, ToggleButton.seg">
       <Setter Property="FontSize" Value="12" />
       <Setter Property="Padding" Value="9,3" />

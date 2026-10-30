@@ -109,6 +109,15 @@ public sealed class HostClient : IAsyncDisposable
         CallAsync<ScenarioPlacements>(Methods.GetPlacements, new TagPathParams { Path = scenario }, TimeSpan.FromMinutes(3));
     public Task<Placement> SetPlacementAsync(SetPlacementParams p) => CallAsync<Placement>(Methods.SetPlacement, p);
     public Task<PlacementOpResult> PlacementOpAsync(PlacementOpParams p) => CallAsync<PlacementOpResult>(Methods.PlacementOp, p);
+    public Task<PlacementStatusResult> PlacementStatusAsync(string path, string? baselineFile) =>
+        CallAsync<PlacementStatusResult>(Methods.PlacementStatus, new PlacementStatusParams { Path = path, BaselineFile = baselineFile }, TimeSpan.FromMinutes(2));
+    public Task<TagDocument> ReadElementAsync(string path, string block, int index) =>
+        CallAsync<TagDocument>(Methods.ReadElement, new ReadElementParams { Path = path, Block = block, Index = index });
+    public Task<ObjectInfoResult> ObjectInfoAsync(IEnumerable<string> tags) =>
+        CallAsync<ObjectInfoResult>(Methods.ObjectInfo, new TagListParams { Tags = tags.ToList() }, TimeSpan.FromMinutes(2));
+    public Task<ShaderInfoResult> ShaderInfoAsync(IEnumerable<string> shaders) =>
+        CallAsync<ShaderInfoResult>(Methods.ShaderInfo, new TagListParams { Tags = shaders.ToList() }, TimeSpan.FromMinutes(5));
+    public Task<MakeVariantResult> MakeVariantAsync(MakeVariantParams p) => CallAsync<MakeVariantResult>(Methods.MakeVariant, p, TimeSpan.FromMinutes(2));
     public Task<ExportLevelMeshResult> ExportLevelMeshAsync(string scenario, string outputFile) =>
         CallAsync<ExportLevelMeshResult>(Methods.ExportLevelMesh, new ExportLevelMeshParams { Scenario = scenario, OutputFile = outputFile }, TimeSpan.FromMinutes(10));
     public Task<DiffTagResult> DiffTagAsync(string path, string vanillaFile) =>

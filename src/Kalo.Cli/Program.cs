@@ -49,6 +49,9 @@ switch (command)
     case "level-mesh-test":
         await LevelMeshTest(argsList.ElementAtOrDefault(1) ?? @"levels\multi\20_sword_slayer\20_sword_slayer.scenario");
         break;
+    case "materials-report":
+        await MaterialsReport(argsList.ElementAtOrDefault(1) ?? @"levels\multi\forge_halo\forge_halo.scenario");
+        break;
     case "dump":
         await Dump(argsList.ElementAtOrDefault(1) ?? Weapon, int.Parse(argsList.ElementAtOrDefault(2) ?? "2"));
         break;
@@ -210,7 +213,42 @@ async Task LevelMeshTest(string scenario)
     var mesh = Kalo.Core.Geometry.Mesh.TryLoad(file);
     Check("mesh file loads", mesh != null && mesh.TriangleCount == r.Triangles);
     if (mesh != null) Console.WriteLine($"bounds {mesh.Min} .. {mesh.Max}");
+    if (argsList.Contains("--keep") && mesh != null)
+    {
+        string keep = Path.Combine(paths.KaloData, "cache", "geometry", Path.GetFileNameWithoutExtension(scenario) + ".probe.kmesh");
+        File.Copy(file, keep, true);
+        Console.WriteLine("kept " + keep);
+    }
     Check("level has triangles", r.Triangles > 1000);
+}
+
+// Every material of a level: triangles, blend mode, color map and whether that bitmap decodes (for the textured view).
+async Task MaterialsReport(string scenario)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+    string file = Path.Combine(paths.KaloData, "cache", "geometry", "report.kmesh");
+    var r = await host.ExportLevelMeshAsync(scenario, file);
+    Console.WriteLine($"{r.Triangles:N0} triangles in {r.Ms} ms. {r.Notes}");
+    var mesh = Kalo.Core.Geometry.Mesh.TryLoad(file);
+    Check("mesh loads", mesh != null);
+    if (mesh == null) return;
+    var textures = new Kalo.Core.Geometry.TextureLibrary(paths);
+    await textures.LoadAsync(host, mesh.Materials.SelectMany(m => m.Bitmaps()));
+    var tris = new int[mesh.Materials.Count + 1];
+    foreach (var g in mesh.Groups) tris[g.Material < 0 ? mesh.Materials.Count : g.Material] += g.Count / 3;
+    Console.WriteLine($"{"tris",8} {"blend",-14} {"at",-2} {"tex",-5} shader -> base map");
+    foreach (var (m, i) in mesh.Materials.Select((m, i) => (m, i)).OrderByDescending(x => tris[x.i]))
+    {
+        var img = textures.Get(m.BaseMap);
+        string tex = string.IsNullOrEmpty(m.BaseMap) ? "none" : img == null ? "FAIL" : $"{img.Width}";
+        Console.WriteLine($"{tris[i],8} {m.Blend,-14} {(m.AlphaTest ? "a" : ""),-2} {tex,-5} {m.Shader} -> {m.BaseMap} {(m.ScaleX != 1 || m.ScaleY != 1 ? $"x{m.ScaleX}/{m.ScaleY}" : "")}");
+        if (m.IsTerrain)
+            Console.WriteLine($"{"",8} terrain blend {m.BlendMap!.Bitmap} ({(textures.Get(m.BlendMap.Bitmap) != null ? "ok" : "FAIL")}): " +
+                string.Join(", ", m.Layers.Select((l, n) => l == null ? $"m{n} -" : $"m{n} {Path.GetFileNameWithoutExtension(l.Bitmap)} x{l.ScaleX}/{l.ScaleY} {(textures.Get(l.Bitmap) != null ? "ok" : "FAIL")}")));
+        if (m.Color.W > 0) Console.WriteLine($"{"",8} flat color {m.Color}");
+    }
+    Console.WriteLine($"{tris[^1],8} (no material)");
+    foreach (var e in textures.LastErrors.Take(20)) Console.WriteLine("  texture error: " + e);
 }
 
 async Task Dump(string tag, int elements)

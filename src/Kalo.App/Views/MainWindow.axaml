@@ -3,6 +3,8 @@
         xmlns:sys="using:System"
         xmlns:vm="using:Kalo.App.ViewModels"
         xmlns:views="using:Kalo.App.Views"
+        xmlns:vp="using:Kalo.App.Viewport"
+        xmlns:core="using:Kalo.Core"
         x:Class="Kalo.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Kalo"
@@ -59,6 +61,10 @@
           </Button>
           <Button Classes="tool" Command="{Binding StopGameCommand}" ToolTip.Tip="Stop the game (Shift+F5)">
             <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE71A;" Foreground="{StaticResource KError}" />
+          </Button>
+          <Border Width="1" Height="18" Background="{StaticResource KBorder}" Margin="4,0" />
+          <Button Classes="tool" Click="Settings_Click" ToolTip.Tip="Settings: keys (QWERTY / AZERTY)">
+            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE713;" />
           </Button>
         </StackPanel>
         <Border />
@@ -355,6 +361,10 @@
                     <TextBlock Text="{Binding WarningCount}" Foreground="{StaticResource KWarning}" />
                   </StackPanel>
                 </Button>
+                <Button Classes="tool" Content="Objects" Command="{Binding ShowObjectsCommand}" Classes.selected="{Binding IsObjects}"
+                        ToolTip.Tip="Every object you can place, with a 3D preview" />
+                <Button Classes="tool" Content="Prefabs" Command="{Binding ShowPrefabsCommand}" Classes.selected="{Binding IsPrefabs}"
+                        ToolTip.Tip="Groups of objects saved with your mod" />
               </StackPanel>
               <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Classes="tool" Content="Clear" Command="{Binding ClearOutputCommand}" Margin="0,0,6,0" />
             </DockPanel>
@@ -373,6 +383,70 @@
                 </Style>
               </ListBox.Styles>
             </ListBox>
+            <!-- Object browser: categories | objects | preview -->
+            <Grid ColumnDefinitions="190,*,300" IsVisible="{Binding IsObjects}">
+              <DockPanel Grid.Column="0" Background="{StaticResource KPanelAlt}">
+                <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Search all objects" Text="{Binding ObjectFilter}" />
+                <ListBox ItemsSource="{Binding ObjectCategories}" SelectedItem="{Binding SelectedObjectCategory}" Background="Transparent">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate DataType="vm:ObjectCategory">
+                      <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" Foreground="{StaticResource KFaint}" FontSize="11" />
+                        <TextBlock Text="{Binding Title}" FontSize="12.5" />
+                      </DockPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+              </DockPanel>
+              <ListBox x:Name="ObjectList" Grid.Column="1" ItemsSource="{Binding ObjectResults}" SelectedItem="{Binding SelectedObject}" Background="Transparent"
+                       DoubleTapped="ObjectList_DoubleTapped">
+                <ListBox.ItemTemplate>
+                  <DataTemplate DataType="vm:ObjectEntry">
+                    <DockPanel>
+                      <TextBlock DockPanel.Dock="Right" Text="{Binding Kind}" Foreground="{StaticResource KFaint}" FontSize="11" Margin="8,0,0,0" />
+                      <StackPanel>
+                        <TextBlock Text="{Binding Name}" FontSize="12.5" />
+                        <TextBlock Text="{Binding Folder}" FontSize="10.5" Foreground="{StaticResource KFaint}" Classes="mono" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DockPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+              <DockPanel Grid.Column="2" Background="{StaticResource KPanelAlt}">
+                <DockPanel DockPanel.Dock="Bottom" Margin="8,6">
+                  <Button DockPanel.Dock="Right" Classes="primary" Content="Add to map" Command="{Binding AddSelectedObjectCommand}" IsEnabled="{Binding HasMap}" />
+                  <TextBlock Text="{Binding PreviewStatus}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                </DockPanel>
+                <vp:ModelPreview />
+              </DockPanel>
+            </Grid>
+
+            <!-- Prefabs of the active mod -->
+            <DockPanel IsVisible="{Binding IsPrefabs}">
+              <Border DockPanel.Dock="Top" Padding="10,6">
+                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource KMuted}"
+                           Text="A prefab is a group of objects saved with your mod. In a map, select objects, right-click the object list, Create prefab. Then place it anywhere (in front of the camera)." />
+              </Border>
+              <ListBox ItemsSource="{Binding Prefabs}" SelectedItem="{Binding SelectedPrefab}" Background="Transparent" DoubleTapped="Prefab_DoubleTapped">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="core:Prefab">
+                    <DockPanel>
+                      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6">
+                        <Button Classes="outline" Content="Place" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).PlacePrefabCommand}" CommandParameter="{Binding}" />
+                        <Button Classes="tool" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).DeletePrefabCommand}" CommandParameter="{Binding}" ToolTip.Tip="Delete this prefab">
+                          <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE74D;" />
+                        </Button>
+                      </StackPanel>
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12.5" />
+                        <TextBlock Text="{Binding Summary}" FontSize="11" Foreground="{StaticResource KMuted}" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DockPanel>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </DockPanel>
+
             <ListBox ItemsSource="{Binding Problems}" IsVisible="{Binding IsProblems}" Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate DataType="vm:ProblemItem">
@@ -436,11 +510,44 @@
                     <Button Classes="outline" Content="Frame" Margin="0,0,6,6" Command="{Binding ActiveMap.FocusSelectedCommand, FallbackValue={x:Null}}" />
                     <Button Classes="outline" Content="Duplicate" Margin="0,0,6,6" Command="{Binding ActiveMap.DuplicateSelectedCommand, FallbackValue={x:Null}}" />
                     <Button Classes="outline" Content="Delete" Margin="0,0,6,6" Command="{Binding ActiveMap.DeleteSelectedCommand, FallbackValue={x:Null}}" />
+                    <Button Classes="outline" Content="Copy" Margin="0,0,6,6" Command="{Binding ActiveMap.CopySelectionCommand, FallbackValue={x:Null}}" />
                   </WrapPanel>
+                  <DockPanel>
+                    <TextBlock Text="Scale" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Width="46" />
+                    <Button DockPanel.Dock="Right" Classes="tool" Content="Set" Command="{Binding ActiveMap.SetScaleCommand, FallbackValue={x:Null}}"
+                            CommandParameter="{Binding #ScaleBox.Text}" />
+                    <TextBox x:Name="ScaleBox" Classes="compact mono" Text="{Binding ActiveMap.Selected.ScaleText, Mode=OneWay, FallbackValue=''}" Margin="0,0,4,0"
+                             ToolTip.Tip="Size multiplier (1 = normal). Press Set to apply it to every selected object." />
+                  </DockPanel>
+                  <!-- Every other property of this object, as saved in the map -->
+                  <StackPanel Spacing="4" IsVisible="{Binding ActiveMap.HasProperties, FallbackValue=False}">
+                    <TextBlock Text="PROPERTIES" Classes="header" Margin="0,8,0,0" />
+                    <ItemsControl ItemsSource="{Binding ActiveMap.Properties, FallbackValue={x:Null}}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="vm:PropertyRow">
+                          <StackPanel Spacing="1" Margin="0,2">
+                            <TextBlock Text="{Binding Label}" Classes="header" Margin="0,8,0,0" IsVisible="{Binding IsHeader}" />
+                            <Grid ColumnDefinitions="110,*" IsVisible="{Binding !IsHeader}">
+                              <TextBlock Text="{Binding Label}" FontSize="11.5" Foreground="{StaticResource KMuted}" TextTrimming="CharacterEllipsis"
+                                         VerticalAlignment="Center" ToolTip.Tip="{Binding Description}" />
+                              <TextBox Grid.Column="1" Classes="compact mono" IsVisible="{Binding IsText}"
+                                       Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                              <ComboBox Grid.Column="1" IsVisible="{Binding IsEnum}" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedOption}"
+                                        HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" />
+                            </Grid>
+                            <TextBlock Text="{Binding Error}" Foreground="{StaticResource KError}" FontSize="11" TextWrapping="Wrap"
+                                       IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
                 </StackPanel>
 
                 <TextBlock Text="ADD AN OBJECT" Classes="header" Margin="0,10,0,0" />
-                <TextBlock Text="Drag an object tag from the project tree or search onto the map, or click the level, pick a type here, then Add." Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock Text="Open the Objects tab (bottom) to browse every object with a preview, or use the block tools on the left of the map. New objects go on the surface in front of the camera." Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
+                <Button Classes="outline" Content="Browse objects…" HorizontalAlignment="Left" Command="{Binding ShowObjectsCommand}" />
+                <TextBlock Text="Or pick one already used in this map:" Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
                 <ComboBox ItemsSource="{Binding ActiveMap.PaletteChoices, FallbackValue={x:Null}}" SelectedItem="{Binding ActiveMap.SelectedPalette, FallbackValue={x:Null}}" HorizontalAlignment="Stretch" FontSize="12">
                   <ComboBox.ItemTemplate>
                     <DataTemplate DataType="vm:PaletteChoice">

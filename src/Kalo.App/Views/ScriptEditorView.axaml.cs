@@ -57,6 +57,8 @@ public partial class ScriptEditorView : UserControl
         var (start, items) = _vm.Complete(before, explicitRequest);
         if (items.Count == 0) return;
         _completion = new CompletionWindow(Editor.TextArea) { StartOffset = line.Offset + start, Width = 420 };
+        _completion.CompletionList.Background = Palette.Panel;
+        _completion.CompletionList.Foreground = Palette.Text;
         foreach (var item in items) _completion.CompletionList.CompletionData.Add(new MegaloCompletion(item));
         _completion.Closed += (_, _) => _completion = null;
         _completion.Show();
@@ -149,10 +151,34 @@ internal sealed class MegaloCompletion(CompletionItem item) : ICompletionData
 {
     public IImage? Image => null;
     public string Text => item.Text;
-    public object Content => item.Text + "   · " + item.Kind;
-    public object? Description => string.IsNullOrEmpty(item.Description) ? item.Kind : item.Text + " " + item.Description;
+    // Controls with explicit colors: the popup lives outside the window and does not inherit its text color.
+    public object Content => new StackPanel
+    {
+        Orientation = Avalonia.Layout.Orientation.Horizontal,
+        Spacing = 10,
+        Children =
+        {
+            new TextBlock { Text = item.Text, Foreground = Palette.Text, FontFamily = new FontFamily("Cascadia Mono, Consolas, monospace") },
+            new TextBlock { Text = item.Kind, Foreground = Palette.Muted, FontSize = 11, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center },
+        },
+    };
+    public object? Description => new TextBlock
+    {
+        Text = string.IsNullOrEmpty(item.Description) ? item.Kind : item.Text + " " + item.Description,
+        Foreground = Palette.Text,
+        TextWrapping = TextWrapping.Wrap,
+        MaxWidth = 420,
+    };
     public double Priority => item.Kind is "action" or "condition" ? 1 : 0;
 
     public void Complete(TextArea textArea, ISegment completionSegment, EventArgs insertionRequestEventArgs) =>
         textArea.Document.Replace(completionSegment, Text);
+}
+
+/// <summary>Kalo's palette for controls built in code (same values as App.axaml).</summary>
+internal static class Palette
+{
+    public static readonly IBrush Panel = new SolidColorBrush(Color.Parse("#2B2D30"));
+    public static readonly IBrush Text = new SolidColorBrush(Color.Parse("#DFE1E5"));
+    public static readonly IBrush Muted = new SolidColorBrush(Color.Parse("#9DA0A8"));
 }

@@ -22,22 +22,27 @@
           <StackPanel Spacing="6">
             <TextBlock Text="NEW MAP" Classes="header" />
             <TextBox Classes="compact" Watermark="Map name" Text="{Binding NewMapName}" />
-            <TextBlock Text="Level to build on" Foreground="{StaticResource KMuted}" FontSize="11.5" />
-            <ComboBox ItemsSource="{Binding BaseLevels}" SelectedItem="{Binding NewMapBase}" HorizontalAlignment="Stretch" FontSize="12">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="sys:String">
-                  <TextBlock Text="{Binding}" FontSize="12" TextTrimming="CharacterEllipsis" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+            <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapBarebone}" FontSize="12">
+              <TextBlock TextWrapping="Wrap" Text="Barebone: one platform with spawn points on an open floor. Build the rest with blocks." />
+            </RadioButton>
             <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapEmpty}" FontSize="12">
-              <TextBlock TextWrapping="Wrap" Text="Empty: the level with only its spawn points. You place everything." />
+              <TextBlock TextWrapping="Wrap" Text="Empty Reach level: a level with only its spawn points. You place everything." />
             </RadioButton>
             <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapFull}" FontSize="12">
-              <TextBlock TextWrapping="Wrap" Text="Remix: a full copy with all its objects, to change." />
+              <TextBlock TextWrapping="Wrap" Text="Remix: a full copy of a Reach level with all its objects, to change." />
             </RadioButton>
+            <StackPanel Spacing="4" IsVisible="{Binding NeedsBaseLevel}">
+              <TextBlock Text="Level to build on" Foreground="{StaticResource KMuted}" FontSize="11.5" />
+              <ComboBox ItemsSource="{Binding BaseLevels}" SelectedItem="{Binding NewMapBase}" HorizontalAlignment="Stretch" FontSize="12">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="sys:String">
+                    <TextBlock Text="{Binding}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+            </StackPanel>
             <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KFaint}"
-                       Text="Brand-new level geometry needs Blender (Foundry); that template will come with the Foundry bridge." />
+                       Text="Brand-new level geometry (baked from blocks, or made in Blender with Foundry) comes later." />
             <StackPanel Orientation="Horizontal" Spacing="6">
               <Button Classes="primary" Content="Create map" Command="{Binding CreateMapCommand}" />
               <Button Classes="tool" Content="Cancel" Command="{Binding CancelNewContentCommand}" />

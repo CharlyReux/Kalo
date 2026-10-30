@@ -48,7 +48,7 @@ public sealed class Mesh
         using (var w = new BinaryWriter(File.Create(tmp)))
         {
             w.Write(Magic);
-            w.Write(4);
+            w.Write(5);
             w.Write(Positions.Length);
             w.Write(Indices.Length);
             foreach (float f in Positions) w.Write(f);
@@ -65,9 +65,26 @@ public sealed class Mesh
                 w.Write(m.ScaleX); w.Write(m.ScaleY); w.Write(m.OffsetX); w.Write(m.OffsetY);
                 w.Write(m.Blend);
                 w.Write((byte)((m.AlphaTest ? 1 : 0) | (m.SelfIllum ? 2 : 0)));
+                w.Write(m.Color.X); w.Write(m.Color.Y); w.Write(m.Color.Z); w.Write(m.Color.W);
+                w.Write((byte)m.Layers.Count);
+                foreach (var l in m.Layers) WriteLayer(w, l);
+                WriteLayer(w, m.BlendMap);
             }
         }
         File.Move(tmp, path, true);
+    }
+
+    private static void WriteLayer(BinaryWriter w, TextureLayer? l)
+    {
+        w.Write(l?.Bitmap ?? "");
+        w.Write(l?.ScaleX ?? 1f); w.Write(l?.ScaleY ?? 1f); w.Write(l?.OffsetX ?? 0f); w.Write(l?.OffsetY ?? 0f);
+    }
+
+    private static TextureLayer? ReadLayer(BinaryReader r)
+    {
+        string bitmap = r.ReadString();
+        var l = new TextureLayer(bitmap, r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+        return bitmap.Length == 0 ? null : l;
     }
 
     public static Mesh? TryLoad(string path)
@@ -78,7 +95,7 @@ public sealed class Mesh
             using var r = new BinaryReader(File.OpenRead(path));
             if (r.ReadUInt32() != Magic) return null;
             int version = r.ReadInt32();
-            if (version is < 1 or > 4) return null;
+            if (version is < 1 or > 5) return null;
             var p = new float[r.ReadInt32()];
             var idx = new int[r.ReadInt32()];
             for (int i = 0; i < p.Length; i++) p[i] = r.ReadSingle();
@@ -98,6 +115,13 @@ public sealed class Mesh
                     string blend = r.ReadString();
                     byte flags = r.ReadByte();
                     m = m with { Blend = blend, AlphaTest = (flags & 1) != 0, SelfIllum = (flags & 2) != 0 };
+                }
+                if (version >= 5)
+                {
+                    var color = new System.Numerics.Vector4(r.ReadSingle(), r.ReadSingle(), r.ReadSingle(), r.ReadSingle());
+                    var layers = new TextureLayer?[r.ReadByte()];
+                    for (int l = 0; l < layers.Length; l++) layers[l] = ReadLayer(r);
+                    m = m with { Color = color, Layers = layers, BlendMap = ReadLayer(r) };
                 }
                 materials[i] = m;
             }
@@ -125,7 +149,24 @@ public sealed record MeshMaterial(string Shader, string BaseMap)
     public bool AlphaTest { get; init; }
     public bool SelfIllum { get; init; }
     public bool IsTranslucent => Blend is not ("opaque" or "");
+    /// <summary>Flat color for surfaces without a color map (water); W = 0 means none.</summary>
+    public System.Numerics.Vector4 Color { get; init; }
+    /// <summary>Terrain: up to 4 materials (null where unused) mixed by BlendMap's r, g, b, a.</summary>
+    public IReadOnlyList<TextureLayer?> Layers { get; init; } = Array.Empty<TextureLayer?>();
+    public TextureLayer? BlendMap { get; init; }
+    public bool IsTerrain => BlendMap != null && Layers.Any(l => l != null);
+
+    /// <summary>Every bitmap the textured view needs for this material.</summary>
+    public IEnumerable<string> Bitmaps()
+    {
+        if (!string.IsNullOrEmpty(BaseMap)) yield return BaseMap;
+        foreach (var l in Layers) if (l != null) yield return l.Bitmap;
+        if (BlendMap != null) yield return BlendMap.Bitmap;
+    }
 }
+
+/// <summary>A bitmap and its uv transform (uv * scale + offset).</summary>
+public sealed record TextureLayer(string Bitmap, float ScaleX, float ScaleY, float OffsetX, float OffsetY);
 
 /// <summary>
 /// Reads Wavefront OBJ as written by HREK's tool.exe (export-structure-mesh-obj / export-render-model-mesh).

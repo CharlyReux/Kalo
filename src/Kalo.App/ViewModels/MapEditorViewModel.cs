@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Numerics;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
@@ -22,10 +23,13 @@ public partial class MapEditorViewModel : DocumentViewModel
     {
         _main = main;
         Status = "Loading…";
+        AppSettings.Changed += () => OnPropertyChanged(nameof(KeyHint));
     }
 
     public override string Title => System.IO.Path.GetFileNameWithoutExtension(Path);
     public override string Badge => "map";
+    /// <summary>The help line under the view, from the current key settings.</summary>
+    public string KeyHint => AppSettings.Current.MapHint();
     /// <summary>Scenario path without extension, as reach_tag_test wants it.</summary>
     public string Scenario => Path[..^".scenario".Length];
 
@@ -38,6 +42,8 @@ public partial class MapEditorViewModel : DocumentViewModel
     public int GeometryVersion { get; private set; }
     /// <summary>Last point clicked on the level geometry (where "Add" puts new objects).</summary>
     public Vector3? CursorPoint { get; set; }
+    /// <summary>Set by the 3D view: where a new object should go (the surface in front of the camera).</summary>
+    public Func<Vector3>? PlacementPointProvider { get; set; }
 
     public event Action? SceneChanged;
     public event Action<Vector3, float>? FocusRequested;
@@ -132,7 +138,7 @@ public partial class MapEditorViewModel : DocumentViewModel
                 var meshes = new List<Mesh>();
                 if (Bsp != null) meshes.Add(Bsp);
                 meshes.AddRange(Items.Select(i => i.Model).OfType<Mesh>().Distinct());
-                var wanted = meshes.SelectMany(m => m.Materials).Select(m => m.BaseMap)
+                var wanted = meshes.SelectMany(m => m.Materials).SelectMany(m => m.Bitmaps())
                     .Where(b => !string.IsNullOrEmpty(b) && _texturesRequested.Add(b)).ToList();
                 if (wanted.Count == 0) continue;
                 TextureStatus = $"Loading {wanted.Count} textures…";
@@ -215,6 +221,23 @@ public partial class MapEditorViewModel : DocumentViewModel
         OnPropertyChanged(nameof(HasMultiSelection));
         OnPropertyChanged(nameof(SelectionText));
         SceneChanged?.Invoke();
+        _ = LoadPropertiesAsync();
+        if (!_syncingFromOutliner) OutlinerChanged?.Invoke();
+    }
+
+    private bool _syncingFromOutliner;
+
+    /// <summary>Replaces the selection (from the object list); the last object becomes the primary one.</summary>
+    public void SetSelection(IReadOnlyList<PlacementItem> items)
+    {
+        _syncingFromOutliner = true;
+        _keepSelection = true;
+        _selection.Clear();
+        _selection.AddRange(items);
+        Selected = items.LastOrDefault();
+        _keepSelection = false;
+        SelectionChanged();
+        _syncingFromOutliner = false;
     }
 
     /// <summary>Moves every selected object by the same offset from where it was when the drag started.</summary>
@@ -325,11 +348,13 @@ public partial class MapEditorViewModel : DocumentViewModel
                     if (!string.IsNullOrEmpty(c.Palette![i].Tag)) PaletteChoices.Add(new PaletteChoice(c.Name!, i, c.Palette[i].Tag!));
             }
             _ = keepCategory;
+            Folders = data.Folders ?? new();
             Selected = Items.FirstOrDefault(i => i.Category == selCat && i.Index == selIndex);
             Status = $"{Items.Count:N0} objects · {data.Bsps?.Count ?? 0} bsp · loaded in {data.Ms} ms";
             ApplyFilter();
             _ = LoadGeometryAsync(data.Bsps ?? new());
             _ = LoadModelsAsync(data);
+            _ = RefreshStatesAsync();
         }
         catch (Exception ex)
         {
@@ -417,6 +442,7 @@ public partial class MapEditorViewModel : DocumentViewModel
         OutlinerItems.Clear();
         foreach (var i in visible)
             if (words.All(w => i.SearchText.Contains(w, StringComparison.OrdinalIgnoreCase))) OutlinerItems.Add(i);
+        BuildOutliner();
         SceneChanged?.Invoke();
     }
 
@@ -442,6 +468,7 @@ public partial class MapEditorViewModel : DocumentViewModel
             item.Update(p);
             IsDirty = true;
             SceneChanged?.Invoke();
+            QueueStatusRefresh();
         }
         catch (HostException ex)
         {
@@ -480,12 +507,12 @@ public partial class MapEditorViewModel : DocumentViewModel
         Selected = null;
     }
 
-    /// <summary>Places the chosen palette object where the level was last clicked (or in front of the selection).</summary>
+    /// <summary>Places the chosen palette object on the surface in front of the camera.</summary>
     [RelayCommand]
     private async Task AddObject()
     {
         if (SelectedPalette == null) { Status = "Pick an object type first."; return; }
-        Vector3 at = CursorPoint ?? Selected?.Position ?? Bsp?.Center ?? Vector3.Zero;
+        Vector3 at = PlacementPointProvider?.Invoke() ?? CursorPoint ?? Selected?.Position ?? Bsp?.Center ?? Vector3.Zero;
         at += new Vector3(0, 0, 0.1f);
         await RunOpAsync(new PlacementOpParams { Path = Path, Category = SelectedPalette.Category, Op = PlacementOps.Add, Type = SelectedPalette.Index, Position = ToArray(at) }, SelectedPalette.Category);
     }
@@ -519,7 +546,9 @@ public partial class MapEditorViewModel : DocumentViewModel
         }
     }
 
-    private void ReplaceCategory(PlacementCategory c)
+    private void ReplaceCategory(PlacementCategory c) => ReplaceCategory(c, rebuild: true);
+
+    private void ReplaceCategory(PlacementCategory c, bool rebuild)
     {
         _categories[c.Name!] = c;
         int at = Items.ToList().FindIndex(i => i.Category == c.Name);
@@ -531,7 +560,8 @@ public partial class MapEditorViewModel : DocumentViewModel
             item.Model = _main.Models.Get(item.RenderModel);
             Items.Insert(at++, item);
         }
-        ApplyFilter();
+        if (rebuild) ApplyFilter();
+        QueueStatusRefresh();
     }
 
     [RelayCommand]
@@ -591,6 +621,7 @@ public partial class PlacementItem : ObservableObject
     /// <summary>The object's model, once loaded; the map view draws a box until then.</summary>
     public Kalo.Core.Geometry.Mesh? Model { get; set; }
     public float PlacedScale { get; private set; } = 1;
+    public string ScaleText => PlacedScale.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
     public string Name { get; }
     public string? PlacedName { get; private set; }
     public string? Label { get; private set; }
@@ -601,6 +632,18 @@ public partial class PlacementItem : ObservableObject
     public float Yaw { get; private set; }
     public float Pitch { get; private set; }
     public float Roll { get; private set; }
+    public int Folder { get; private set; } = -1;
+    public int UniqueId { get; private set; }
+
+    public static readonly IBrush NewBrush = new SolidColorBrush(Avalonia.Media.Color.Parse("#5FB865"));
+    public static readonly IBrush ChangedBrush = new SolidColorBrush(Avalonia.Media.Color.Parse("#E5A50A"));
+
+    /// <summary>Compared with the map it came from: PlacementStates.Same, Changed or New.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StateBrush), nameof(StateText))]
+    private int _state;
+    public IBrush? StateBrush => State == PlacementStates.New ? NewBrush : State == PlacementStates.Changed ? ChangedBrush : null;
+    public string StateText => State == PlacementStates.New ? "new" : State == PlacementStates.Changed ? "edited" : "";
 
     public PlacementItem(MapEditorViewModel map, PlacementCategory category, Placement p)
     {
@@ -629,11 +672,14 @@ public partial class PlacementItem : ObservableObject
         var r = p.Rotation ?? new float[3];
         Yaw = r.Length > 0 ? r[0] : 0; Pitch = r.Length > 1 ? r[1] : 0; Roll = r.Length > 2 ? r[2] : 0;
         PlacedScale = p.Scale > 0.001f ? p.Scale : 1f;
+        Folder = p.Folder;
+        UniqueId = p.UniqueId;
         X = Fmt(pos.X); Y = Fmt(pos.Y); Z = Fmt(pos.Z);
         YawText = Fmt(Yaw); PitchText = Fmt(Pitch); RollText = Fmt(Roll);
         _suppress = false;
         OnPropertyChanged(nameof(Display));
         OnPropertyChanged(nameof(Detail));
+        OnPropertyChanged(nameof(ScaleText));
     }
 
     public string Display => PlacedName is { Length: > 0 } ? $"{PlacedName} ({Name})" : Name;

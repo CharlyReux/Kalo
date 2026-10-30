@@ -14,7 +14,7 @@ namespace Kalo.BlamHost
     ///  - levels: each cluster's mesh plus every instanced geometry ("poop") with its transform;
     ///  - object models: the first permutation of each region.
     /// Positions and texcoords stored normalized inside a compression box are expanded. Each triangle keeps its
-    /// material (shader → base map bitmap) so the view can texture it. Written in Kalo's .kmesh format v4.
+    /// material (shader → base map bitmap) so the view can texture it. Written in Kalo's .kmesh format v5.
     /// </summary>
     internal static class LevelMeshService
     {
@@ -68,7 +68,7 @@ namespace Kalo.BlamHost
                 }
             }
 
-            /// <summary>Writes .kmesh v4: triangles grouped by material, with each material's shader, base map, uv scale/offset, blend mode and flags.</summary>
+            /// <summary>Writes .kmesh v5: triangles grouped by material, with each material's shader, base map, uv scale/offset, blend mode, flags, flat color and terrain layers.</summary>
             public void Write(string file, Func<string, BaseMap> baseMapOf)
             {
                 int triCount = Indices.Count / 3;
@@ -88,7 +88,7 @@ namespace Kalo.BlamHost
                 using (var w = new BinaryWriter(File.Create(tmp)))
                 {
                     w.Write(Magic);
-                    w.Write(4);
+                    w.Write(5);
                     w.Write(Positions.Count);
                     w.Write(sorted.Length);
                     foreach (float f in Positions) w.Write(f);
@@ -106,11 +106,22 @@ namespace Kalo.BlamHost
                         w.Write(b.ScaleX); w.Write(b.ScaleY); w.Write(b.OffsetX); w.Write(b.OffsetY);
                         w.Write(b.Blend ?? "opaque");
                         w.Write((byte)((b.AlphaTest ? 1 : 0) | (b.SelfIllum ? 2 : 0)));
+                        foreach (float c in b.Color) w.Write(c);
+                        w.Write((byte)b.Layers.Length);
+                        foreach (TexLayer l in b.Layers) WriteLayer(w, l);
+                        WriteLayer(w, b.BlendMap);
                     }
                 }
                 if (File.Exists(file)) File.Delete(file);
                 File.Move(tmp, file);
             }
+        }
+
+        private static void WriteLayer(BinaryWriter w, TexLayer l)
+        {
+            w.Write(l == null ? "" : l.Bitmap ?? "");
+            w.Write(l == null ? 1f : l.ScaleX); w.Write(l == null ? 1f : l.ScaleY);
+            w.Write(l == null ? 0f : l.OffsetX); w.Write(l == null ? 0f : l.OffsetY);
         }
 
         private sealed class RawMesh
@@ -124,28 +135,82 @@ namespace Kalo.BlamHost
 
         // ---- shaders → base map -----------------------------------------------------------------------
 
-        /// <summary>What the view needs from a shader: its color bitmap, that bitmap's uv transform, how it blends.</summary>
-        internal sealed class BaseMap
+        /// <summary>A bitmap and its uv transform (uv * scale + offset).</summary>
+        internal class TexLayer
         {
             public string Bitmap;
             public float ScaleX = 1, ScaleY = 1, OffsetX, OffsetY;
+
+            public void CopyTilingFrom(TexLayer o) { ScaleX = o.ScaleX; ScaleY = o.ScaleY; OffsetX = o.OffsetX; OffsetY = o.OffsetY; }
+        }
+
+        /// <summary>What the view needs from a shader: its color bitmap, that bitmap's uv transform, how it blends.</summary>
+        internal sealed class BaseMap : TexLayer
+        {
             /// <summary>The render method's blend_mode option: opaque, additive, multiply, alpha_blend, double_multiply, pre_multiplied_alpha.</summary>
             public string Blend = "opaque";
             public bool AlphaTest;
             public bool SelfIllum;
+            /// <summary>Terrain: up to 4 materials (base_map_m_0..3) mixed by BlendMap's r, g, b, a channels.</summary>
+            public TexLayer[] Layers = new TexLayer[0];
+            public TexLayer BlendMap;
+            /// <summary>Flat color (rgba) for surfaces without a color map, e.g. water. Alpha 0 = none.</summary>
+            public float[] Color = new float[4];
+            /// <summary>The option tags the shader uses (they hold each bitmap's default tiling).</summary>
+            public readonly List<string> OptionTags = new List<string>();
+
+            /// <summary>Default tiling of a bitmap parameter, from the shader's options (1 if none says).</summary>
+            public float DefaultScale(string parameter)
+            {
+                foreach (string option in OptionTags)
+                {
+                    float s;
+                    if (ScalesOf(option).TryGetValue(parameter, out s) && s > 0.0001f && s < 10000f) return s;
+                }
+                return 1f;
+            }
+        }
+
+        private static Dictionary<string, float> ScalesOf(string option)
+        {
+            Dictionary<string, float> scales;
+            if (OptionScales.TryGetValue(option, out scales)) return scales;
+            scales = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using (var tag = new TagFile(TagService.TagPathOf(option)))
+                {
+                    var ps = tag.SelectField("Block:parameters") as TagFieldBlock;
+                    for (int i = 0; ps != null && i < ps.Elements.Count; i++)
+                    {
+                        string name = TagService.ValueOf(tag.SelectField("Block:parameters[" + i + "]/StringId:parameter name")) ?? "";
+                        var scale = tag.SelectField("Block:parameters[" + i + "]/Real:default bitmap scale") as TagFieldElementSingle;
+                        if (name.Length > 0 && scale != null && !scales.ContainsKey(name)) scales[name] = scale.Data;
+                    }
+                }
+            }
+            catch (Exception) { }
+            OptionScales[option] = scales;
+            return scales;
         }
 
         private static readonly Dictionary<string, BaseMap> BaseMaps = new Dictionary<string, BaseMap>(StringComparer.OrdinalIgnoreCase);
         /// <summary>Per render method definition: category name → its option names.</summary>
         private static readonly Dictionary<string, List<KeyValuePair<string, string[]>>> Definitions =
             new Dictionary<string, List<KeyValuePair<string, string[]>>>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Per render method definition: each category's option tags (same order), plus its global options tag.</summary>
+        private static readonly Dictionary<string, List<string[]>> OptionTags = new Dictionary<string, List<string[]>>(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, string> GlobalOptions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Per option tag: bitmap parameter → its default bitmap scale (the tiling a shader gets unless it animates it).</summary>
+        private static readonly Dictionary<string, Dictionary<string, float>> OptionScales = new Dictionary<string, Dictionary<string, float>>(StringComparer.OrdinalIgnoreCase);
 
         private const string RenderMethod = "Struct:render_method[0]";
 
         /// <summary>
-        /// A shader's color map (base_map, or another base_map* / diffuse / color map; a parent shader's when the
-        /// shader only overrides other parameters) with its tiling, plus the blend mode and alpha test chosen in
-        /// its options (read through the render method definition, so it works for every shader type).
+        /// A shader's color map (base_map, or another base_map* / diffuse / color / detail map whose tag exists;
+        /// a parent shader's when the shader only overrides other parameters) with its tiling, plus the blend mode
+        /// and alpha test chosen in its options (read through the render method definition, so it works for every
+        /// shader type). Terrain shaders keep their 4 blended materials; water gets a flat sea color.
         /// </summary>
         private static BaseMap BaseMapOf(string shader)
         {
@@ -158,16 +223,23 @@ namespace Kalo.BlamHost
                 using (var tag = new TagFile(TagService.TagPathOf(shader)))
                 {
                     ReadOptions(tag, found);
+                    string ext = Path.GetExtension(shader).ToLowerInvariant();
+                    if (ext == ".shader_water")
+                    {
+                        found.Blend = "alpha_blend";
+                        found.Color = new[] { 0.10f, 0.27f, 0.34f, 0.72f };
+                    }
+                    if (ext == ".shader_terrain") ReadTerrain(tag, found);
                     string parent = TagService.ValueOf(tag.SelectField(RenderMethod + "/Reference:reference"));
-                    if (!FindColorMap(tag, found) && !string.IsNullOrEmpty(parent) && !string.Equals(parent, shader, StringComparison.OrdinalIgnoreCase))
+                    if (!FindColorMap(tag, found) && found.Layers.Length == 0 && !string.IsNullOrEmpty(parent)
+                        && !string.Equals(parent, shader, StringComparison.OrdinalIgnoreCase))
                     {
                         BaseMaps[shader] = found; // guards against reference loops
                         BaseMap inherited = BaseMapOf(parent);
                         if (inherited != null && inherited.Bitmap != null)
                         {
                             found.Bitmap = inherited.Bitmap;
-                            found.ScaleX = inherited.ScaleX; found.ScaleY = inherited.ScaleY;
-                            found.OffsetX = inherited.OffsetX; found.OffsetY = inherited.OffsetY;
+                            found.CopyTilingFrom(inherited);
                         }
                     }
                 }
@@ -177,24 +249,82 @@ namespace Kalo.BlamHost
             return found;
         }
 
-        private static bool IsColorMap(string name) =>
-            name == "base_map" || name.StartsWith("base_map") || name == "diffuse_map" || name == "color_map" || name == "albedo_map";
-
-        private static bool FindColorMap(TagFile tag, BaseMap map)
+        /// <summary>Parameter name → (index, bitmap) for every bitmap parameter whose tag exists.</summary>
+        private static Dictionary<string, KeyValuePair<int, string>> BitmapParameters(TagFile tag, out TagFieldBlock block)
         {
             const string ps = RenderMethod + "/Block:parameters";
-            var block = tag.SelectField(ps) as TagFieldBlock;
-            int pick = -1, rank = int.MaxValue;
+            block = tag.SelectField(ps) as TagFieldBlock;
+            var result = new Dictionary<string, KeyValuePair<int, string>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; block != null && i < block.Elements.Count; i++)
             {
                 string name = (TagService.ValueOf(tag.SelectField(ps + "[" + i + "]/StringId:parameter name")) ?? "").ToLowerInvariant();
                 string bitmap = TagService.ValueOf(tag.SelectField(ps + "[" + i + "]/Reference:bitmap"));
-                if (string.IsNullOrEmpty(bitmap) || !IsColorMap(name)) continue;
-                int r = name == "base_map" ? 0 : name.StartsWith("base_map") ? 1 : 2;
-                if (r < rank) { rank = r; pick = i; }
+                if (!string.IsNullOrEmpty(bitmap) && !result.ContainsKey(name) && TagService.TagExists(bitmap))
+                    result[name] = new KeyValuePair<int, string>(i, bitmap);
+            }
+            return result;
+        }
+
+        private static void ReadTerrain(TagFile tag, BaseMap map)
+        {
+            TagFieldBlock block;
+            var maps = BitmapParameters(tag, out block);
+            KeyValuePair<int, string> blend;
+            if (!maps.TryGetValue("blend_map", out blend)) return;
+            var layers = new TexLayer[4];
+            bool any = false;
+            for (int m = 0; m < 4; m++)
+            {
+                KeyValuePair<int, string> p;
+                if (!maps.TryGetValue("base_map_m_" + m, out p)) continue;
+                float d = map.DefaultScale("base_map_m_" + m);
+                layers[m] = new TexLayer { Bitmap = p.Value, ScaleX = d, ScaleY = d };
+                ReadTiling(block.Elements[p.Key], layers[m]);
+                any = true;
+            }
+            if (!any) return;
+            map.Layers = layers;
+            float bd = map.DefaultScale("blend_map");
+            map.BlendMap = new TexLayer { Bitmap = blend.Value, ScaleX = bd, ScaleY = bd };
+            ReadTiling(block.Elements[blend.Key], map.BlendMap);
+        }
+
+        public static ShaderInfoResult ShaderInfo(TagListParams p) => new ShaderInfoResult
+        {
+            Shaders = (p.Tags ?? new List<string>()).Select(sh =>
+            {
+                BaseMap b = BaseMapOf(sh);
+                string bitmap = b == null ? null : b.Bitmap ?? (b.Layers.FirstOrDefault(l => l != null) ?? new TexLayer()).Bitmap;
+                return new ShaderInfo { Shader = sh, BaseMap = bitmap ?? "" };
+            }).ToList()
+        };
+
+        /// <summary>Rank of a parameter as the surface color: 0 base_map ... 3 detail map; -1 not a color map.</summary>
+        private static int ColorRank(string name)
+        {
+            if (name == "base_map") return 0;
+            if (name.StartsWith("base_map")) return 1;
+            if (name == "diffuse_map" || name == "color_map" || name == "albedo_map") return 2;
+            if (name.StartsWith("detail_map") && !name.Contains("bump")) return 3;
+            return -1;
+        }
+
+        private static bool FindColorMap(TagFile tag, BaseMap map)
+        {
+            TagFieldBlock block;
+            var maps = BitmapParameters(tag, out block);
+            int pick = -1, rank = int.MaxValue;
+            string bitmap = null;
+            foreach (var kv in maps)
+            {
+                int r = ColorRank(kv.Key);
+                if (r < 0 || r >= rank) continue;
+                rank = r; pick = kv.Value.Key; bitmap = kv.Value.Value;
             }
             if (pick < 0) return false;
-            map.Bitmap = TagService.ValueOf(tag.SelectField(ps + "[" + pick + "]/Reference:bitmap"));
+            map.Bitmap = bitmap;
+            string pickedName = maps.First(kv => kv.Value.Key == pick).Key;
+            map.ScaleX = map.ScaleY = map.DefaultScale(pickedName);
             ReadTiling(block.Elements[pick], map);
             return true;
         }
@@ -206,9 +336,14 @@ namespace Kalo.BlamHost
             var categories = CategoriesOf(definition);
             var options = tag.SelectField(RenderMethod + "/Block:options") as TagFieldBlock;
             if (categories == null || options == null) return;
+            List<string[]> refs;
+            OptionTags.TryGetValue(definition, out refs);
+            string global;
+            if (GlobalOptions.TryGetValue(definition, out global) && !string.IsNullOrEmpty(global)) map.OptionTags.Add(global);
             for (int c = 0; c < categories.Count && c < options.Elements.Count; c++)
             {
                 int index = Int(options.Elements[c].Fields[0]);
+                if (refs != null && c < refs.Count && index >= 0 && index < refs[c].Length && !string.IsNullOrEmpty(refs[c][index])) map.OptionTags.Add(refs[c][index]);
                 string[] names = categories[c].Value;
                 string option = index >= 0 && index < names.Length ? names[index] : (names.Length > 0 ? names[0] : "");
                 switch (categories[c].Key)
@@ -231,16 +366,24 @@ namespace Kalo.BlamHost
                 using (var tag = new TagFile(TagService.TagPathOf(definition)))
                 {
                     list = new List<KeyValuePair<string, string[]>>();
+                    var refs = new List<string[]>();
+                    GlobalOptions[definition] = TagService.ValueOf(tag.SelectField("Reference:global options"));
                     var cats = tag.SelectField("Block:categories") as TagFieldBlock;
                     for (int i = 0; cats != null && i < cats.Elements.Count; i++)
                     {
                         string name = TagService.ValueOf(tag.SelectField("Block:categories[" + i + "]/StringId:category name")) ?? "";
                         var opts = tag.SelectField("Block:categories[" + i + "]/Block:options") as TagFieldBlock;
                         var names = new string[opts == null ? 0 : opts.Elements.Count];
+                        var optionRefs = new string[names.Length];
                         for (int j = 0; j < names.Length; j++)
+                        {
                             names[j] = TagService.ValueOf(tag.SelectField("Block:categories[" + i + "]/Block:options[" + j + "]/StringId:option name")) ?? "";
+                            optionRefs[j] = TagService.ValueOf(tag.SelectField("Block:categories[" + i + "]/Block:options[" + j + "]/Reference:option"));
+                        }
                         list.Add(new KeyValuePair<string, string[]>(name, names));
+                        refs.Add(optionRefs);
                     }
+                    OptionTags[definition] = refs;
                 }
             }
             catch (Exception) { list = null; }
@@ -252,43 +395,110 @@ namespace Kalo.BlamHost
         /// A bitmap parameter's "animated parameters" hold its uv transform (scale uniform / scale x / scale y /
         /// translation x / translation y), each a function; the value at time 0 is what the level shows.
         /// </summary>
-        private static void ReadTiling(TagElement parameter, BaseMap map)
+        /// <summary>A few raw animated parameters seen while reading tiling (for diagnostics in the export notes).</summary>
+        internal static readonly List<string> TilingNotes = new List<string>();
+
+        private static readonly string[] AnimatedTypes = { "value", "color", "scale uniform", "scale x", "scale y", "translation x", "translation y", "frame index", "alpha" };
+
+        private static void ReadTiling(TagElement parameter, TexLayer map)
         {
             var animated = parameter.Fields.FirstOrDefault(f => f.FieldName == "animated parameters") as TagFieldBlock;
             if (animated == null) return;
             foreach (TagElement e in animated.Elements)
             {
-                string type = null;
+                int type = -1;
                 float? value = null;
+                string source = null;
                 foreach (TagField f in Flatten(e.Fields, 3))
                 {
-                    var en = f as TagFieldEnum;
-                    if (en != null && type == null && en.FieldName == "type")
+                    if (f.FieldName == "type" && type < 0)
                     {
-                        try { type = en.Items[en.Value].EnumName; } catch (Exception) { }
+                        var en = f as TagFieldEnum;
+                        if (en != null) type = en.Value;
+                        else
+                        {
+                            int parsed;
+                            if (int.TryParse((TagService.ValueOf(f) ?? "").Split(' ')[0], out parsed)) type = parsed;
+                        }
                     }
                     var fn = f as TagFieldCustomFunctionEditor;
                     if (fn != null && value == null)
                     {
-                        try { value = fn.Value.Evaluate(0f, 0f); } catch (Exception) { }
+                        value = FunctionValue(fn, out source);
+                    }
+                    var data = f as TagFieldData;
+                    if (data != null && value == null)
+                    {
+                        value = FunctionValue(data);
+                        source = "data";
+                        if (TilingNotes.Count < 6)
+                            try
+                            {
+                                byte[] raw = data.GetData();
+                                TilingNotes.Add(type + " = " + (value.HasValue ? value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null") + " [" +
+                                    (raw == null ? "" : BitConverter.ToString(raw, 0, Math.Min(raw.Length, 24))) + "]");
+                            }
+                            catch (Exception) { }
                     }
                 }
-                if (type == null || value == null || float.IsNaN(value.Value) || float.IsInfinity(value.Value)) continue;
-                string t = type.Replace("_", " ").ToLowerInvariant();
+                if (TilingNotes.Count < 6 && source != "data")
+                    TilingNotes.Add(type + " = " + (value.HasValue ? value.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "null") + " (" + (source ?? "no value") + ")");
+                if (type < 0 || type >= AnimatedTypes.Length || value == null || float.IsNaN(value.Value) || float.IsInfinity(value.Value)) continue;
+                string t = AnimatedTypes[type];
                 float v = value.Value;
-                if (t.Contains("scale"))
+                if (t.StartsWith("scale"))
                 {
                     if (Math.Abs(v) < 1e-4f || Math.Abs(v) > 1e4f) continue;
-                    if (t.Contains("uniform")) { map.ScaleX = v; map.ScaleY = v; }
-                    else if (t.EndsWith(" x")) map.ScaleX = v;
-                    else if (t.EndsWith(" y")) map.ScaleY = v;
+                    if (t == "scale uniform") { map.ScaleX = v; map.ScaleY = v; }
+                    else if (t == "scale x") map.ScaleX = v;
+                    else map.ScaleY = v;
                 }
-                else if (t.Contains("translation") || t.Contains("offset"))
-                {
-                    if (t.EndsWith(" x")) map.OffsetX = v;
-                    else if (t.EndsWith(" y")) map.OffsetY = v;
-                }
+                else if (t == "translation x") map.OffsetX = v;
+                else if (t == "translation y") map.OffsetY = v;
             }
+        }
+
+        /// <summary>
+        /// A mapping function's value at rest. The serialized function starts with its type byte and flags, then the
+        /// minimum (and maximum) as floats at offsets 4 and 8; a constant or an unranged function outputs the minimum.
+        /// </summary>
+        /// <summary>
+        /// Value of a function editor at rest. Shader animated parameters are "basic" constant functions whose value
+        /// ManagedBlam reports as the clamp range minimum (Evaluate gives 0 for them); others are evaluated.
+        /// </summary>
+        private static float? FunctionValue(TagFieldCustomFunctionEditor fn, out string source)
+        {
+            source = "function";
+            try
+            {
+                var value = fn.Value;
+                float e = value.Evaluate(0f, 1f);
+                if (Math.Abs(e) > 1e-4f) { source = "eval"; return e; }
+                float clamp = value.ClampRangeMin;
+                if (Math.Abs(clamp) > 1e-4f) { source = "constant"; return clamp; }
+                float amp = value.GetAmplitudeMin(0);
+                if (Math.Abs(amp) > 1e-4f) { source = "amplitude"; return amp; }
+            }
+            catch (Exception ex)
+            {
+                if (FunctionNotes.Count < 4) FunctionNotes.Add(ex.GetType().Name + ": " + ex.Message);
+            }
+            return null;
+        }
+
+        internal static readonly List<string> FunctionNotes = new List<string>();
+
+        private static float? FunctionValue(TagFieldData data)
+        {
+            try
+            {
+                byte[] b = data.GetData();
+                if (b == null || b.Length < 8) return null;
+                float v = BitConverter.ToSingle(b, 4);
+                if (float.IsNaN(v) || float.IsInfinity(v)) return null;
+                return v;
+            }
+            catch (Exception) { return null; }
         }
 
         private static IEnumerable<TagField> Flatten(IEnumerable<TagField> fields, int depth)
@@ -347,6 +557,8 @@ namespace Kalo.BlamHost
             result.Triangles = sink.Indices.Count / 3;
             result.Ms = sw.ElapsedMilliseconds;
             notes.Add(sink.Shaders.Count + " materials");
+            if (TilingNotes.Count > 0) notes.Add("tiling samples: " + string.Join(" | ", TilingNotes.Take(6)));
+            if (FunctionNotes.Count > 0) notes.Add("functions: " + string.Join(" | ", FunctionNotes));
             result.Notes = string.Join("; ", notes);
             return result;
         }

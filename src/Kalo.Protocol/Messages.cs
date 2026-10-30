@@ -42,6 +42,11 @@ namespace Kalo.Protocol
         public const string DiffTag = "diffTag";
         public const string CreateMap = "createMap";
         public const string ExportTextures = "exportTextures";
+        public const string ReadElement = "readElement";
+        public const string PlacementStatus = "placementStatus";
+        public const string ObjectInfo = "objectInfo";
+        public const string ShaderInfo = "shaderInfo";
+        public const string MakeVariant = "makeVariant";
         public const string MegaloCompile = "megaloCompile";
         public const string Shutdown = "shutdown";
     }
@@ -267,6 +272,18 @@ namespace Kalo.Protocol
         public float[] Rotation { get; set; }
         public float Scale { get; set; }
         public string Label { get; set; }
+        /// <summary>The object id's unique id (stable across edits; used to compare with vanilla).</summary>
+        public int UniqueId { get; set; }
+        /// <summary>Editor folder index (Sapien's folders), -1 for none.</summary>
+        public int Folder { get; set; } = -1;
+    }
+
+    /// <summary>A Sapien editor folder of the scenario (objects point at one).</summary>
+    public sealed class EditorFolder
+    {
+        public int Index { get; set; }
+        public int Parent { get; set; } = -1;
+        public string Name { get; set; }
     }
 
     public sealed class PlacementCategory
@@ -283,6 +300,7 @@ namespace Kalo.Protocol
         public List<string> Bsps { get; set; }
         public List<PlacementCategory> Categories { get; set; }
         public List<Placement> SpawnPoints { get; set; }
+        public List<EditorFolder> Folders { get; set; }
         public long Ms { get; set; }
     }
 
@@ -293,6 +311,7 @@ namespace Kalo.Protocol
         public int Index { get; set; }
         public float[] Position { get; set; }
         public float[] Rotation { get; set; }
+        public float? Scale { get; set; }
     }
 
     public static class PlacementOps
@@ -303,6 +322,15 @@ namespace Kalo.Protocol
         public const string Remove = "remove";
         /// <summary>Adds Tag to the category's palette (if missing) and returns its index in SelectIndex.</summary>
         public const string AddPalette = "addPalette";
+        /// <summary>Makes placement Index use palette entry Type (another object, e.g. a repainted block).</summary>
+        public const string SetType = "setType";
+        /// <summary>Puts placement Index in editor folder Folder (-1: none).</summary>
+        public const string SetFolder = "setFolder";
+        /// <summary>New editor folder named Tag under Folder (-1: top level); SelectIndex is the new folder.</summary>
+        public const string AddFolder = "addFolder";
+        public const string RenameFolder = "renameFolder";
+        /// <summary>Removes folder Folder; its objects and subfolders move to its parent.</summary>
+        public const string DeleteFolder = "deleteFolder";
     }
 
     public sealed class PlacementOpParams
@@ -314,12 +342,93 @@ namespace Kalo.Protocol
         public int Type { get; set; }
         public string Tag { get; set; }
         public float[] Position { get; set; }
+        public int Folder { get; set; } = -1;
     }
 
     public sealed class PlacementOpResult
     {
         public PlacementCategory Category { get; set; }
         public int SelectIndex { get; set; }
+        /// <summary>Set by folder operations: every folder after the change.</summary>
+        public List<EditorFolder> Folders { get; set; }
+        /// <summary>Set by folder operations that move objects: every category after the change.</summary>
+        public List<PlacementCategory> Categories { get; set; }
+    }
+
+    // ---- object library and materials -------------------------------------------------------------
+
+    public sealed class TagListParams
+    {
+        public List<string> Tags { get; set; }
+    }
+
+    public sealed class ObjectInfoResult
+    {
+        public List<PaletteEntry> Objects { get; set; }
+    }
+
+    public sealed class ShaderInfo
+    {
+        public string Shader { get; set; }
+        /// <summary>The color map shown as the material's preview (empty if none).</summary>
+        public string BaseMap { get; set; }
+    }
+
+    public sealed class ShaderInfoResult
+    {
+        public List<ShaderInfo> Shaders { get; set; }
+    }
+
+    /// <summary>
+    /// A copy of an object (crate, scenery...) with every material of its render model replaced by Shader:
+    /// object, model and render model are saved next to each other under NewObject's folder.
+    /// </summary>
+    public sealed class MakeVariantParams
+    {
+        public string Object { get; set; }
+        public string Shader { get; set; }
+        /// <summary>Path of the new object tag, with the same extension as Object.</summary>
+        public string NewObject { get; set; }
+    }
+
+    public sealed class MakeVariantResult
+    {
+        public string Object { get; set; }
+        public string RenderModel { get; set; }
+        public int Materials { get; set; }
+    }
+
+    // ---- one block element (object properties) ------------------------------------------------
+
+    public sealed class ReadElementParams
+    {
+        public string Path { get; set; }
+        /// <summary>Block name, e.g. scenery.</summary>
+        public string Block { get; set; }
+        public int Index { get; set; }
+    }
+
+    // ---- placements compared with the map they came from -------------------------------------
+
+    public sealed class PlacementStatusParams
+    {
+        public string Path { get; set; }
+        /// <summary>The scenario file to compare with (vanilla, or the template a new map was copied from).</summary>
+        public string BaselineFile { get; set; }
+    }
+
+    public static class PlacementStates
+    {
+        public const int Same = 0, Changed = 1, New = 2;
+    }
+
+    public sealed class PlacementStatusResult
+    {
+        /// <summary>Per category, one state per placement index (see PlacementStates).</summary>
+        public Dictionary<string, List<int>> States { get; set; }
+        /// <summary>Baseline objects no longer in the map.</summary>
+        public int Removed { get; set; }
+        public long Ms { get; set; }
     }
 
     // ---- level geometry ---------------------------------------------------------------------
@@ -414,6 +523,19 @@ namespace Kalo.Protocol
         /// <summary>Remove every object except respawn points (an empty map on the template's level).</summary>
         public bool Empty { get; set; }
         public int MapId { get; set; }
+        /// <summary>
+        /// Barebone: the template is a small test level (not a multiplayer map); make it a multiplayer scenario and
+        /// add one platform with spawn points on it.
+        /// </summary>
+        public bool Barebone { get; set; }
+    }
+
+    public static class BareboneMap
+    {
+        /// <summary>A 58 x 58 unit floor under the sky, shipped with HREK as a test level.</summary>
+        public const string Template = @"levels\test\box\box.scenario";
+        public const string Platform = @"objects\levels\forge\ff_plat_4x4_flat\ff_plat_4x4_flat.crate";
+        public const string RespawnPoint = @"objects\multi\spawning\respawn_point.scenery";
     }
 
     public sealed class CreateMapResult

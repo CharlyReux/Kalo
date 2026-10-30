@@ -18,11 +18,18 @@ namespace Kalo.BlamHost
         private static readonly HashSet<string> Hidden = new HashSet<string> { "Pad", "UselessPad", "Skip", "Terminator", "Custom" };
 
         private readonly string _tagRoot;
+        /// <summary>The tag root of the running service, for static helpers that need to check files.</summary>
+        internal static string Root { get; private set; }
+
+        /// <summary>True when the tag file exists under the tag root (shaders sometimes reference bitmaps HREK does not ship).</summary>
+        internal static bool TagExists(string path) =>
+            !string.IsNullOrEmpty(path) && (Root == null || File.Exists(Path.Combine(Root, Normalize(path))));
         private readonly Dictionary<string, TagFile> _open = new Dictionary<string, TagFile>(StringComparer.OrdinalIgnoreCase);
 
         public TagService(string tagRoot)
         {
             _tagRoot = tagRoot.TrimEnd('\\');
+            Root = _tagRoot;
         }
 
         public TagDocument Open(string path, int maxElements = MaxElementsPerBlock)
@@ -41,6 +48,32 @@ namespace Kalo.BlamHost
                 Fields = Build(tag.Fields, 0, ref count, maxElements),
                 FieldCount = count,
                 LoadMs = ms
+            };
+        }
+
+        /// <summary>Forgets a tag this service has open (before it is overwritten on disk).</summary>
+        internal void CloseIfOpen(string path)
+        {
+            path = Normalize(path);
+            if (_open.ContainsKey(path)) Close(path);
+        }
+
+        /// <summary>The fields of one block element (an object's properties), with full field paths for setField.</summary>
+        public TagDocument ReadElement(string path, string block, int index)
+        {
+            path = Normalize(path);
+            var sw = Stopwatch.StartNew();
+            TagFile tag = GetOrOpen(path);
+            var b = tag.SelectField("Block:" + block) as TagFieldBlock;
+            if (b == null || index < 0 || index >= b.Elements.Count) throw new ArgumentOutOfRangeException("index", "No element " + index + " in " + block);
+            int count = 0;
+            return new TagDocument
+            {
+                Path = path,
+                Group = Path.GetExtension(path).TrimStart('.'),
+                Fields = Build(b.Elements[index].Fields, 0, ref count, 32),
+                FieldCount = count,
+                LoadMs = sw.ElapsedMilliseconds
             };
         }
 

@@ -65,6 +65,17 @@ uniform vec4 uUvXform;
 uniform sampler2D uTex;
 uniform float uBlend;      // textured: 0 opaque, 1 alpha blend, 2 additive, 3 multiply
 uniform float uAlphaTest;
+// Terrain: uTex is the blend map; its r, g, b, a weigh the 4 material layers.
+uniform float uTerrain;
+uniform sampler2D uL0;
+uniform sampler2D uL1;
+uniform sampler2D uL2;
+uniform sampler2D uL3;
+uniform vec4 uLX0;
+uniform vec4 uLX1;
+uniform vec4 uLX2;
+uniform vec4 uLX3;
+uniform vec4 uLayerOn;
 out vec4 fragColor;
 
 float edge() {
@@ -100,6 +111,18 @@ void main() {
         c *= 1.0 - line;
     } else {
         vec4 t = uHasTex > 0.5 ? texture(uTex, vUv * uUvXform.xy + uUvXform.zw) : uColor;
+        if (uTerrain > 0.5) {
+            vec4 w = (uHasTex > 0.5 ? t : vec4(1.0)) * uLayerOn;
+            float sum = dot(w, vec4(1.0));
+            if (sum < 0.001) { w = uLayerOn; sum = dot(w, vec4(1.0)); }
+            w /= max(sum, 0.001);
+            vec3 mixed = vec3(0.0);
+            if (w.x > 0.0) mixed += w.x * texture(uL0, vUv * uLX0.xy + uLX0.zw).rgb;
+            if (w.y > 0.0) mixed += w.y * texture(uL1, vUv * uLX1.xy + uLX1.zw).rgb;
+            if (w.z > 0.0) mixed += w.z * texture(uL2, vUv * uLX2.xy + uLX2.zw).rgb;
+            if (w.w > 0.0) mixed += w.w * texture(uL3, vUv * uLX3.xy + uLX3.zw).rgb;
+            t = vec4(mixed, 1.0);
+        }
         if (uAlphaTest > 0.5 && t.a < 0.5) discard;
         vec3 albedo = mix(t.rgb, uColor.rgb, uTint);
         if (uBlend > 1.5) {
@@ -120,7 +143,8 @@ void main() {
     private Gl? _gl;
     private string? _glError;
     private uint _program;
-    private int _uViewProj, _uModel, _uColor, _uEye, _uLit, _uMode, _uWire, _uHasTex, _uTint, _uUvXform, _uTex, _uBlend, _uAlphaTest;
+    private int _uViewProj, _uModel, _uColor, _uEye, _uLit, _uMode, _uWire, _uHasTex, _uTint, _uUvXform, _uTex, _uBlend, _uAlphaTest, _uTerrain, _uLayerOn;
+    private readonly int[] _uLayer = new int[4], _uLayerXform = new int[4];
     private GpuMesh? _bsp;
     private int _bspVersion = -1;
     private uint _cubeVao, _cubeVbo, _edgeVao, _edgeVbo;
@@ -177,7 +201,8 @@ void main() {
         string? tag = e.Data.GetText();
         if (map == null || tag == null) return;
         var (o, d) = Ray(e.GetPosition(this));
-        Vector3 at = HitGeometry(o, d) ?? o + d * 6f;
+        Vector3? hit = HitScene(o, d);
+        Vector3 at = hit is { } h && Vector3.Distance(h, o) < 60f ? h : o + d * 6f;
         await map.AddTagAtAsync(tag.Trim(), at + new Vector3(0, 0, 0.05f));
         RequestNextFrameRendering();
     }
@@ -195,6 +220,7 @@ void main() {
             _subscribed.FrameAllRequested -= OnFrameAll;
             _subscribed.CameraRequested -= OnCameraRequested;
             _subscribed.CaptureRequested -= OnCaptureRequested;
+            _subscribed.PlacementPointProvider = null;
         }
         _subscribed = Map;
         if (_subscribed != null)
@@ -204,6 +230,7 @@ void main() {
             _subscribed.FrameAllRequested += OnFrameAll;
             _subscribed.CameraRequested += OnCameraRequested;
             _subscribed.CaptureRequested += OnCaptureRequested;
+            _subscribed.PlacementPointProvider = PlacementPoint;
             _cameraPlaced = false;
         }
         RequestNextFrameRendering();
@@ -288,6 +315,13 @@ void main() {
             _uTex = _gl.Uniform(_program, "uTex");
             _uBlend = _gl.Uniform(_program, "uBlend");
             _uAlphaTest = _gl.Uniform(_program, "uAlphaTest");
+            _uTerrain = _gl.Uniform(_program, "uTerrain");
+            _uLayerOn = _gl.Uniform(_program, "uLayerOn");
+            for (int l = 0; l < 4; l++)
+            {
+                _uLayer[l] = _gl.Uniform(_program, "uL" + l);
+                _uLayerXform[l] = _gl.Uniform(_program, "uLX" + l);
+            }
             (_cubeVao, _cubeVbo) = Upload(Shapes.CubeTriangles());
             (_edgeVao, _edgeVbo) = Upload(Shapes.CubeEdges());
             (_gizmoVao, _gizmoVbo) = Upload(Shapes.Gizmo(RingSegments));
@@ -425,15 +459,49 @@ void main() {
             var mat = g.Material >= 0 && g.Material < materials.Count ? materials[g.Material] : null;
             bool translucent = mat?.IsTranslucent == true;
             if (translucent != translucentPass) continue;
-            uint tex = mat != null && !string.IsNullOrEmpty(mat.BaseMap) ? TextureFor(map, mat.BaseMap) : 0;
-            if (tex != 0)
+            uint tex = 0;
+            bool terrain = false;
+            if (mat != null && mat.IsTerrain)
             {
-                gl.BindTexture(tex);
-                gl.Uniform4(_uUvXform, mat!.ScaleX, mat.ScaleY, mat.OffsetX, mat.OffsetY);
-                gl.Uniform1(_uHasTex, 1f);
+                // Blend map on unit 0, the 4 materials on units 1..4.
+                var on = new float[4];
+                for (int l = 0; l < 4; l++)
+                {
+                    var layer = l < mat.Layers.Count ? mat.Layers[l] : null;
+                    uint lt = layer != null ? TextureFor(map, layer.Bitmap) : 0;
+                    if (lt == 0) continue;
+                    on[l] = 1f;
+                    gl.BindTexture(lt, 1 + l);
+                    gl.Uniform4(_uLayerXform[l], layer!.ScaleX, layer.ScaleY, layer.OffsetX, layer.OffsetY);
+                }
+                if (on.Any(v => v > 0))
+                {
+                    terrain = true;
+                    tex = TextureFor(map, mat.BlendMap!.Bitmap);
+                    gl.Uniform4(_uLayerOn, on[0], on[1], on[2], on[3]);
+                    if (tex != 0)
+                    {
+                        gl.BindTexture(tex, 0);
+                        gl.Uniform4(_uUvXform, mat.BlendMap.ScaleX, mat.BlendMap.ScaleY, mat.BlendMap.OffsetX, mat.BlendMap.OffsetY);
+                    }
+                    gl.Uniform1(_uHasTex, tex != 0 ? 1f : 0f);
+                }
             }
-            else gl.Uniform1(_uHasTex, 0f);
-            gl.Uniform1(_uAlphaTest, mat?.AlphaTest == true && tex != 0 ? 1f : 0f);
+            gl.Uniform1(_uTerrain, terrain ? 1f : 0f);
+            if (!terrain)
+            {
+                tex = mat != null && !string.IsNullOrEmpty(mat.BaseMap) ? TextureFor(map, mat.BaseMap) : 0;
+                if (tex != 0)
+                {
+                    gl.BindTexture(tex);
+                    gl.Uniform4(_uUvXform, mat!.ScaleX, mat.ScaleY, mat.OffsetX, mat.OffsetY);
+                    gl.Uniform1(_uHasTex, 1f);
+                }
+                else gl.Uniform1(_uHasTex, 0f);
+            }
+            bool flat = !terrain && tex == 0 && mat != null && mat.Color.W > 0;
+            if (flat) gl.Uniform4(_uColor, mat!.Color.X, mat.Color.Y, mat.Color.Z, mat.Color.W);
+            gl.Uniform1(_uAlphaTest, mat?.AlphaTest == true && tex != 0 && !terrain ? 1f : 0f);
             float blend = 0f;
             if (translucent)
             {
@@ -441,7 +509,7 @@ void main() {
                 {
                     case "additive":
                         blend = 2f; gl.BlendFunc(Gl.ONE, Gl.ONE);
-                        if (tex == 0) gl.Uniform4(_uColor, 0.07f, 0.08f, 0.09f, 1f); // untextured glass: a faint sheen
+                        if (tex == 0 && !flat) gl.Uniform4(_uColor, 0.07f, 0.08f, 0.09f, 1f); // untextured glass: a faint sheen
                         break;
                     case "multiply":
                         blend = 3f; gl.BlendFunc(Gl.DST_COLOR, Gl.ZERO);
@@ -451,19 +519,20 @@ void main() {
                         break;
                     case "pre_multiplied_alpha":
                         blend = 1f; gl.BlendFunc(Gl.ONE, Gl.ONE_MINUS_SRC_ALPHA);
-                        if (tex == 0) gl.Uniform4(_uColor, color.X * 0.3f, color.Y * 0.3f, color.Z * 0.3f, 0.3f);
+                        if (tex == 0 && !flat) gl.Uniform4(_uColor, color.X * 0.3f, color.Y * 0.3f, color.Z * 0.3f, 0.3f);
                         break;
                     default: // alpha_blend
                         blend = 1f; gl.BlendFunc(Gl.SRC_ALPHA, Gl.ONE_MINUS_SRC_ALPHA);
-                        if (tex == 0) gl.Uniform4(_uColor, color.X, color.Y, color.Z, 0.3f);
+                        if (tex == 0 && !flat) gl.Uniform4(_uColor, color.X, color.Y, color.Z, 0.3f);
                         break;
                 }
             }
             gl.Uniform1(_uBlend, blend);
             gl.DrawArrays(Gl.TRIANGLES, g.Start, g.Count);
-            if (translucent && tex == 0) gl.Uniform4(_uColor, color.X, color.Y, color.Z, color.W);
+            if ((translucent && tex == 0) || flat) gl.Uniform4(_uColor, color.X, color.Y, color.Z, color.W);
         }
         gl.Uniform1(_uBlend, 0f);
+        gl.Uniform1(_uTerrain, 0f);
         gl.Uniform1(_uAlphaTest, 0f);
     }
 
@@ -534,6 +603,8 @@ void main() {
         gl.Uniform1(_uMode, map.Shading switch { ViewShading.Wireframe => 0f, ViewShading.Solid => 1f, _ => 2f });
         gl.Uniform1(_uWire, map.WireOverlay && !wireframe ? 1f : 0f);
         gl.UniformInt(_uTex, 0);
+        for (int l = 0; l < 4; l++) gl.UniformInt(_uLayer[l], 1 + l);
+        gl.Uniform1(_uTerrain, 0f);
         gl.Uniform1(_uHasTex, 0f);
         gl.Uniform1(_uTint, 0f);
         gl.Uniform4(_uUvXform, 1f, 1f, 0f, 0f);
@@ -631,14 +702,17 @@ void main() {
         if (_keys.Count == 0) return false;
         float speed = (_keys.Contains(Key.LeftShift) || _keys.Contains(Key.RightShift) ? 40f : 10f) * dt;
         var move = Vector3.Zero;
-        if (_keys.Contains(Key.W)) move += Forward;
-        if (_keys.Contains(Key.S)) move -= Forward;
-        if (_keys.Contains(Key.D)) move += Right;
-        if (_keys.Contains(Key.A)) move -= Right;
-        if (_keys.Contains(Key.E)) move += Vector3.UnitZ;
-        if (_keys.Contains(Key.Q)) move -= Vector3.UnitZ;
+        var keys = AppSettings.Current;
+        bool Held(string action) { var k = keys.HoldKey(action); return k != Key.None && _keys.Contains(k); }
+        bool any = false;
+        if (Held("forward")) { move += Forward; any = true; }
+        if (Held("back")) { move -= Forward; any = true; }
+        if (Held("right")) { move += Right; any = true; }
+        if (Held("left")) { move -= Right; any = true; }
+        if (Held("up")) { move += Vector3.UnitZ; any = true; }
+        if (Held("down")) { move -= Vector3.UnitZ; any = true; }
         if (move != Vector3.Zero) _eye += Vector3.Normalize(move) * speed;
-        return _keys.Overlaps(new[] { Key.W, Key.A, Key.S, Key.D, Key.Q, Key.E });
+        return any;
     }
 
     // ---- move / turn handles ------------------------------------------------------------------------
@@ -780,6 +854,74 @@ void main() {
         return best < float.MaxValue ? o + d * best : null;
     }
 
+    /// <summary>Closest hit on the level or on any visible object's model (Forge maps are mostly objects).</summary>
+    private Vector3? HitScene(Vector3 o, Vector3 d, PlacementItem? ignore = null)
+    {
+        var map = Map;
+        Vector3? best = HitGeometry(o, d);
+        float bestT = best.HasValue ? Vector3.Distance(o, best.Value) : float.MaxValue;
+        if (map == null) return best;
+        foreach (var item in map.VisibleItems)
+        {
+            if (item == ignore || item.Model is not { TriangleCount: > 0 } model) continue;
+            // Cheap reject: the ray must pass near the object's bounding sphere.
+            Vector3 c = item.Center;
+            float along = Vector3.Dot(c - o, d);
+            float r = item.PickRadius;
+            if (along < -r || along - r > bestT) continue;
+            if ((o + d * along - c).LengthSquared() > r * r) continue;
+            if (!Matrix4x4.Invert(item.ModelMatrix, out var inv)) continue;
+            Vector3 lo = Vector3.Transform(o, inv);
+            Vector3 ld = Vector3.Normalize(Vector3.TransformNormal(d, inv));
+            float? t = HitMesh(model, lo, ld);
+            if (t is not { } tl) continue;
+            Vector3 world = Vector3.Transform(lo + ld * tl, item.ModelMatrix);
+            float tw = Vector3.Distance(o, world);
+            if (tw < bestT) { bestT = tw; best = world; }
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Where a new object goes: on the surface at the center of the view if it is reasonably close,
+    /// otherwise a few units in front of the camera, dropped onto what is below.
+    /// </summary>
+    private Vector3 PlacementPoint()
+    {
+        Vector3 fwd = Forward;
+        var hit = HitScene(_eye, fwd);
+        if (hit is { } h && Vector3.Distance(h, _eye) < 25f) return h;
+        Vector3 ahead = _eye + fwd * 6f;
+        var below = HitScene(ahead + new Vector3(0, 0, 0.5f), -Vector3.UnitZ);
+        return below is { } b && ahead.Z - b.Z < 12f ? b : ahead;
+    }
+
+    private static float? HitMesh(Mesh mesh, Vector3 o, Vector3 d)
+    {
+        float best = float.MaxValue;
+        var p = mesh.Positions;
+        var idx = mesh.Indices;
+        for (int i = 0; i + 2 < idx.Length; i += 3)
+        {
+            var a = new Vector3(p[idx[i] * 3], p[idx[i] * 3 + 1], p[idx[i] * 3 + 2]);
+            var b = new Vector3(p[idx[i + 1] * 3], p[idx[i + 1] * 3 + 1], p[idx[i + 1] * 3 + 2]);
+            var c = new Vector3(p[idx[i + 2] * 3], p[idx[i + 2] * 3 + 1], p[idx[i + 2] * 3 + 2]);
+            Vector3 e1 = b - a, e2 = c - a, pv = Vector3.Cross(d, e2);
+            float det = Vector3.Dot(e1, pv);
+            if (MathF.Abs(det) < 1e-8f) continue;
+            float inv = 1f / det;
+            Vector3 tv = o - a;
+            float u = Vector3.Dot(tv, pv) * inv;
+            if (u < 0 || u > 1) continue;
+            Vector3 qv = Vector3.Cross(tv, e1);
+            float v = Vector3.Dot(d, qv) * inv;
+            if (v < 0 || u + v > 1) continue;
+            float t = Vector3.Dot(e2, qv) * inv;
+            if (t > 0.01f && t < best) best = t;
+        }
+        return best < float.MaxValue ? best : null;
+    }
+
     private static Vector3? HitPlane(Vector3 o, Vector3 d, Vector3 point, Vector3 normal)
     {
         float denom = Vector3.Dot(d, normal);
@@ -846,7 +988,7 @@ void main() {
                     }
                     else
                     {
-                        map.CursorPoint = HitGeometry(o, d);
+                        map.CursorPoint = HitScene(o, d);
                     }
                 }
             }
@@ -947,43 +1089,25 @@ void main() {
     {
         base.OnKeyDown(e);
         var map = Map;
+        var keys = AppSettings.Current;
         bool ctrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        bool shift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        switch (e.Key)
+        bool has = map?.Selected != null;
+        if (map != null)
         {
-            case Key.F when map?.Selected != null:
-                OnFocusRequested(map.Selected.Center, map.Selected.PickRadius);
-                e.Handled = true;
-                return;
-            case Key.Delete when map?.Selected != null:
-                e.Handled = true;
-                await map.DeleteSelectedCommand.ExecuteAsync(null);
-                return;
-            case Key.A when ctrl && map != null:
-                foreach (var item in map.OutlinerItems.Where(i => !map.IsSelected(i))) map.ToggleSelection(item);
-                e.Handled = true;
-                return;
-            case Key.D when ctrl && map?.Selected != null:
-                e.Handled = true;
-                await map.DuplicateSelectedCommand.ExecuteAsync(null);
-                return;
-            case Key.R when map?.Selected != null:
-                e.Handled = true;
-                await map.RotateSelectedAsync(shift ? -15f : 15f);
-                return;
-            case Key.Z when map != null && !ctrl:
-                // Cycles the shading like Blender's Z menu: wireframe → solid → textured.
-                map.Shading = shift ? ViewShading.Wireframe : (ViewShading)(((int)map.Shading + 1) % 3);
-                e.Handled = true;
-                return;
-            case Key.Home:
-                OnFrameAll();
-                e.Handled = true;
-                return;
-            case Key.Escape when map != null:
-                map.Selected = null;
-                e.Handled = true;
-                return;
+            if (has && keys.Matches("frameSelection", e)) { OnFocusRequested(map.Selected!.Center, map.Selected.PickRadius); e.Handled = true; return; }
+            if (keys.Matches("frameAll", e)) { OnFrameAll(); e.Handled = true; return; }
+            if (has && keys.Matches("delete", e)) { e.Handled = true; await map.DeleteSelectedCommand.ExecuteAsync(null); return; }
+            if (keys.Matches("selectAll", e)) { foreach (var item in map.OutlinerItems.Where(i => !map.IsSelected(i))) map.ToggleSelection(item); e.Handled = true; return; }
+            if (has && keys.Matches("duplicate", e)) { e.Handled = true; await map.DuplicateSelectedCommand.ExecuteAsync(null); return; }
+            if (has && keys.Matches("copy", e)) { map.CopySelection(); e.Handled = true; return; }
+            if (has && keys.Matches("cut", e)) { e.Handled = true; await map.CutSelectionAsync(); return; }
+            if (keys.Matches("paste", e)) { e.Handled = true; await map.PasteAsync(PlacementPoint()); return; }
+            if (has && keys.Matches("turn", e)) { e.Handled = true; await map.RotateSelectedAsync(15f); return; }
+            if (has && keys.Matches("turnBack", e)) { e.Handled = true; await map.RotateSelectedAsync(-15f); return; }
+            if (keys.Matches("wireframe", e)) { map.Shading = ViewShading.Wireframe; e.Handled = true; return; }
+            // Cycles the shading like Blender's Z menu: wireframe → solid → textured.
+            if (keys.Matches("shading", e)) { map.Shading = (ViewShading)(((int)map.Shading + 1) % 3); e.Handled = true; return; }
+            if (keys.Matches("deselect", e)) { map.Selected = null; e.Handled = true; return; }
         }
         if (ctrl) return;
         _keys.Add(e.Key);

@@ -40,6 +40,8 @@ public sealed class Tour
                 await Section("blocks", Blocks);
                 await Section("map", Map);
                 await Section("script", Script);
+                await Section("studio", Studio);
+                await Section("forge", Forge);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -127,6 +129,60 @@ public sealed class Tour
             Check(_vm.Baseline?.IsChanged(@"tags\" + scenario) == false, "scenario back to vanilla");
         }
         Say(_failures == 0 ? "MAPPLAY PASS" : $"MAPPLAY FAIL ({_failures})");
+        return _failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// --barebone-play-test: make a barebone map (platform + spawns on HREK's test floor) outside any mod, check it in
+    /// the 3D view, play it, stop, delete it.
+    /// </summary>
+    public async Task<int> BarebonePlayAsync()
+    {
+        Say("barebone play test started");
+        const string path = @"levels\mods\_kalo_tour\barebone\barebone.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour");
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = BareboneMap.Template, NewPath = path, Empty = true, Barebone = true, MapId = 7999 });
+            Check(r.Kept == 4, $"barebone map created with {r.Kept} spawn points ({r.Ms} ms)");
+            var map = await _vm.OpenMapAsync(path);
+            var until = DateTime.UtcNow.AddMinutes(3);
+            while ((map.Bsp == null || map.ModelVersion == 0) && DateTime.UtcNow < until) await Task.Delay(500);
+            Check(map.Items.Count(i => i.Tag.Contains("respawn_point")) == 4 && map.Items.Any(i => i.Tag.Contains("ff_plat")), $"it has the platform and spawns ({map.Items.Count} objects)");
+            map.Shading = ViewShading.Textured;
+            await Task.Delay(4000);
+            map.LookFrom(new Vector3(-9, -9, 6), 45, -25);
+            await Pause(1500);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "barebone-view.png"));
+
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            _vm.Game.Exited += _ => { exited.TrySetResult(); loaded.TrySetException(new Exception("the game exited while loading")); };
+            var sw = Stopwatch.StartNew();
+            map.PlayHereCommand.Execute(null);
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, $"the game loaded the barebone map ({sw.Elapsed.TotalSeconds:F0} s)");
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+            Check(!_vm.Game.IsRunning, "stopped the game");
+        }
+        catch (Exception ex)
+        {
+            Check(false, "unexpected error: " + ex.Message);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+            await Task.Delay(1000);
+            try { if (Directory.Exists(folder)) Directory.Delete(folder, true); Say("removed the test map"); } catch (Exception ex) { Say("could not remove the test map: " + ex.Message); }
+        }
+        Say(_failures == 0 ? "BAREBONE PASS" : $"BAREBONE FAIL ({_failures})");
         return _failures == 0 ? 0 : 1;
     }
 
@@ -331,6 +387,175 @@ public sealed class Tour
         await map.DeleteSelectedCommand.ExecuteAsync(null);
         Check(map.Items.Count == beforeDelete - 1, "Delete removed the selected object");
         await _vm.CloseTabCommand.ExecuteAsync(map); // unsaved
+    }
+
+    // ---- map studio: object list, change marks, copy/paste, folders, properties, prefabs, blocks, browser ----------
+
+    private async Task Studio()
+    {
+        var map = await _vm.OpenMapAsync(@"levels\multi\20_sword_slayer\20_sword_slayer.scenario");
+        var until = DateTime.UtcNow.AddMinutes(5);
+        while ((map.Bsp == null || map.ModelVersion == 0) && DateTime.UtcNow < until) await Task.Delay(500);
+        var created = new List<string>();
+        try
+        {
+            Check(map.OutlinerRoots.Count > 0, $"object list has {map.OutlinerRoots.Count} top-level rows");
+            Check(map.Folders.Count > 0 && map.OutlinerRoots.Any(n => n.IsFolder), $"Sapien editor folders shown ({map.Folders.Count})");
+            Check(map.OutlinerRoots.Any(n => n.IsGroup), "objects in no folder are grouped by kind");
+            Check(!string.IsNullOrEmpty(AppSettings.Current.GestureText("forward")), $"keys: fly forward is {AppSettings.Current.GestureText("forward")} ({AppSettings.Current.Layout})");
+
+            // Change marks: move one weapon, add one.
+            await map.RefreshStatesAsync();
+            Check(map.Items.All(i => i.State == Kalo.Protocol.PlacementStates.Same), $"a vanilla map has no changed objects ({map.Items.Count(i => i.State != 0)})");
+            var weapon = map.Items.First(i => i.Category == "weapons");
+            map.Selected = weapon;
+            map.GoTo(weapon);
+            map.MoveLocal(weapon, weapon.Position + new Vector3(0.5f, 0, 0));
+            await map.CommitMoveAsync(weapon);
+            var added = await map.AddTagAtAsync(@"objects\weapons\rifle\dmr\dmr.weapon", weapon.Position + new Vector3(0, 1, 0.5f));
+            await map.RefreshStatesAsync();
+            weapon = map.Items.First(i => i.Category == weapon.Category && i.Index == weapon.Index);
+            Check(weapon.State == Kalo.Protocol.PlacementStates.Changed, $"moved weapon is marked changed ({weapon.StateText})");
+            var addedNow = map.Items.FirstOrDefault(i => i.Tag.EndsWith("dmr.weapon") && i.Index == added?.Index);
+            Check(addedNow?.State == Kalo.Protocol.PlacementStates.New, $"added DMR is marked new ({addedNow?.StateText})");
+            Say("changes: " + map.ChangesText);
+
+            // Properties of the selected object.
+            map.Selected = weapon;
+            var pu = DateTime.UtcNow.AddSeconds(10);
+            while (!map.HasProperties && DateTime.UtcNow < pu) await Task.Delay(200);
+            Check(map.HasProperties, $"the weapon's own properties are listed ({map.Properties.Count(p => !p.IsHeader)} fields: {string.Join(", ", map.Properties.Where(p => !p.IsHeader).Take(5).Select(p => p.Label))})");
+
+            // Copy / paste.
+            int count = map.Items.Count;
+            map.Selected = weapon;
+            map.CopySelection();
+            await map.PasteAsync(weapon.Position + new Vector3(2, 0, 0));
+            Check(map.Items.Count == count + 1 && map.Selected?.Tag == weapon.Tag, "copy + paste made one more of the same weapon");
+
+            // Folders.
+            var pasted = map.Selected!;
+            int folders = map.Folders.Count;
+            await map.NewFolderAsync("kalo tour folder", -1);
+            Check(map.Folders.Count == folders + 1, "new folder added to the map");
+            var moved = map.Items.FirstOrDefault(i => i.Category == pasted.Category && i.Index == pasted.Index);
+            Check(moved?.Folder == folders, $"the selected object went into the new folder ({moved?.Folder})");
+            Check(map.OutlinerRoots.Any(n => n.IsFolder && n.Name == "kalo tour folder" && n.Children.Count == 1), "the folder shows in the object list with its object");
+            map.SelectedFolder = folders;
+            await map.DeleteFolderCommand.ExecuteAsync(null);
+            Check(map.Folders.Count == folders, "folder deleted (its object stays in the map)");
+
+            // Prefabs.
+            var two = map.Items.Where(i => i.Category == "weapons").Take(2).ToList();
+            map.SetSelection(two);
+            map.CreatePrefab("kalo tour prefab");
+            var prefab = _vm.Prefabs.FirstOrDefault(p => p.Name == "kalo tour prefab");
+            Check(prefab?.Objects.Count == 2, "prefab saved from two selected objects");
+            if (prefab != null)
+            {
+                int before = map.Items.Count;
+                await map.PlaceObjectsAsync(prefab.Objects, weapon.Position + new Vector3(0, -3, 0), "Placed");
+                Check(map.Items.Count == before + 2, "placing the prefab added its two objects");
+                _vm.DeletePrefabCommand.Execute(prefab);
+                Check(_vm.Prefabs.All(p => p.Name != "kalo tour prefab"), "prefab deleted");
+            }
+
+            // Block tools: a floor, painted.
+            var floorTool = MapEditorViewModel.BlockTools.First(t => t.Key == "floor");
+            map.LookFrom(weapon.Position + new Vector3(-8, 0, 3), 0, -15);
+            await Pause(500);
+            await map.PlaceBlockCommand.ExecuteAsync(floorTool);
+            var floor = map.Selected;
+            Check(floor != null && floor.Tag.Contains("ff_plat_4x4_flat"), $"Floor tool placed a Forge platform ({floor?.Tag})");
+            await _vm.EnsureMaterialsAsync();
+            Check(_vm.Materials.Count > 10, $"material library ready ({_vm.Materials.Count} materials)");
+            var material = _vm.Materials.FirstOrDefault(m => m.Shader.Contains("metal")) ?? _vm.Materials.FirstOrDefault();
+            if (floor != null && material != null)
+            {
+                map.SetSelection(new[] { floor });
+                await map.PaintCommand.ExecuteAsync(material);
+                var painted = map.Selected;
+                Check(painted != null && painted.Tag.Contains("__"), $"Paint made a painted copy ({painted?.Tag})");
+                if (painted != null)
+                {
+                    created.Add(System.IO.Path.GetDirectoryName(painted.Tag)!);
+                    Check(painted.Model != null && painted.Model.Materials.Any(m => m.Shader.Equals(material.Shader, StringComparison.OrdinalIgnoreCase)),
+                        "the painted copy's model uses the material");
+                    map.Shading = ViewShading.Textured;
+                    await Task.Delay(3000);
+                    map.GoTo(painted);
+                    await Pause(1500);
+                    await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "studio-painted-floor.png"));
+                }
+            }
+
+            // Object browser.
+            _vm.ShowObjectsCommand.Execute(null);
+            Check(_vm.ObjectCategories.Count >= 4, $"object browser categories: {string.Join(", ", _vm.ObjectCategories.Select(c => c.Display))}");
+            _vm.ObjectFilter = "dmr";
+            await Pause(300);
+            var dmrEntry = _vm.ObjectResults.FirstOrDefault(o => o.Tag.EndsWith(@"rifle\dmr\dmr.weapon", StringComparison.OrdinalIgnoreCase));
+            Check(dmrEntry != null, "search finds the DMR");
+            if (dmrEntry != null)
+            {
+                _vm.SelectedObject = dmrEntry;
+                var pv = DateTime.UtcNow.AddSeconds(30);
+                while (_vm.PreviewMesh == null && DateTime.UtcNow < pv) await Task.Delay(300);
+                Check(_vm.PreviewMesh != null, "the DMR preview model loaded: " + _vm.PreviewStatus);
+            }
+            _vm.ObjectFilter = "";
+            await Pause(1500);
+            Shot("studio-objects");
+            _vm.ShowOutputCommand.Execute(null);
+        }
+        finally
+        {
+            await _vm.CloseTabCommand.ExecuteAsync(map); // unsaved
+            // Painted copies are files in the shared workspace: remove the ones the tour made.
+            foreach (string dir in created)
+            {
+                try
+                {
+                    string full = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, dir);
+                    if (Directory.Exists(full) && dir.Contains(@"\blocks\")) { Directory.Delete(full, true); Say("removed " + dir); }
+                    string blocks = Directory.GetParent(full)!.FullName;
+                    if (Directory.Exists(blocks) && !Directory.EnumerateFileSystemEntries(blocks).Any()) Directory.Delete(blocks);
+                }
+                catch (Exception ex) { Say("could not remove " + dir + ": " + ex.Message); }
+            }
+        }
+    }
+
+    // ---- Forge World: terrain, foliage, water in the textured view ------------------------------------------
+
+    private async Task Forge()
+    {
+        var map = await _vm.OpenMapAsync(@"levels\multi\forge_halo\forge_halo.scenario");
+        map.Shading = ViewShading.Textured;
+        var until = DateTime.UtcNow.AddMinutes(10);
+        while (map.Bsp == null && DateTime.UtcNow < until && !map.GeometryStatus.Contains("unavailable")) await Task.Delay(500);
+        var tu = DateTime.UtcNow.AddMinutes(6);
+        await Pause(1000);
+        while ((map.TexturesLoading || map.TexturesVersion == 0 || map.ModelVersion == 0) && DateTime.UtcNow < tu) await Task.Delay(500);
+        var mats = map.Bsp?.Materials ?? Array.Empty<Kalo.Core.Geometry.MeshMaterial>();
+        Check(mats.Count(m => m.IsTerrain) > 5, $"terrain materials with blended layers: {mats.Count(m => m.IsTerrain)}");
+        Check(mats.Any(m => m.Color.W > 0), "water gets a sea color");
+        var grass = mats.SelectMany(m => m.Layers).OfType<Kalo.Core.Geometry.TextureLayer>().FirstOrDefault(l => l.Bitmap.Contains("grass"));
+        Check(grass != null && map.TextureFor(grass.Bitmap) != null, $"grass layer decoded ({grass?.Bitmap}, tiling {grass?.ScaleX}/{grass?.ScaleY})");
+        Say("tiling seen: " + string.Join(", ", mats.SelectMany(m => m.Layers).OfType<Kalo.Core.Geometry.TextureLayer>().Select(l => l.ScaleX).Distinct().Take(8)));
+        map.ViewFromSpawnCommand.Execute(null);
+        await Pause(1500);
+        await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "forge-spawn.png"));
+        if (map.Spawn is { } sp)
+        {
+            map.LookFrom(sp.Position + new Vector3(0, 0, 40), sp.Facing, -35);
+            await Pause(1500);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "forge-above.png"));
+        }
+        map.FrameAllCommand.Execute(null);
+        await Pause(1500);
+        await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "forge-overview.png"));
+        await _vm.CloseTabCommand.ExecuteAsync(map);
     }
 
     // ---- gametype script -------------------------------------------------------------------------------

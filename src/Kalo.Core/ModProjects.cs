@@ -70,6 +70,20 @@ public sealed class ModProjects
         File.WriteAllText(Path.Combine(p.Folder, ManifestName), JsonSerializer.Serialize(p.Manifest, Json));
     }
 
+    public ModProject? Active => ActiveName is { } n ? Find(n) : null;
+
+    /// <summary>Changes the active project's manifest and saves it.</summary>
+    public void UpdateActive(Action<ProjectManifest> change)
+    {
+        lock (_gate)
+        {
+            var p = Active;
+            if (p == null) return;
+            change(p.Manifest);
+            SaveManifest(p);
+        }
+    }
+
     /// <summary>New project. If no project is active, the workspace's current changes become this project's.</summary>
     public ModProject Create(string name, string? author, string? description)
     {
@@ -276,4 +290,6 @@ public sealed class ProjectManifest
     public List<string> Files { get; set; } = new();
     /// <summary>Vanilla files the mod removes.</summary>
     public List<string> Deleted { get; set; } = new();
+    /// <summary>Maps the mod created → the Reach scenario they were copied from (to tell new and changed objects apart).</summary>
+    public Dictionary<string, string> MapTemplates { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }

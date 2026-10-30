@@ -1,5 +1,6 @@
 <Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:cc="using:AvaloniaEdit.CodeCompletion"
              x:Class="Kalo.App.App"
              RequestedThemeVariant="Dark">
 
@@ -27,6 +28,7 @@
       <SolidColorBrush x:Key="KPurple" Color="#C77DFF" />
       <SolidColorBrush x:Key="KBlue" Color="#6E9EF7" />
       <FontFamily x:Key="KMono">Cascadia Mono, Consolas, Courier New</FontFamily>
+      <FontFamily x:Key="KIcons">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
 
       <!-- Fluent overrides: accent, compact controls, darker surfaces. -->
       <Color x:Key="SystemAccentColor">#2F6BE0</Color>
@@ -38,6 +40,20 @@
   <Application.Styles>
     <FluentTheme DensityStyle="Compact" />
     <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml" />
+
+    <!-- Autocomplete popup: it is not inside the window, so give it the dark palette explicitly. -->
+    <Style Selector="cc|CompletionList">
+      <Setter Property="Background" Value="{StaticResource KPanel}" />
+      <Setter Property="Foreground" Value="{StaticResource KText}" />
+      <Setter Property="BorderBrush" Value="{StaticResource KBorder}" />
+    </Style>
+    <Style Selector="cc|CompletionListBox">
+      <Setter Property="Background" Value="{StaticResource KPanel}" />
+      <Setter Property="Foreground" Value="{StaticResource KText}" />
+    </Style>
+    <Style Selector="cc|CompletionListBox ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="{StaticResource KSelection}" />
+    </Style>
 
     <Style Selector="Window">
       <Setter Property="FontSize" Value="13" />
