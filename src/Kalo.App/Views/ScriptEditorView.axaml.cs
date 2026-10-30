@@ -22,6 +22,7 @@ public partial class ScriptEditorView : UserControl
     public ScriptEditorView()
     {
         InitializeComponent();
+        _errors = new ErrorMarkers(Editor);
         Editor.SyntaxHighlighting = Megalo();
         MegaloView.SyntaxHighlighting = Megalo();
         Editor.Options.ConvertTabsToSpaces = false;
@@ -44,7 +45,7 @@ public partial class ScriptEditorView : UserControl
         Editor.TextArea.AddHandler(PointerMovedEvent, (_, e) =>
         {
             _hoverPoint = e.GetPosition(Editor);
-            var word = WordAt(_hoverPoint.Value);
+            var word = HoverKey(_hoverPoint.Value);
             if (word != _hoverWord) HideHover();
             _hoverTimer.Stop();
             if (word != null) _hoverTimer.Start();
@@ -79,6 +80,36 @@ public partial class ScriptEditorView : UserControl
     private readonly DispatcherTimer _hoverTimer;
     private Avalonia.Point? _hoverPoint;
     private string? _hoverWord;
+    private readonly ErrorMarkers _errors;
+
+    /// <summary>What the pointer rests on, for the hover popup: a word, or an underlined error.</summary>
+    private string? HoverKey(Avalonia.Point point)
+    {
+        string? word = WordAt(point);
+        if (word != null) return word;
+        int? offset = OffsetAt(point);
+        var marker = offset == null ? null : _errors.At(offset.Value).FirstOrDefault();
+        return marker == null ? null : "e:" + marker.StartOffset;
+    }
+
+    private int? OffsetAt(Avalonia.Point point)
+    {
+        var pos = Editor.GetPositionFromPoint(point);
+        return pos == null ? null : Editor.Document.GetOffset(pos.Value.Location);
+    }
+
+    /// <summary>The errors and warnings underlined in the code (for tests).</summary>
+    public IReadOnlyList<ScriptMessage> Underlined => _errors.All.Select(m => m.Message).ToList();
+    public IReadOnlyList<(int Line, string Text)> UnderlinedText =>
+        _errors.All.Select(m => (Editor.Document.GetLineByOffset(m.StartOffset).LineNumber, Editor.Document.GetText(m.StartOffset, m.Length))).ToList();
+
+    private void ShowDiagnostics()
+    {
+        if (_vm == null) { _errors.Clear(); return; }
+        _errors.Set(_vm.Diagnostics, _vm.DiagnosticsText);
+        // The popup of an error that is gone (or moved) closes.
+        if (_hoverWord?.StartsWith("e:") == true) HideHover();
+    }
 
     /// <summary>"line:start:word" under a point of the editor, or null.</summary>
     private string? WordAt(Avalonia.Point point)
@@ -102,9 +133,10 @@ public partial class ScriptEditorView : UserControl
         var line = Editor.Document.GetLineByNumber(pos.Value.Line);
         string text = Editor.Document.GetText(line.Offset, line.Length);
         var info = _vm.Hover(text, pos.Value.Column - 1);
-        if (info == null) return;
-        _hoverWord = WordAt(_hoverPoint.Value);
-        HoverPopup.Child = HoverCard.Build(info);
+        var errors = _errors.At(Editor.Document.GetOffset(pos.Value.Location)).SelectMany(m => m.All).ToList();
+        if (info == null && errors.Count == 0) return;
+        _hoverWord = HoverKey(_hoverPoint.Value);
+        HoverPopup.Child = HoverCard.Build(info, errors);
         HoverPopup.IsOpen = false;
         HoverPopup.IsOpen = true;
     }
@@ -170,6 +202,7 @@ public partial class ScriptEditorView : UserControl
         {
             _vm.RevealRequested -= Reveal;
             _vm.InsertRequested -= Insert;
+            _vm.DiagnosticsChanged -= OnDiagnosticsChanged;
         }
         _vm = vm;
         _syncing = true;
@@ -194,8 +227,12 @@ public partial class ScriptEditorView : UserControl
             };
             vm.RevealRequested += Reveal;
             vm.InsertRequested += Insert;
+            vm.DiagnosticsChanged += OnDiagnosticsChanged;
         }
+        ShowDiagnostics();
     }
+
+    private void OnDiagnosticsChanged() => Dispatcher.UIThread.Post(ShowDiagnostics);
 
     private void Reveal(int line, int start, int length)
     {
@@ -326,9 +363,23 @@ internal static class HoverCard
 {
     private static readonly FontFamily Mono = new("Cascadia Mono, Consolas, monospace");
 
-    public static Control Build(HoverInfo info)
+    public static Control Build(HoverInfo? info, IReadOnlyList<ScriptMessage>? errors = null)
     {
         var panel = new StackPanel { Spacing = 5, MaxWidth = 520 };
+        int shown = 0;
+        foreach (var e in errors ?? Array.Empty<ScriptMessage>())
+        {
+            // The first message is the mistake; the rest are usually knock-on errors from it.
+            if (shown++ == 1) panel.Children.Add(new TextBlock { Text = "Also reported on this line (often caused by the first):", Foreground = Palette.Muted, FontSize = 11 });
+            var row = new DockPanel { Opacity = shown == 1 ? 1 : 0.75 };
+            var icon = new TextBlock { Text = e.IsError ? "✕" : "!", Foreground = e.IsError ? ErrorMarkers.ErrorBrush : ErrorMarkers.WarningBrush, FontWeight = FontWeight.Bold, Margin = new Avalonia.Thickness(0, 0, 6, 0) };
+            DockPanel.SetDock(icon, Dock.Left);
+            row.Children.Add(icon);
+            row.Children.Add(new TextBlock { Text = e.Display, Foreground = Palette.Text, FontSize = 12.5, TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(row);
+        }
+        if (info == null) return Card(panel);
+        if (panel.Children.Count > 0) panel.Children.Add(new Border { Height = 1, Background = Palette.Border, Margin = new Avalonia.Thickness(0, 2) });
         panel.Children.Add(new TextBlock { Text = info.Title, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, FontFamily = Mono, FontSize = 12.5 });
         if (!string.IsNullOrEmpty(info.Signature))
             panel.Children.Add(new TextBlock { Text = info.Signature, Foreground = Palette.Code, FontFamily = Mono, FontSize = 12, TextWrapping = TextWrapping.Wrap });
@@ -342,6 +393,11 @@ internal static class HoverCard
         if (!string.IsNullOrEmpty(info.Megalo))
             panel.Children.Add(new TextBlock { Text = "Megalo: " + info.Megalo, Foreground = Palette.Muted, FontFamily = Mono, FontSize = 11, TextWrapping = TextWrapping.Wrap });
         panel.Children.Add(new TextBlock { Text = "F1: documentation", Foreground = Palette.Muted, FontSize = 10.5 });
+        return Card(panel);
+    }
+
+    private static Control Card(Control panel)
+    {
         return new Border
         {
             Background = Palette.Panel,

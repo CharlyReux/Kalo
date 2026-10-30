@@ -804,6 +804,32 @@ public sealed class Tour
             view.SaveHoverShot(System.IO.Path.Combine(_dir, $"{++_shot:D2}-hover.png"));
             Shot("hover-editor");
 
+            // Errors as you type: underlined in red a moment after typing stops, explained on hover.
+            async Task<bool> Settle(Func<bool> done)
+            {
+                var until = DateTime.UtcNow.AddSeconds(10);
+                while (!done() && DateTime.UtcNow < until) await Task.Delay(150);
+                await Pause(300);
+                return done();
+            }
+            doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
+            bool underlined = await Settle(() => view.Underlined.Any(m => m.IsError));
+            var marks = view.UnderlinedText;
+            int streakAt = Line("killer.streak += 1");
+            Check(underlined && marks.Any(m => m.Line == streakAt && m.Text == "+="),
+                $"a Kalo Script mistake is underlined while typing, no Compile needed ({string.Join(", ", marks.Select(m => $"line {m.Line} '{m.Text}'"))})");
+            doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("player_death_get_killing_player", "player_death_get_killing_playr");
+            underlined = await Settle(() => view.UnderlinedText.Any(m => m.Text.Contains("player_death_get_killing_playr")));
+            Check(underlined, $"an unknown action (found by HREK's compiler) is underlined on its word ({string.Join(", ", view.UnderlinedText.Select(m => $"line {m.Line} '{m.Text}'"))})");
+            Check(view.UnderlinedText.Count(m => m.Line == callLine) == 1 && view.UnderlinedText.All(m => !m.Text.Contains("Kill Points")),
+                "one underline per line, none for Bungie's localization warnings");
+            Check(view.ShowHoverFor("player_death_get_killing_playr"), "pointing at it shows the error");
+            await Pause(600);
+            view.SaveHoverShot(System.IO.Path.Combine(_dir, $"{++_shot:D2}-error-hover.png"));
+            Shot("error-underline");
+            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            Check(await Settle(() => view.Underlined.Count(m => m.IsError) == 0), "fixing it removes the underline");
+
             var docs = Views.DocsWindow.Open(_window, _vm, "create_object");
             await Pause(1200);
             Check(docs.Current?.Title == "Actions: Objects", $"F1 on create_object opens its page ({docs.Current?.Title})");

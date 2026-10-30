@@ -292,7 +292,11 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         return new UTF8Encoding(false);
     }
 
-    partial void OnTextChanged(string value) => IsDirty = value != _savedText;
+    partial void OnTextChanged(string value)
+    {
+        IsDirty = value != _savedText;
+        ScheduleCheck();
+    }
     partial void OnCatalogQueryChanged(string value) => UpdateCatalog();
 
     partial void OnSelectedMessageChanged(ScriptMessage? value)
@@ -325,28 +329,70 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     }
 
     [RelayCommand]
-    public Task Compile() => CompileAsync(null);
-
-    private async Task CompileAsync(string? mgloFile, string? binFile = null)
+    public Task Compile()
     {
-        if (_main.Host == null || _main.Paths == null) return;
-        CompileSummary = "Compiling…";
+        _checkGeneration++; // a pending check as you type is replaced by this compile
+        return CompileAsync(null);
+    }
+
+    // ---- checking as you type: errors underlined in red, listed below the code -----------------------------
+
+    /// <summary>The latest errors and warnings, for the red / yellow underlines.</summary>
+    public IReadOnlyList<ScriptMessage> Diagnostics { get; private set; } = Array.Empty<ScriptMessage>();
+    public event Action? DiagnosticsChanged;
+    private int _checkGeneration;
+    /// <summary>The text the diagnostics belong to (the editor maps them onto the current text).</summary>
+    public string DiagnosticsText { get; private set; } = "";
+
+    private void PublishDiagnostics(string text)
+    {
+        Diagnostics = Messages.ToList();
+        DiagnosticsText = text;
+        DiagnosticsChanged?.Invoke();
+    }
+
+    /// <summary>Checks the code a moment after typing stops: Kalo Script locally, then HREK's Megalo compiler.</summary>
+    private async void ScheduleCheck()
+    {
+        int generation = ++_checkGeneration;
         try
         {
-            string output = System.IO.Path.Combine(_main.Paths.KaloData, "megalo", System.IO.Path.GetFileNameWithoutExtension(Path));
+            await Task.Delay(IsKaloScript ? 350 : 700);
+            if (generation != _checkGeneration) return;
+            await CompileAsync(null, null, generation);
+        }
+        catch (Exception ex)
+        {
+            _main.Log("Checking the script: " + ex.Message);
+        }
+    }
+
+    /// <param name="liveGeneration">Set for a check as you type: quiet (no "Compiling…", no jump to the first error), and dropped if the text changed since.</param>
+    private async Task CompileAsync(string? mgloFile, string? binFile = null, int? liveGeneration = null)
+    {
+        bool live = liveGeneration.HasValue;
+        bool Stale() => live && liveGeneration != _checkGeneration;
+        string text = Text;
+        if (!live) CompileSummary = "Compiling…";
+        try
+        {
             var (megalo, kalo) = MegaloText();
             if (megalo == null)
             {
                 // Kalo Script errors: no need to ask the Megalo compiler.
                 Messages.Clear();
-                foreach (var e in kalo!.Errors) Messages.Add(new ScriptMessage(e.Line, -1, 0, "error", e.Message, null));
+                foreach (var e in kalo!.Errors) Messages.Add(new ScriptMessage(e.Line, -1, 0, "error", e.Message, null, e.Column));
                 OnPropertyChanged(nameof(HasMessages));
                 CompileOk = false;
-                CompileSummary = $"{kalo.Errors.Count} error(s) in the Kalo Script. Fix the first one and compile again.";
+                CompileSummary = live ? $"{kalo.Errors.Count} error(s), underlined in red. Point at one to read it."
+                    : $"{kalo.Errors.Count} error(s) in the Kalo Script. Fix the first one and compile again.";
                 _main.ReportScriptProblems(this, Messages);
-                SelectedMessage = Messages.FirstOrDefault();
+                PublishDiagnostics(text);
+                if (!live) SelectedMessage = Messages.FirstOrDefault();
                 return;
             }
+            if (_main.Host == null || _main.Paths == null) { if (!live) CompileSummary = "The compiler is not ready yet."; return; }
+            string output = System.IO.Path.Combine(_main.Paths.KaloData, "megalo", System.IO.Path.GetFileNameWithoutExtension(Path));
             var r = await _main.Host.MegaloCompileAsync(new MegaloCompileParams
             {
                 ObjectLists = _main.Paths.MegaloObjectLists,
@@ -356,6 +402,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 MgloFile = mgloFile,
                 BinFile = binFile
             });
+            if (Stale()) return;
             Messages.Clear();
             foreach (var m in r.Messages ?? new())
             {
@@ -394,17 +441,22 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             OnPropertyChanged(nameof(HasMessages));
             CompileOk = r.Succeeded;
             int errors = Messages.Count(m => m.IsError);
-            CompileSummary = r.Succeeded
-                ? $"Compiled in {r.Ms} ms" + (Messages.Count > 0 ? $" with {Messages.Count} warning(s)" : "") + "."
-                : $"{errors} error(s). Fix the first one and compile again.";
+            CompileSummary = live
+                ? r.Succeeded ? "No errors" + (Messages.Count > 0 ? $" ({Messages.Count} warning(s), underlined in yellow)" : "") + ". Checked as you type."
+                    : $"{errors} error(s), underlined in red. Point at one to read it."
+                : r.Succeeded
+                    ? $"Compiled in {r.Ms} ms" + (Messages.Count > 0 ? $" with {Messages.Count} warning(s)" : "") + "."
+                    : $"{errors} error(s). Fix the first one and compile again.";
             _main.ReportScriptProblems(this, Messages);
-            if (!r.Succeeded && Messages.Count > 0) SelectedMessage = Messages[0];
+            PublishDiagnostics(text);
+            if (!live && !r.Succeeded && Messages.Count > 0) SelectedMessage = Messages[0];
         }
         catch (HostException ex)
         {
+            if (Stale()) return;
             CompileOk = false;
             CompileSummary = "The compiler stopped: " + ex.Message;
-            _main.AddProblem("error", ex.Message, Path);
+            if (!live) _main.AddProblem("error", ex.Message, Path);
             if (ex.EngineHalted) await _main.RestartHostAsync();
         }
     }
@@ -527,7 +579,8 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     public void Reveal(int line, int start, int length) => RevealRequested?.Invoke(line, start, length);
 }
 
-public sealed record ScriptMessage(int Line, int Start, int Length, string Severity, string Message, string? Token)
+/// <summary>A compiler message. Start/Length: offsets in the text (Megalo), or -1; Column: 1-based column on Line (Kalo Script), or 0.</summary>
+public sealed record ScriptMessage(int Line, int Start, int Length, string Severity, string Message, string? Token, int Column = 0)
 {
     public bool IsError => Severity.Contains("error", StringComparison.OrdinalIgnoreCase);
     public string Where => Line > 0 ? $"line {Line}" : "";

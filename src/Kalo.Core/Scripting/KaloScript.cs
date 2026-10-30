@@ -571,6 +571,7 @@ internal sealed partial class Transpiler
         if (op.Kind == T.Op && AssignOps.Contains(op.Text))
         {
             Next();
+            if (Peek.Kind == T.End || Peek.Line != op.Line) throw new ParseError(op, $"missing the value after {op.Text}");
             string value = Atom();
             if (Peek.Kind == T.Op && Arithmetic.TryGetValue(Peek.Text, out string? then) && Peek.Line == op.Line)
             {
