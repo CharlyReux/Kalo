@@ -44,6 +44,10 @@
             <MenuItem Header="Play (map and gametype chosen at the top)" InputGesture="F5" Command="{Binding PlayCommand}" />
             <MenuItem Header="Stop" InputGesture="Shift+F5" Command="{Binding StopGameCommand}" />
           </MenuItem>
+          <MenuItem Header="_Help">
+            <MenuItem Header="Kalo Script documentation" InputGesture="F1" Click="Docs_Click" />
+            <MenuItem Header="Kalo Script: actions and conditions" Click="DocsReference_Click" />
+          </MenuItem>
         </Menu>
 
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
@@ -373,23 +377,29 @@
                   </Border>
                   <TextBlock Text="{Binding ActiveMap.Selected.Detail, FallbackValue=''}" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" FontSize="11.5" />
                   <SelectableTextBlock Text="{Binding ActiveMap.Selected.Tag, FallbackValue=''}" FontFamily="{StaticResource KMono}" FontSize="11.5" TextWrapping="Wrap" Foreground="{StaticResource KCode}" />
+                  <DockPanel IsVisible="{Binding !ActiveMap.HasMultiSelection, FallbackValue=False}">
+                    <TextBlock Text="Name" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Width="46" />
+                    <TextBox Classes="compact" MaxLength="31" Watermark="no name (e.g. hill_1, red_goal)"
+                             Text="{Binding ActiveMap.Selected.NameText, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}"
+                             ToolTip.Tip="A name for this object, shown in the object list (F2 there). Saved in the map as Sapien's object name; gametype scripts find objects by their Megalo label instead." />
+                  </DockPanel>
                   <TextBlock Text="POSITION (world units)" Classes="header" Margin="0,6,0,0" />
                   <Grid ColumnDefinitions="18,*,18,*,18,*" Margin="0,2,0,0">
                     <TextBlock Text="x" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="1" Classes="compact mono" Text="{Binding ActiveMap.Selected.X, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" Margin="0,0,4,0" />
+                    <TextBox Grid.Column="1" Classes="compact mono" Text="{Binding ActiveMap.Selected.X, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" views:NumberDrag.Step="0.1" Margin="0,0,4,0" />
                     <TextBlock Grid.Column="2" Text="y" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="3" Classes="compact mono" Text="{Binding ActiveMap.Selected.Y, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" Margin="0,0,4,0" />
+                    <TextBox Grid.Column="3" Classes="compact mono" Text="{Binding ActiveMap.Selected.Y, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" views:NumberDrag.Step="0.1" Margin="0,0,4,0" />
                     <TextBlock Grid.Column="4" Text="z" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="5" Classes="compact mono" Text="{Binding ActiveMap.Selected.Z, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                    <TextBox Grid.Column="5" Classes="compact mono" Text="{Binding ActiveMap.Selected.Z, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" views:NumberDrag.Step="0.1" />
                   </Grid>
                   <TextBlock Text="ROTATION (degrees)" Classes="header" Margin="0,6,0,0" />
                   <Grid ColumnDefinitions="28,*,28,*,28,*" Margin="0,2,0,0">
                     <TextBlock Text="yaw" Foreground="{StaticResource KMuted}" FontSize="11" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="1" Classes="compact mono" Text="{Binding ActiveMap.Selected.YawText, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" Margin="0,0,4,0" />
+                    <TextBox Grid.Column="1" Classes="compact mono" Text="{Binding ActiveMap.Selected.YawText, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" views:NumberDrag.Step="1" Margin="0,0,4,0" />
                     <TextBlock Grid.Column="2" Text="pitch" Foreground="{StaticResource KMuted}" FontSize="11" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="3" Classes="compact mono" Text="{Binding ActiveMap.Selected.PitchText, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" Margin="0,0,4,0" />
+                    <TextBox Grid.Column="3" Classes="compact mono" Text="{Binding ActiveMap.Selected.PitchText, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" views:NumberDrag.Step="1" Margin="0,0,4,0" />
                     <TextBlock Grid.Column="4" Text="roll" Foreground="{StaticResource KMuted}" FontSize="11" VerticalAlignment="Center" />
-                    <TextBox Grid.Column="5" Classes="compact mono" Text="{Binding ActiveMap.Selected.RollText, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                    <TextBox Grid.Column="5" Classes="compact mono" Text="{Binding ActiveMap.Selected.RollText, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" views:NumberDrag.Step="1" />
                   </Grid>
                   <WrapPanel Margin="0,4,0,0">
                     <Button Classes="outline" Content="Frame" Margin="0,0,6,6" Command="{Binding ActiveMap.FocusSelectedCommand, FallbackValue={x:Null}}" />
@@ -402,10 +412,44 @@
                     <Button DockPanel.Dock="Right" Classes="tool" Content="Set" Command="{Binding ActiveMap.SetScaleCommand, FallbackValue={x:Null}}"
                             CommandParameter="{Binding #ScaleBox.Text}" />
                     <TextBox x:Name="ScaleBox" Classes="compact mono" Text="{Binding ActiveMap.Selected.ScaleText, Mode=OneWay, FallbackValue=''}" Margin="0,0,4,0"
+                             views:NumberDrag.Step="0.05" views:NumberDrag.Minimum="0.01" LostFocus="ScaleBox_LostFocus"
                              ToolTip.Tip="Size multiplier (1 = normal). Press Set to apply it to every selected object." />
                   </DockPanel>
                   <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KWarning}"
-                             Text="Reach ignores this scale in multiplayer games: objects spawn at normal size (it only shows here). Scaling in game needs a gametype script (set_scale)." />
+                             Text="Reach ignores this scale in multiplayer games: objects spawn at normal size (it only shows here). To scale in game, use object_set_scale in the gametype script." />
+                  <!-- Objective zone (multiplayer boundary): hills, territories, capture and kill zones -->
+                  <StackPanel Spacing="4" Margin="0,4,0,0">
+                    <DockPanel>
+                      <TextBlock Text="Zone" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Width="46" />
+                      <ComboBox SelectedIndex="{Binding ActiveMap.Selected.ZoneShapeIndex, FallbackValue=0}" HorizontalAlignment="Stretch" FontSize="12" MinHeight="24"
+                                ToolTip.Tip="The object's area for gametypes: hills, territories, capture and kill zones (drawn in the map view)">
+                        <ComboBoxItem Content="None" />
+                        <ComboBoxItem Content="Sphere" />
+                        <ComboBoxItem Content="Cylinder" />
+                        <ComboBoxItem Content="Box" />
+                      </ComboBox>
+                    </DockPanel>
+                    <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto" IsVisible="{Binding ActiveMap.Selected.HasZone, FallbackValue=False}">
+                      <TextBlock Text="{Binding ActiveMap.Selected.ZoneWidthLabel, FallbackValue='Radius'}" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                      <TextBox Grid.Column="1" Classes="compact mono" Margin="0,0,6,4" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0"
+                               Text="{Binding ActiveMap.Selected.ZoneWidth, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                      <TextBlock Grid.Column="2" Text="Length" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0"
+                                 IsVisible="{Binding ActiveMap.Selected.IsBoxZone, FallbackValue=False}" />
+                      <TextBox Grid.Column="3" Classes="compact mono" Margin="0,0,0,4" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0"
+                               IsVisible="{Binding ActiveMap.Selected.IsBoxZone, FallbackValue=False}"
+                               Text="{Binding ActiveMap.Selected.ZoneLength, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                      <TextBlock Grid.Row="1" Text="Up" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0"
+                                 IsVisible="{Binding !ActiveMap.Selected.IsSphereZone, FallbackValue=False}" />
+                      <TextBox Grid.Row="1" Grid.Column="1" Classes="compact mono" Margin="0,0,6,0" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0"
+                               IsVisible="{Binding !ActiveMap.Selected.IsSphereZone, FallbackValue=False}" ToolTip.Tip="Height above the object"
+                               Text="{Binding ActiveMap.Selected.ZoneTop, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                      <TextBlock Grid.Row="1" Grid.Column="2" Text="Down" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0"
+                                 IsVisible="{Binding !ActiveMap.Selected.IsSphereZone, FallbackValue=False}" />
+                      <TextBox Grid.Row="1" Grid.Column="3" Classes="compact mono" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0"
+                               IsVisible="{Binding !ActiveMap.Selected.IsSphereZone, FallbackValue=False}" ToolTip.Tip="Depth below the object"
+                               Text="{Binding ActiveMap.Selected.ZoneBottom, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                    </Grid>
+                  </StackPanel>
                   <!-- Every other property of this object, as saved in the map -->
                   <StackPanel Spacing="4" IsVisible="{Binding ActiveMap.HasProperties, FallbackValue=False}">
                     <TextBlock Text="PROPERTIES" Classes="header" Margin="0,8,0,0" />
@@ -417,7 +461,7 @@
                             <Grid ColumnDefinitions="110,*" IsVisible="{Binding !IsHeader}">
                               <TextBlock Text="{Binding Label}" FontSize="11.5" Foreground="{StaticResource KMuted}" TextTrimming="CharacterEllipsis"
                                          VerticalAlignment="Center" ToolTip.Tip="{Binding Description}" />
-                              <TextBox Grid.Column="1" Classes="compact mono" IsVisible="{Binding IsText}"
+                              <TextBox Grid.Column="1" Classes="compact mono" IsVisible="{Binding IsText}" views:NumberDrag.Step="1"
                                        Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
                               <ComboBox Grid.Column="1" IsVisible="{Binding IsEnum}" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedOption}"
                                         HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" />

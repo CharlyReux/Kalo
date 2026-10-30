@@ -15,6 +15,7 @@ namespace Kalo.App.ViewModels;
 public partial class ScriptEditorViewModel : DocumentViewModel
 {
     private readonly MainViewModel _main;
+    public MainViewModel Main => _main;
     private Encoding _encoding = Encoding.Unicode;
     private string _savedText = "";
 
@@ -36,10 +37,15 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         "current_player", "current_team", "current_object", "for_each", "designator",
     };
 
+    /// <summary>Signature, then the plain-language help (for the autocomplete tooltip).</summary>
+    private static string? WithDoc(string? signature, IReadOnlyDictionary<string, MegaloDocs.Doc> docs, string name) =>
+        docs.TryGetValue(name, out var d) ? signature + "\n\n" + d.Text : signature;
+
     private static readonly string[] KaloKeywords =
     {
         "if", "then", "else", "elseif", "end", "for", "each", "do", "inline", "on", "init", "and", "or", "not", "temp", "declare", "alias",
         "megalo", "include", "with", "label", "networked", "local", "global", "player", "team", "object", "number", "timer",
+        "setting", "option", "value", "range", "traits", "hidden", "locked", "objects", "constant", "widget", "stat", "engine", "teams", "loadout",
         "current_player", "current_team", "current_object", "none", "true", "false", "random",
     };
 
@@ -62,21 +68,21 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         bool contextual = false;
         if (last == "action" && !before.EndsWith('.'))
         {
-            pool = (catalog?.Actions ?? new()).Select(a => new CompletionItem(a.Name!, "action", a.Description));
+            pool = (catalog?.Actions ?? new()).Select(a => new CompletionItem(a.Name!, "action", WithDoc(a.Description, MegaloDocs.Actions, a.Name!)));
             contextual = true;
         }
         else if (last == "condition")
         {
             pool = new[] { new CompletionItem("if", "keyword", "condition if <a> <op> <b>: compare two values") }
-                .Concat((catalog?.Conditions ?? new()).Select(c => new CompletionItem(c.Name!, "condition", c.Description)));
+                .Concat((catalog?.Conditions ?? new()).Select(c => new CompletionItem(c.Name!, "condition", WithDoc(c.Description, MegaloDocs.Conditions, c.Name!))));
             contextual = true;
         }
         else if (IsKaloScript)
         {
             // Kalo Script: actions and conditions are called like functions, so offer them everywhere.
             pool = KaloKeywords.Select(k => new CompletionItem(k, "keyword", null))
-                .Concat((catalog?.Actions ?? new()).Select(a => new CompletionItem(a.Name!, "action", a.Description)))
-                .Concat((catalog?.Conditions ?? new()).Where(c => c.Name != "if").Select(c => new CompletionItem(c.Name!, "condition", c.Description)))
+                .Concat((catalog?.Actions ?? new()).Select(a => new CompletionItem(a.Name!, "action", WithDoc(MegaloDocs.KaloSignature(a.Name!, a.Description), MegaloDocs.Actions, a.Name!))))
+                .Concat((catalog?.Conditions ?? new()).Where(c => c.Name != "if").Select(c => new CompletionItem(c.Name!, "condition", WithDoc(MegaloDocs.KaloSignature(c.Name!, c.Description), MegaloDocs.Conditions, c.Name!))))
                 .Concat(_scriptNames.Select(n => new CompletionItem(n, "script", "Declared in this script (from the last compile)")))
                 .Concat((catalog?.Lists ?? new()).SelectMany(kv => kv.Value.Select(v => new CompletionItem(v, kv.Key, null))));
         }
@@ -96,6 +102,123 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             .Take(300)
             .ToList();
         return (start, items);
+    }
+
+    // ---- hover help ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Help for the word at a 0-based column of a line: actions, conditions, keywords, built-in names, the script's
+    /// own variables (where they are declared) and the engine's value lists. Null when there's nothing to say.
+    /// </summary>
+    public HoverInfo? Hover(string line, int column)
+    {
+        if (column < 0 || column > line.Length) return null;
+        int start = column, end = column;
+        while (start > 0 && IsWordChar(line[start - 1])) start--;
+        while (end < line.Length && IsWordChar(line[end])) end++;
+        if (end <= start) return null;
+        string word = line[start..end];
+        if (char.IsDigit(word[0])) return null;
+
+        // Comments: nothing. Strings: only the engine's value names ("sniper_rifle").
+        bool inString = false;
+        for (int i = 0; i < start; i++)
+        {
+            char c = line[i];
+            if (c == '"') inString = !inString;
+            else if (!inString && (c == ';' && !IsKaloScript || (IsKaloScript && c == '-' && i + 1 < line.Length && line[i + 1] == '-'))) return null;
+        }
+        bool afterDot = start > 0 && line[start - 1] == '.';
+        var catalog = _main.MegaloCatalog;
+
+        if (!inString)
+        {
+            if (MegaloDocs.Find(word, IsKaloScript, afterDot) is { } found)
+            {
+                var (title, doc) = found;
+                string? megalo = null, signature = null;
+                if (title.StartsWith("action ") || title.StartsWith("condition "))
+                {
+                    bool condition = title.StartsWith("condition ");
+                    megalo = (condition ? catalog?.Conditions : catalog?.Actions)?.FirstOrDefault(e => e.Name == word)?.Description;
+                    signature = word == "if" && condition && IsKaloScript ? "a == b   (also != < > <= >=)"
+                        : IsKaloScript ? MegaloDocs.KaloSignature(word, megalo) : $"{(condition ? "condition" : "action")} {word} {megalo}".TrimEnd();
+                }
+                return new HoverInfo(title, signature, IsKaloScript ? megalo : null, doc.Text, doc.Example);
+            }
+            if (Declaration(word) is { } declared) return declared;
+        }
+        foreach (var (list, values) in catalog?.Lists ?? new())
+            if (values.Contains(word, StringComparer.OrdinalIgnoreCase))
+                return new HoverInfo(word, null, null, $"A name from the game's {ListLabel(list)} list.", null);
+        if (!inString && _scriptNames.Contains(word))
+            return new HoverInfo(word, null, null, "Declared in this script (seen by the last compile).", null);
+        return null;
+    }
+
+    private static bool IsWordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    private static string ListLabel(string key) => key switch
+    {
+        "objectTypes" => "object type", "weaponSets" => "weapon set", "vehicleSets" => "vehicle set", "hudWidgetIcons" => "HUD widget icon",
+        "loadoutPalettes" => "loadout palette", "gameOptions" => "game option", "incidents" => "incident (medal, announcer, statistic)",
+        _ => key.TrimEnd('s'),
+    };
+
+    /// <summary>Where the script declares this name: declare / temp / alias, Megalo variables, options, traits, map objects.</summary>
+    private HoverInfo? Declaration(string word)
+    {
+        string w = System.Text.RegularExpressions.Regex.Escape(word);
+        var lines = Text.Split('\n');
+        string scope = "global";
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string l = lines[i].Trim();
+            var v = System.Text.RegularExpressions.Regex.Match(l, @"^variables\s+(\w+)");
+            if (v.Success) scope = v.Groups[1].Value;
+            System.Text.RegularExpressions.Match m;
+            string at = $" · line {i + 1}";
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^declare\s+(?:(networked\w*|local)\s+)?(\w+)\.(\w+)\s+{w}\b(?:\s*=\s*(.+))?")).Success)
+                return new HoverInfo(word, $"{m.Groups[2].Value}.{m.Groups[3].Value} {word}" + at,
+                    null, Describe(m.Groups[2].Value, m.Groups[3].Value, m.Groups[1].Value, m.Groups[4].Value), null);
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(?:temp|temporary)\s+(\w+)\s+{w}\b(?:\s*=?\s*(.+))?")).Success)
+                return new HoverInfo(word, $"temp {m.Groups[1].Value} {word}" + at, null,
+                    $"A temporary {m.Groups[1].Value}: it only lives during this tick" + (m.Groups[2].Success ? $", starting at {m.Groups[2].Value.Trim()}." : "."), null);
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(networked\w*|local)\s+(\w+)\s+{w}\b\s*(.*)")).Success)
+                return new HoverInfo(word, $"{scope} {m.Groups[2].Value} {word}" + at, null, Describe(scope, m.Groups[2].Value, m.Groups[1].Value, m.Groups[3].Value), null);
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^alias\s+{w}\s*=\s*(.+)")).Success)
+                return new HoverInfo(word, "alias" + at, null, "Another name for " + m.Groups[1].Value.Trim() + ".", null);
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(?:(?:hidden|locked)\s+)*(ranged_option|option|player_traits|traits|map_object|objects|constant)\s+{w}\b")).Success)
+            {
+                string kind = m.Groups[1].Value;
+                string label = lines.Skip(i + 1).Take(2).Select(x => x.Trim()).FirstOrDefault(x => x.StartsWith('"'))?.Trim('"') ?? "";
+                string what = kind switch
+                {
+                    "ranged_option" or "option" => "A lobby option: use it like a number.",
+                    "player_traits" or "traits" => "Player traits: apply them with apply_player_traits(player, " + word + ").",
+                    "map_object" or "objects" => "A set of map objects (by label or type): loop with 'for each " + word + " do'.",
+                    "constant" => "A constant number.",
+                    _ => "Declared in the script.",
+                };
+                return new HoverInfo(word, kind + " " + word + at, null, (label.Length > 0 ? $"\"{label}\". " : "") + what, null);
+            }
+        }
+        return null;
+    }
+
+    private static string Describe(string scope, string type, string network, string value)
+    {
+        string owner = scope switch
+        {
+            "player" => "Each player has their own (current_player." ,
+            "team" => "Each team has its own (current_team.",
+            "object" => "Each object has its own (current_object.",
+            _ => "",
+        };
+        string text = scope == "global" ? $"A {type} kept between ticks." : $"A {type} kept between ticks. {owner}…).";
+        if (network == "local") text += " Local: not sent to players.";
+        if (!string.IsNullOrWhiteSpace(value)) text += $" Starts at {value.Trim()}.";
+        return text;
     }
 
     public override string Badge => IsKaloScript ? "kalo" : "script";
@@ -348,6 +471,20 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         await _main.CreateKaloScriptAsync(System.IO.Path.GetFileNameWithoutExtension(Path), kscript);
     }
 
+    /// <summary>Kalo Script: the gametype's settings, options, traits, objects and constants as forms (instead of the code).</summary>
+    public GametypeSettingsViewModel GametypeSettings => _settings ??= new GametypeSettingsViewModel(this);
+    private GametypeSettingsViewModel? _settings;
+    [ObservableProperty] private bool _showSettings;
+    public bool ShowCode => !ShowSettings;
+    partial void OnShowSettingsChanged(bool value) => OnPropertyChanged(nameof(ShowCode));
+
+    [RelayCommand]
+    private void ToggleSettings()
+    {
+        if (!ShowSettings) GametypeSettings.Reload();
+        ShowSettings = !ShowSettings;
+    }
+
     [RelayCommand]
     private void ToggleMegalo()
     {
@@ -398,6 +535,9 @@ public sealed record ScriptMessage(int Line, int Start, int Length, string Sever
 }
 
 public sealed record StatRow(string Label, string Value);
+
+/// <summary>Hover help: a title, the call form, the Megalo argument list (Kalo Script), what it does, an example.</summary>
+public sealed record HoverInfo(string Title, string? Signature, string? Megalo, string Text, string? Example);
 
 /// <summary>One autocomplete suggestion: the word, where it comes from (action, condition, weapons...), its signature or help.</summary>
 public sealed record CompletionItem(string Text, string Kind, string? Description);

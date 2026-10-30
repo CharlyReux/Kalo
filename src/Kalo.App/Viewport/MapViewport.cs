@@ -639,6 +639,8 @@ void main() {
             gl.DepthMask(true);
         }
 
+        DrawZones(gl, map);
+
         if (selected != null)
         {
             // Outlines and the move/turn handles on top of everything, so the selection is never lost behind walls.
@@ -668,6 +670,70 @@ void main() {
         SaveCapture(gl, w, h);
 
         if (animate) RequestNextFrameRendering();
+    }
+
+    /// <summary>
+    /// Objective zones (multiplayer boundaries: hills, territories, capture and kill zones) as wire shapes:
+    /// faint where they are, bright for the selection (drawn over walls so they can be resized from anywhere).
+    /// </summary>
+    private void DrawZones(Gl gl, MapEditorViewModel map)
+    {
+        var zones = map.VisibleItems.Where(i => i.HasZone).ToList();
+        foreach (var s in map.Selection) if (s.HasZone && !zones.Contains(s)) zones.Add(s);
+        if (zones.Count == 0) return;
+        gl.Uniform1(_uLit, 0f);
+        gl.Enable(Gl.BLEND);
+        gl.BlendFunc(Gl.SRC_ALPHA, Gl.ONE_MINUS_SRC_ALPHA);
+        gl.DepthMask(false);
+        foreach (var z in zones)
+        {
+            bool sel = map.Selection.Contains(z);
+            if (sel) gl.Disable(Gl.DEPTH_TEST);
+            gl.Uniform4(_uColor, 0.3f, 0.85f, 1f, sel ? 0.95f : 0.45f);
+            var pose = z.PoseMatrix;
+            var size = z.ZoneSize;
+            float r = Math.Max(size.X, 0.05f);
+            float up = size.Z, down = size.W;
+            const float ring = 0.75f; // the gizmo ring's radius
+            switch (z.ZoneShape)
+            {
+                case 1: // sphere: three great circles
+                    gl.BindVertexArray(_gizmoVao);
+                    var s = Matrix4x4.CreateScale(r / ring);
+                    foreach (var rot in new[] { Matrix4x4.Identity, Matrix4x4.CreateRotationX(MathF.PI / 2), Matrix4x4.CreateRotationY(MathF.PI / 2) })
+                    {
+                        gl.UniformMatrix(_uModel, s * rot * pose);
+                        gl.DrawArrays(Gl.LINES, 6, RingSegments * 2);
+                    }
+                    break;
+                case 2: // cylinder: top and bottom circles, four sides
+                    gl.BindVertexArray(_gizmoVao);
+                    foreach (float h in new[] { up, -down, 0f })
+                    {
+                        gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(r / ring, r / ring, 1) * Matrix4x4.CreateTranslation(0, 0, h) * pose);
+                        gl.DrawArrays(Gl.LINES, 6, RingSegments * 2);
+                    }
+                    for (int k = 0; k < 4; k++)
+                    {
+                        float a = k * MathF.PI / 2;
+                        // the gizmo's z axis line (0..1) stretched from the bottom to the top
+                        gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(1, 1, Math.Max(up + down, 0.05f)) *
+                                                  Matrix4x4.CreateTranslation(MathF.Cos(a) * r, MathF.Sin(a) * r, -down) * pose);
+                        gl.DrawArrays(Gl.LINES, 4, 2);
+                    }
+                    break;
+                case 3: // box: width along x, length along y
+                    gl.BindVertexArray(_edgeVao);
+                    float hw = Math.Max(size.X, 0.05f) / 2, hl = Math.Max(size.Y, 0.05f) / 2, hh = Math.Max(up + down, 0.05f) / 2;
+                    gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(hw, hl, hh) * Matrix4x4.CreateTranslation(0, 0, (up - down) / 2) * pose);
+                    gl.DrawArrays(Gl.LINES, 0, 24);
+                    break;
+            }
+            if (sel) gl.Enable(Gl.DEPTH_TEST);
+        }
+        gl.DepthMask(true);
+        gl.Disable(Gl.BLEND);
+        gl.BindVertexArray(0);
     }
 
     private void PlaceCamera(MapEditorViewModel map)

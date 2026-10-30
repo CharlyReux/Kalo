@@ -82,6 +82,29 @@ public partial class MapEditorView : UserControl
         if (name != null) await _vm.NewFolderAsync(name, _vm.SelectedFolder);
     }
 
+    private void Outliner_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.F2 || e.KeyModifiers != KeyModifiers.None) return;
+        e.Handled = true;
+        if (_vm?.Selection.Count == 1) Rename_Click(sender, new RoutedEventArgs());
+        else if (_vm?.SelectedFolder >= 0) RenameFolder_Click(sender, new RoutedEventArgs());
+    }
+
+    /// <summary>Names the selected object (e.g. a hill "hill_1"): its row in the list shows the name.</summary>
+    private async void Rename_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_vm == null || Owner == null) return;
+        if (_vm.Selection.Count != 1 || _vm.Selected is not { } item)
+        {
+            if (_vm.SelectedFolder >= 0) RenameFolder_Click(sender, e);
+            else _vm.Status = "Select one object to rename.";
+            return;
+        }
+        if (item.Category == Kalo.Protocol.StartLocations.Category) { _vm.Status = "Start locations have no name."; return; }
+        string? name = await Dialogs.PromptAsync(Owner, "Rename", $"Name for this {item.Name} (up to 31 characters). Empty: no name.", item.PlacedName ?? "");
+        if (name != null) await _vm.RenameAsync(item, name);
+    }
+
     private async void RenameFolder_Click(object? sender, RoutedEventArgs e)
     {
         if (_vm == null || Owner == null || _vm.SelectedFolder < 0) return;

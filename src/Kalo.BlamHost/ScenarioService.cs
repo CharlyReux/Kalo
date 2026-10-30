@@ -228,6 +228,11 @@ namespace Kalo.BlamHost
                     }
                     break;
                 }
+                case PlacementOps.Rename:
+                    if (p.Index < 0 || p.Index >= count) throw new ArgumentOutOfRangeException("index");
+                    SetObjectName(tag, k, p.Index, p.Tag);
+                    select = p.Index;
+                    break;
                 default:
                     throw new ArgumentException("Unknown placement operation: " + p.Op);
             }
@@ -697,8 +702,73 @@ namespace Kalo.BlamHost
                 Scale = Float(tag.SelectField(o + "Real:scale")),
                 Label = Safe(() => TagService.ValueOf(tag.SelectField(e + "Struct:multiplayer data[0]/String:megalo label"))),
                 UniqueId = Int(tag.SelectField(o + "Struct:object id[0]/LongInteger:unique id")),
-                Folder = Int(tag.SelectField(o + "ShortBlockIndex:editor folder"))
+                Folder = Int(tag.SelectField(o + "ShortBlockIndex:editor folder")),
+                Shape = SafeValue(() => Convert.ToInt32(((TagFieldEnum)tag.SelectField(e + "Struct:multiplayer data[0]/CharEnum:boundary shape")).Value), 0),
+                ShapeSize = SafeValue(() => new[]
+                {
+                    Float(tag.SelectField(e + "Struct:multiplayer data[0]/Real:boundary width or radius")),
+                    Float(tag.SelectField(e + "Struct:multiplayer data[0]/Real:boundary box length")),
+                    Float(tag.SelectField(e + "Struct:multiplayer data[0]/Real:boundary positive height")),
+                    Float(tag.SelectField(e + "Struct:multiplayer data[0]/Real:boundary negative height")),
+                }, null),
             };
+        }
+
+        /// <summary>
+        /// Names a placement (the scenario's object names, as in Sapien). An object that already has a name keeps its
+        /// entry, renamed; otherwise a new entry is added. An empty name only unlinks the object from its entry.
+        /// </summary>
+        private static void SetObjectName(TagFile tag, string[] k, int index, string text)
+        {
+            string name = (text ?? "").Trim();
+            var nameField = tag.SelectField("Block:" + k[0] + "[" + index + "]/ShortBlockIndex:name") as TagFieldBlockIndex;
+            var block = tag.SelectField("Block:object names") as TagFieldBlock;
+            if (nameField == null || block == null) throw new InvalidOperationException("This map has no object names.");
+            int current = nameField.Value;
+            if (name.Length == 0) { nameField.Value = -1; return; }
+            if (name.Length > 31) throw new ArgumentException("Names are at most 31 characters.");
+            var names = ObjectNames(tag);
+            int taken = names.FindIndex(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+            if (taken >= 0 && taken != current) throw new ArgumentException("Another object is already named " + name + ".");
+            // An entry shared with another object (a copy made outside Kalo) is not renamed under it.
+            bool shared = false;
+            if (current >= 0)
+                foreach (string[] kk in Kinds)
+                {
+                    var objects = tag.SelectField("Block:" + kk[0]) as TagFieldBlock;
+                    for (int i = 0; objects != null && i < objects.Elements.Count && !shared; i++)
+                        if ((kk[0] != k[0] || i != index) && Int(tag.SelectField("Block:" + kk[0] + "[" + i + "]/ShortBlockIndex:name")) == current) shared = true;
+                }
+            int entry = current >= 0 && current < block.Elements.Count && !shared ? current : -1;
+            if (entry < 0)
+            {
+                if (block.Elements.Count >= block.MaximumElementCount) throw new InvalidOperationException("This map has no room for more object names.");
+                block.AddElement();
+                entry = block.Elements.Count - 1;
+            }
+            TagField first = block.Elements[entry].Fields.FirstOrDefault();
+            SetText(first, name);
+            // The entry's object type and placement index (Sapien keeps them in step with the object).
+            foreach (TagField f in AllFields(block.Elements[entry].Fields))
+            {
+                string fn = f.FieldName ?? "";
+                if (f is TagFieldEnum en && fn.IndexOf("type", StringComparison.OrdinalIgnoreCase) >= 0) TrySet(() => en.SetValue(k[2]));
+                else if (f is TagFieldElementInteger n && fn.IndexOf("index", StringComparison.OrdinalIgnoreCase) >= 0) TrySet(() => n.Data = index);
+            }
+            nameField.Value = entry;
+        }
+
+        private static IEnumerable<TagField> AllFields(IEnumerable<TagField> fields)
+        {
+            foreach (TagField f in fields)
+            {
+                if (f is TagFieldStruct st)
+                {
+                    foreach (var el in st.Elements)
+                        foreach (TagField g in AllFields(el.Fields)) yield return g;
+                }
+                else yield return f;
+            }
         }
 
         private static List<string> ObjectNames(TagFile tag)
@@ -904,6 +974,11 @@ namespace Kalo.BlamHost
         private static void TrySet(Action set)
         {
             try { set(); } catch (Exception ex) { Server.Log("placement field not set: " + ex.Message); }
+        }
+
+        private static T SafeValue<T>(Func<T> get, T fallback)
+        {
+            try { return get(); } catch (Exception) { return fallback; }
         }
 
         private static string Safe(Func<string> get)

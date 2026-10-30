@@ -158,6 +158,23 @@ public partial class MainWindow : Window
             await Vm.ActiveTab.PickReferenceCommand.ExecuteAsync(tag);
     }
 
+    /// <summary>A scale typed or dragged in the inspector applies when the box is left (as the Set button does).</summary>
+    private async void ScaleBox_LostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (Vm?.ActiveMap is { Selected: { } item } map && ScaleBox.Text is { } text && text.Trim() != item.ScaleText)
+            await map.SetScaleCommand.ExecuteAsync(text);
+    }
+
+    private void Docs_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (Vm != null) DocsWindow.Open(this, Vm);
+    }
+
+    private void DocsReference_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (Vm != null) DocsWindow.Open(this, Vm, "ref-conditions");
+    }
+
     private async void Settings_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e) => await Dialogs.ShowSettingsAsync(this);
 
     private async void ObjectList_DoubleTapped(object? sender, TappedEventArgs e)
@@ -175,6 +192,12 @@ public partial class MainWindow : Window
         base.OnKeyDown(e);
         if (!e.Handled) await HandleSharedKeysAsync(this, e);
         if (e.Handled) return;
+        if (e.Key == Key.F1 && Vm != null)
+        {
+            DocsWindow.Open(this, Vm);
+            e.Handled = true;
+            return;
+        }
         if (e.Key == Key.P && e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             Vm?.ShowExplorerCommand.Execute(null);

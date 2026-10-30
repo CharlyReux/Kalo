@@ -39,7 +39,8 @@ public static class KaloScript
     public static readonly HashSet<string> MegaloDeclarations = new(StringComparer.Ordinal)
     {
         "game_options", "map_object", "constants", "teams", "hud_widgets", "game_stats", "engine_data",
-        "map_permissions", "base", "localized_include", "object_filter", "loadout_palettes",
+        "map_permissions", "base", "localized_include", "object_filter", "loadout_palettes", "loadout", "loadout_palette",
+        "player_rating", "string_table",
     };
 
     /// <summary>What a top-level <c>on X do</c> becomes.</summary>
@@ -55,16 +56,10 @@ public static class KaloScript
 
     /// <summary>The starter for new gametypes: points per kill, a streak bonus and a message, with comments.</summary>
     public const string Starter = """
-    -- Options players can change in the lobby (Megalo declarations stay as they are, inside megalo [[ ]]).
-    megalo [[
-    game_options
-    	ranged_option option_kill_points
-    		"Kill Points"
-    		"How many points you get for killing an enemy"
-    		1 -10 10
-    	end
-    end
-    ]]
+    -- Settings and lobby options (the Settings button shows them as a form).
+    setting score_to_win_round = 25
+    setting round_time_limit = 10
+    option kill_points "Kill Points" "How many points you get for killing an enemy" = 1 range -10 10
 
     -- Variables: each player keeps their own kill streak.
     declare player.number streak = 0
@@ -74,7 +69,7 @@ public static class KaloScript
       if player_died(current_player, enemy) then
         temp player killer = none
         player_death_get_killing_player(current_player, killer)
-        killer.score += option_kill_points
+        killer.score += kill_points
         killer.streak += 1
         current_player.streak = 0
 
@@ -90,6 +85,13 @@ public static class KaloScript
     """;
 
     public static TranspileResult Transpile(string source) => new Transpiler(source).Run();
+
+    /// <summary>Converts one Megalo declaration block, or says why it stays Megalo (diagnostics, tests).</summary>
+    public static (string? Kalo, string? Reason) ConvertDeclaration(IReadOnlyList<string> megaloLines)
+    {
+        string? k = DeclarationConverter.Convert(megaloLines);
+        return (k, k == null ? DeclarationConverter.LastReason : null);
+    }
 
     /// <summary>Converts Megalo text (a Bungie script or one of yours) to Kalo Script.</summary>
     public static string FromMegalo(string megalo) => Decompiler.Convert(megalo);
@@ -217,7 +219,7 @@ internal sealed class ParseError(Tok at, string message) : Exception(message)
     public Tok At { get; } = at;
 }
 
-internal sealed class Transpiler
+internal sealed partial class Transpiler
 {
     private readonly string _source;
     private readonly List<ScriptError> _errors = new();
@@ -285,7 +287,8 @@ internal sealed class Transpiler
             final.Add(($"\t{m.Kind} \"{m.Value}\"", m.Line));
             final.Add(("end", m.Line));
         }
-        // Variables go where the first declare was (they may use options declared above them).
+        // Variables go where the first declare was (they may use options declared above them);
+        // game options in one game_options block where the first one was.
         var vars = new List<(string Text, int Line)>();
         foreach (var (scope, lines) in _vars)
         {
@@ -293,9 +296,17 @@ internal sealed class Transpiler
             vars.AddRange(lines.Select(l => ("\t" + l.Text, l.Line)));
             vars.Add(("end", lines[^1].Line));
         }
-        final.AddRange(_out.Take(_varsAt));
-        final.AddRange(vars);
-        final.AddRange(_out.Skip(_varsAt));
+        foreach (var line in _out)
+        {
+            if (line.Text == VarsMarker) final.AddRange(vars);
+            else if (line.Text == OptionsMarker)
+            {
+                final.Add(("game_options", line.Line));
+                final.AddRange(_options.Select(o => ("\t" + o.Text, o.Line)));
+                final.Add(("end", _options.Count > 0 ? _options[^1].Line : line.Line));
+            }
+            else final.Add(line);
+        }
         return new TranspileResult
         {
             Megalo = string.Join("\r\n", final.Select(l => l.Text)) + "\r\n",
@@ -332,7 +343,8 @@ internal sealed class Transpiler
         {
             var t = Next();
             var n = Peek;
-            if (n.Col == 1 && n.Line > t.Line && (n.Is("for") || n.Is("on") || n.Is("do") || n.Is("declare") || n.Is("alias") || n.Is("megalo") || n.Is("include"))) return;
+            if (n.Col == 1 && n.Line > t.Line && (n.Is("for") || n.Is("on") || n.Is("do") || n.Is("declare") || n.Is("alias") || n.Is("megalo") || n.Is("include") ||
+                                                    (n.Kind == T.Word && DeclarationWords.Contains(n.Text)))) return;
         }
     }
 
@@ -342,6 +354,8 @@ internal sealed class Transpiler
 
     private void TopLevel()
     {
+        _prevGroup = _group;
+        _group = null;
         var t = Peek;
         if (t.Is("megalo"))
         {
@@ -373,6 +387,7 @@ internal sealed class Transpiler
             return;
         }
         if (t.Is("declare")) { Declare(); return; }
+        if (Declaration()) return;
         if (t.Is("alias"))
         {
             Next();
@@ -428,7 +443,7 @@ internal sealed class Transpiler
         string name = Word("a variable name");
         string value = type is "number" or "timer" ? "0" : "none";
         if (Peek.Is("=")) { Next(); value = Atom(); }
-        if (_varsAt == int.MaxValue) _varsAt = _out.Count;
+        if (_varsAt == int.MaxValue) { _varsAt = _out.Count; _out.Add((VarsMarker, at.Line)); }
         if (!_vars.TryGetValue(scope, out var list)) _vars[scope] = list = new();
         list.Add(($"{network} {type} {name} {value}", at.Line));
     }
@@ -825,7 +840,7 @@ internal static class Decompiler
         var lines = megalo.Replace("\r\n", "\n").Split('\n')
             .Select((l, i) => { var (code, comment) = StripComment(l); return new Line(i + 1, code, comment, l.TrimEnd()); }).ToList();
         var sb = new StringBuilder();
-        sb.AppendLine("-- Kalo Script (converted from Megalo text). Declarations stay as Megalo inside megalo [[ ]].");
+        sb.AppendLine("-- Kalo Script (converted from Megalo text).");
         int i = 0;
         var raw = new List<string>();
         void FlushRaw()
@@ -904,8 +919,15 @@ internal static class Decompiler
             // Comment-only lines just before the next item belong to it: give them back.
             int to = i;
             while (to > from + 1 && lines[to - 1].Text.Trim().Length == 0) to--;
-            raw.AddRange(lines.Skip(from).Take(to - from).Select(x => x.Raw));
-            FlushRaw();
+            var block = lines.Skip(from).Take(to - from).Select(x => x.Raw).ToList();
+            // Written in Kalo Script when it converts back to exactly the same Megalo; otherwise kept as Megalo.
+            string? kalo = DeclarationConverter.Convert(block);
+            if (kalo != null) sb.Append(kalo);
+            else
+            {
+                raw.AddRange(block);
+                FlushRaw();
+            }
             for (int k = to; k < i; k++) sb.AppendLine(lines[k].Comment.Length > 0 ? "--" + lines[k].Comment : "");
         }
         FlushRaw();

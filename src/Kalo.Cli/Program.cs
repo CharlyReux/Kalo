@@ -65,6 +65,9 @@ switch (command)
     case "kscript-roundtrip":
         await KscriptRoundTrip(argsList.ElementAtOrDefault(1));
         break;
+    case "kscript-guide":
+        await KscriptGuide();
+        break;
     case "kscript-starter":
         await KscriptStarter(argsList.ElementAtOrDefault(1));
         break;
@@ -489,4 +492,34 @@ async Task KscriptStarter(string? file)
         string vanilla = Path.Combine(mccDir, "haloreach", "game_variants", "slayer_054.bin");
         if (File.Exists(vanilla)) Check("MCC's own slayer variant reads the same way (hash valid)", GameVariantFile.HashIsValid(File.ReadAllBytes(vanilla)));
     }
+}
+
+/// <summary>Every complete example in the documentation compiles with HREK's compiler.</summary>
+async Task KscriptGuide()
+{
+    await using var host = await HostClient.StartAsync(paths, line => { });
+    var cat = await host.MegaloCatalogAsync(paths.MegaloObjectLists);
+    var sections = KaloScriptGuide.Build(cat);
+    Console.WriteLine($"{sections.Count} pages, {sections.Sum(s => s.Blocks.Count)} blocks");
+    int n = 0, bad = 0;
+    foreach (var s in sections)
+        foreach (var b in s.Blocks.Where(b => b.Kind == GuideKind.Program))
+        {
+            n++;
+            var t = KaloScript.Transpile(b.Text);
+            if (!t.Succeeded) { bad++; Console.WriteLine($"  {s.Title}: Kalo Script errors: {string.Join("; ", t.Errors)}"); continue; }
+            var r = await host.MegaloCompileAsync(new MegaloCompileParams { ObjectLists = paths.MegaloObjectLists, IncludeFolder = paths.MegaloSource, Text = t.Megalo });
+            if (!r.Succeeded)
+            {
+                bad++;
+                var m = r.Messages?.FirstOrDefault(x => x.Severity?.Contains("rror") == true);
+                Console.WriteLine($"  {s.Title}: does not compile: line {t.SourceLine(m?.Line ?? 0)}: {m?.Message} '{m?.Token}'\n{b.Text}");
+            }
+        }
+    Console.WriteLine($"{n} examples, {bad} failing");
+    Check("every documentation example compiles", bad == 0);
+    var names = (cat.Actions ?? new()).Select(a => a.Name!).Concat((cat.Conditions ?? new()).Select(c => c.Name!)).ToList();
+    var missing = names.Where(x => !MegaloDocs.Actions.ContainsKey(x) && !MegaloDocs.Conditions.ContainsKey(x)).ToList();
+    Console.WriteLine("without help: " + string.Join(", ", missing));
+    Check("every action and condition has help", missing.Count == 0);
 }

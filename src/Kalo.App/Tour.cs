@@ -43,6 +43,7 @@ public sealed class Tour
                 await Section("studio", Studio);
                 await Section("split", SplitEditors);
                 await Section("kscript", KaloScriptSection);
+                await Section("docs", DocsSection);
                 await Section("forge", Forge);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
@@ -68,7 +69,7 @@ public sealed class Tour
         if (only != null && !only.Contains(name, StringComparer.OrdinalIgnoreCase)) return;
         Say("== " + name);
         try { await body(); }
-        catch (Exception ex) { Check(false, name + " threw: " + ex.Message); }
+        catch (Exception ex) { Check(false, name + " threw: " + ex); }
     }
 
     /// <summary>--map-play-test: edit Sword Slayer in the map view, save, play it, try a live edit, stop, revert.</summary>
@@ -425,6 +426,15 @@ public sealed class Tour
 
     // ---- map studio: object list, change marks, copy/paste, folders, properties, prefabs, blocks, browser ----------
 
+    private static IEnumerable<OutlinerNode> Flatten(IEnumerable<OutlinerNode> nodes)
+    {
+        foreach (var n in nodes)
+        {
+            yield return n;
+            foreach (var c in Flatten(n.Children)) yield return c;
+        }
+    }
+
     private async Task Studio()
     {
         var map = await _vm.OpenMapAsync(@"levels\multi\20_sword_slayer\20_sword_slayer.scenario");
@@ -459,6 +469,45 @@ public sealed class Tour
             var pu = DateTime.UtcNow.AddSeconds(10);
             while (!map.HasProperties && DateTime.UtcNow < pu) await Task.Delay(200);
             Check(map.HasProperties, $"the weapon's own properties are listed ({map.Properties.Count(p => !p.IsHeader)} fields: {string.Join(", ", map.Properties.Where(p => !p.IsHeader).Take(5).Select(p => p.Label))})");
+
+            // Objective zones: the shape and size of an object's boundary, drawn in the view.
+            var zoned = map.Items.FirstOrDefault(i => i.HasZone);
+            Say(zoned != null ? $"a zone in the map: {zoned.Display} (shape {zoned.ZoneShape}, {zoned.ZoneSize})" : "no zone in this map");
+            var zoneTarget = addedNow ?? weapon;
+            await map.SetZoneAsync(zoneTarget, "CharEnum:boundary shape", "2");
+            zoneTarget = map.Items.First(i => i.Category == zoneTarget.Category && i.Index == zoneTarget.Index);
+            Check(zoneTarget.ZoneShape == 2 && zoneTarget.ZoneSize.X > 2.9f, $"a cylinder zone was given to the DMR with a default size ({zoneTarget.ZoneShape}, {zoneTarget.ZoneSize})");
+            zoneTarget.ZoneWidth = "5";
+            var zu = DateTime.UtcNow.AddSeconds(10);
+            while (Math.Abs(zoneTarget.ZoneSize.X - 5) > 0.01f && DateTime.UtcNow < zu) await Task.Delay(200);
+            Check(Math.Abs(zoneTarget.ZoneSize.X - 5) < 0.01f, $"typing a radius of 5 resized it ({zoneTarget.ZoneSize.X})");
+            map.Selected = zoneTarget;
+            map.LookFrom(zoneTarget.Position + new Vector3(-9, -9, 7), 45, -30);
+            await Pause(1500);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "studio-zone.png"));
+            Shot("studio-zone-inspector");
+            Check(map.Properties.All(r => r.IsHeader || !r.Label.StartsWith("Boundary", StringComparison.OrdinalIgnoreCase)), "the raw boundary fields are left to the Zone section");
+            zoneTarget.ZoneShapeIndex = 3;
+            zu = DateTime.UtcNow.AddSeconds(10);
+            while (!zoneTarget.IsBoxZone && DateTime.UtcNow < zu) await Task.Delay(200);
+            Check(zoneTarget.IsBoxZone && zoneTarget.ZoneWidthLabel == "Width", "switching to a box asks for width and length");
+            await Pause(800);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "studio-zone-box.png"));
+
+            // Names: rename the DMR in the object list.
+            await map.RenameAsync(zoneTarget, "kalo_tour_goal");
+            Check(zoneTarget.PlacedName == "kalo_tour_goal" && zoneTarget.Display.StartsWith("kalo_tour_goal"), $"renamed the DMR ({zoneTarget.Display})");
+            Check(Flatten(map.OutlinerRoots).Any(n => n.Item == zoneTarget && n.Name.Contains("kalo_tour_goal")), "the object list shows the new name");
+            var other = map.Items.FirstOrDefault(i => i != zoneTarget && i.Category == "weapons");
+            if (other != null)
+            {
+                await map.RenameAsync(other, "kalo_tour_goal");
+                Check(other.PlacedName != "kalo_tour_goal", "a name already used is refused");
+            }
+            await Pause(600);
+            Shot("studio-rename");
+            await map.RenameAsync(zoneTarget, "");
+            Check(string.IsNullOrEmpty(zoneTarget.PlacedName), "an empty name removes it");
 
             // Copy / paste.
             int count = map.Items.Count;
@@ -660,7 +709,7 @@ public sealed class Tour
         Check(doc.IsKaloScript && doc.Badge == "kalo", "a .kscript opens as Kalo Script");
         await doc.CompileCommand.ExecuteAsync(null);
         Check(doc.CompileOk, "the starter compiles: " + doc.CompileSummary);
-        Check(doc.GeneratedMegalo.Contains("trigger player") && doc.GeneratedMegalo.Contains("action set killer.score += option_kill_points"), "it turns into the expected Megalo");
+        Check(doc.GeneratedMegalo.Contains("trigger player") && doc.GeneratedMegalo.Contains("action set killer.score += kill_points"), "it turns into the expected Megalo");
 
         doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
         await doc.CompileCommand.ExecuteAsync(null);
@@ -673,6 +722,23 @@ public sealed class Tour
         first = doc.Messages.FirstOrDefault(m => m.IsError);
         int callLine = Kalo.Core.Scripting.KaloScript.Starter.Split('\n').ToList().FindIndex(l => l.Contains("player_death_get_killing_player")) + 1;
         Check(!doc.CompileOk && first?.Line == callLine, $"a Megalo compiler error points at the Kalo Script line ({first?.Line} vs {callLine}: {first?.Message})");
+
+        // The Settings panel: the declarations as forms, written back into the code.
+        doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+        doc.ToggleSettingsCommand.Execute(null);
+        var gs = doc.GametypeSettings;
+        var score = gs.Settings.FirstOrDefault(r => r.Name == "score_to_win_round");
+        Check(doc.ShowSettings && score?.Value == "25" && gs.Options.Count == 1 && gs.Options[0].Name == "kill_points",
+            $"Settings shows the starter's settings and option ({score?.Value}, {gs.Options.Count} option)");
+        if (score != null) score.Value = "50";
+        if (gs.Options.Count > 0) gs.Options[0].Max = "20";
+        gs.AddConstantCommand.Execute(null);
+        gs.AddTraitsCommand.Execute(null);
+        Check(doc.Text.Contains("setting score_to_win_round = 50") && doc.Text.Contains("range -10 20") && doc.Text.Contains("constant k_my_constant = 0") && doc.Text.Contains("traits my_traits"),
+            "editing the forms rewrites the script");
+        await doc.CompileCommand.ExecuteAsync(null);
+        Check(doc.CompileOk, "the edited script still compiles: " + doc.CompileSummary);
+        doc.ToggleSettingsCommand.Execute(null);
 
         doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
         string? bin = await doc.ExportBin();
@@ -694,9 +760,67 @@ public sealed class Tour
             _vm.MoveToOtherGroup(megalo);
             await Pause(1500);
             Shot("kscript-convert");
+            kdoc.ToggleMegaloCommand.Execute(null);
+            kdoc.ToggleSettingsCommand.Execute(null);
+            Check(kdoc.GametypeSettings.Traits.Count > 1 && kdoc.GametypeSettings.Options.Count > 0, $"Juggernaut's traits and options show in Settings ({kdoc.GametypeSettings.Traits.Count} traits, {kdoc.GametypeSettings.Options.Count} options)");
+            await Pause(1200);
+            Shot("kscript-settings");
             _vm.Unsplit();
             await _vm.CloseTabCommand.ExecuteAsync(kdoc);
             await _vm.CloseTabCommand.ExecuteAsync(megalo);
+        }
+    }
+
+    // ---- hover help and the Kalo Script documentation -------------------------------------------------------
+
+    private async Task DocsSection()
+    {
+        await _vm.EnsureMegaloCatalogAsync();
+        var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\hover.kscript") { Text = Kalo.Core.Scripting.KaloScript.Starter };
+        _vm.Tabs.Add(doc);
+        _vm.ActiveDocument = doc;
+        await Pause(800);
+        try
+        {
+            var view = Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(_window).OfType<Views.ScriptEditorView>().FirstOrDefault(v => v.DataContext == doc);
+            Check(view != null, "the Kalo Script tab is shown");
+            if (view == null) return;
+            var lines = doc.Text.Split('\n');
+            int Line(string what) => Array.FindIndex(lines, l => l.Contains(what)) + 1;
+            int callLine = Line("player_death_get_killing_player(");
+            var call = view.HoverAt(callLine, lines[callLine - 1].IndexOf("player_death") + 3);
+            Check(call?.Title == "action player_death_get_killing_player" && call.Signature?.StartsWith("player_death_get_killing_player(<dead_player>") == true,
+                $"hovering an action shows its help ({call?.Title}: {call?.Signature})");
+            int ifLine = Line("if player_died(");
+            var keyword = view.HoverAt(ifLine, lines[ifLine - 1].IndexOf("if") + 1);
+            Check(keyword?.Title == "keyword if", $"hovering a keyword explains it ({keyword?.Title})");
+            int streakLine = Line("killer.streak += 1");
+            var variable = view.HoverAt(streakLine, lines[streakLine - 1].IndexOf("streak") + 2);
+            Check(variable?.Signature?.Contains("player.number streak") == true, $"hovering a variable shows where it is declared ({variable?.Signature}: {variable?.Text})");
+            var comment = view.HoverAt(1, 6);
+            Check(comment == null, "comments have no hover");
+            Check(view.ShowHoverFor("player_death_get_killing_player"), "the hover popup opens");
+            await Pause(600);
+            view.SaveHoverShot(System.IO.Path.Combine(_dir, $"{++_shot:D2}-hover.png"));
+            Shot("hover-editor");
+
+            var docs = Views.DocsWindow.Open(_window, _vm, "create_object");
+            await Pause(1200);
+            Check(docs.Current?.Title == "Actions: Objects", $"F1 on create_object opens its page ({docs.Current?.Title})");
+            MainWindow.SaveShot(docs, System.IO.Path.Combine(_dir, $"{++_shot:D2}-docs-reference.png"));
+            docs.GoTo("start");
+            await Pause(600);
+            Check(docs.Current?.Title == "Getting started", "the guide opens at Getting started");
+            MainWindow.SaveShot(docs, System.IO.Path.Combine(_dir, $"{++_shot:D2}-docs-guide.png"));
+            docs.GoTo("timer");
+            await Pause(600);
+            Check(docs.Current == null && docs.Query == "timer", "an unknown word searches the docs");
+            MainWindow.SaveShot(docs, System.IO.Path.Combine(_dir, $"{++_shot:D2}-docs-search.png"));
+            docs.Close();
+        }
+        finally
+        {
+            await _vm.CloseTabCommand.ExecuteAsync(doc);
         }
     }
 

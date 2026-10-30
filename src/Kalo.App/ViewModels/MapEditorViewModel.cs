@@ -733,6 +733,7 @@ public partial class PlacementItem : ObservableObject
         _suppress = true;
         Index = p.Index;
         PlacedName = p.Name;
+        NameText = p.Name ?? "";
         Label = p.Label;
         var pos = p.Position is { Length: >= 3 } ? new Vector3(p.Position[0], p.Position[1], p.Position[2]) : Vector3.Zero;
         Position = pos;
@@ -741,6 +742,12 @@ public partial class PlacementItem : ObservableObject
         PlacedScale = p.Scale > 0.001f ? p.Scale : 1f;
         Folder = p.Folder;
         UniqueId = p.UniqueId;
+        ZoneShape = Math.Clamp(p.Shape, 0, 3);
+        var zs = p.ShapeSize is { Length: >= 4 } ? p.ShapeSize : new float[4];
+        ZoneSize = new Vector4(zs[0], zs[1], zs[2], zs[3]);
+        ZoneShapeIndex = ZoneShape;
+        ZoneWidth = Fmt(zs[0]); ZoneLength = Fmt(zs[1]); ZoneTop = Fmt(zs[2]); ZoneBottom = Fmt(zs[3]);
+        OnPropertyChanged(nameof(HasZone)); OnPropertyChanged(nameof(IsBoxZone)); OnPropertyChanged(nameof(IsSphereZone)); OnPropertyChanged(nameof(ZoneWidthLabel));
         X = Fmt(pos.X); Y = Fmt(pos.Y); Z = Fmt(pos.Z);
         YawText = Fmt(Yaw); PitchText = Fmt(Pitch); RollText = Fmt(Roll);
         _suppress = false;
@@ -764,6 +771,46 @@ public partial class PlacementItem : ObservableObject
         : BoxMatrix;
 
     /// <summary>Halo euler angles (degrees): roll about x, then pitch about y (positive = nose up), then yaw about z.</summary>
+    // ---- objective zone (multiplayer boundary) ----
+
+    /// <summary>0 none, 1 sphere, 2 cylinder, 3 box.</summary>
+    public int ZoneShape { get; private set; }
+    /// <summary>Width or radius, box length, height above, depth below (world units).</summary>
+    public Vector4 ZoneSize { get; private set; }
+    public bool HasZone => ZoneShape > 0;
+    public bool IsBoxZone => ZoneShape == 3;
+    public bool IsSphereZone => ZoneShape == 1;
+    public string ZoneWidthLabel => ZoneShape == 3 ? "Width" : "Radius";
+    [ObservableProperty] private int _zoneShapeIndex;
+    [ObservableProperty] private string _zoneWidth = "";
+    [ObservableProperty] private string _zoneLength = "";
+    [ObservableProperty] private string _zoneTop = "";
+    [ObservableProperty] private string _zoneBottom = "";
+
+
+    /// <summary>The object's name (inspector box); typing one renames it.</summary>
+    [ObservableProperty] private string _nameText = "";
+    partial void OnNameTextChanged(string value) { if (!_suppress) _ = _map.RenameAsync(this, value); }
+    internal void ResetNameText()
+    {
+        _suppress = true;
+        NameText = PlacedName ?? "";
+        _suppress = false;
+    }
+
+    partial void OnZoneShapeIndexChanged(int value)
+    {
+        if (_suppress || value < 0 || value == ZoneShape) return;
+        _ = _map.SetZoneAsync(this, "CharEnum:boundary shape", Math.Clamp(value, 0, 3).ToString());
+    }
+    partial void OnZoneWidthChanged(string value) { if (!_suppress) _ = _map.SetZoneAsync(this, "Real:boundary width or radius", value); }
+    partial void OnZoneLengthChanged(string value) { if (!_suppress) _ = _map.SetZoneAsync(this, "Real:boundary box length", value); }
+    partial void OnZoneTopChanged(string value) { if (!_suppress) _ = _map.SetZoneAsync(this, "Real:boundary positive height", value); }
+    partial void OnZoneBottomChanged(string value) { if (!_suppress) _ = _map.SetZoneAsync(this, "Real:boundary negative height", value); }
+
+    /// <summary>Object space (rotation + position, no scale) → world: zones are drawn in it.</summary>
+    public Matrix4x4 PoseMatrix => RotationMatrix * Matrix4x4.CreateTranslation(Position);
+
     private Matrix4x4 RotationMatrix =>
         Matrix4x4.CreateRotationX(Deg(Roll)) * Matrix4x4.CreateRotationY(-Deg(Pitch)) * Matrix4x4.CreateRotationZ(Deg(Yaw));
 

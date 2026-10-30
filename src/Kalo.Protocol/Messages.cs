@@ -280,6 +280,10 @@ namespace Kalo.Protocol
         public int UniqueId { get; set; }
         /// <summary>Editor folder index (Sapien's folders), -1 for none.</summary>
         public int Folder { get; set; } = -1;
+        /// <summary>Multiplayer boundary (objective zones): 0 none, 1 sphere, 2 cylinder, 3 box.</summary>
+        public int Shape { get; set; }
+        /// <summary>Boundary sizes in world units: width or radius, box length, height above, depth below.</summary>
+        public float[] ShapeSize { get; set; }
     }
 
     /// <summary>A Sapien editor folder of the scenario (objects point at one).</summary>
@@ -337,6 +341,8 @@ namespace Kalo.Protocol
         public const string RenameFolder = "renameFolder";
         /// <summary>Removes folder Folder; its objects and subfolders move to its parent.</summary>
         public const string DeleteFolder = "deleteFolder";
+        /// <summary>Gives placement Index the object name Tag (empty: no name). Names are unique in a map.</summary>
+        public const string Rename = "rename";
     }
 
     public sealed class PlacementOpParams

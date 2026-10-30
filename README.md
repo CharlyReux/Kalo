@@ -79,19 +79,22 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   own Megalo compiler. New gametypes are written in it by default (untick "Write it in Kalo Script" to get Megalo
   text), and "To Kalo Script" converts any Megalo script (a new file in your mod; the original stays). "Megalo"
   shows the text it turns into; compiler errors point at the Kalo Script line. Every Bungie script that compiles
-  converts and compiles back to the same triggers, conditions and actions (`kalo-cli kscript-roundtrip`).
+  converts and compiles back to the same triggers, conditions and actions (`kalo-cli kscript-roundtrip`),
+  declarations included (engine, teams, loadouts, widgets, stats have `name ... end` blocks; `megalo [[ ]]` is
+  still there for anything else).
+  Settings (toolbar) shows the settings, lobby options, player traits, map objects and constants as forms, like
+  ReachVariantTool; each change rewrites only that line or block of the code. Hovering a word in the code shows its
+  help; F1 or Help › Kalo Script documentation opens the guide and a reference of every action and condition.
 
   ```
   -- title: Streaks
-  megalo [[            -- Megalo declarations (options, traits, map objects...) stay as they are
-  game_options
-  	ranged_option option_kill_points
-  		"Kill Points"
-  		"Points per kill"
-  		1 -10 10
-  	end
+  setting score_to_win_round = 25            -- base settings (locked setting ... = players can't change it)
+  option option_kill_points "Kill Points" "Points per kill" = 1 range -10 10
+  traits on_fire "On Fire" "Faster"          -- player traits: key = value lines
+    speed = 150
   end
-  ]]
+  objects hills with label "koth_hill" min 1 -- map objects found by Megalo label
+  constant k_bonus = 2
   declare player.number streak = 0          -- declare [networked|local] global/player/team/object.type name = value
 
   for each player do                         -- trigger player   (also: team, object, random player, a map object)
@@ -127,7 +130,11 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   removes objects from the selection; Ctrl+C/X/V/D, Delete, R, F work anywhere in the map tab (not while typing).
   Objects outside the level geometry are marked "outside map" in red with a banner: Reach removes them in game.
   "Start locations (first spawn)" in the object list are where players first appear (respawn points are only used
-  after dying). Scale is ignored by Reach in multiplayer games (the inspector says so).
+  after dying). Scale is ignored by Reach in multiplayer games (the inspector says so; use object_set_scale).
+  Objective zones (hills, territories, capture areas): the inspector's Zone picks none / sphere / cylinder / box and
+  shows only the sizes that shape uses; zones are drawn in the view. Name an object (inspector "Name", or F2 /
+  Rename in the object list) to find it again, e.g. "red_goal". Drag any number box left/right to change it
+  (Shift: fine, Ctrl: coarse).
 - Mod projects (fourth icon): a project is a small folder in Kalo\projects holding only the files your mod
   changes. Every save is recorded in the active project; switching projects puts the shared workspace back to
   vanilla and loads the other project's files; Export zips a project into Kalo\exports; "Import mod…" adds such a

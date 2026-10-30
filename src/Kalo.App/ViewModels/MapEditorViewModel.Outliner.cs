@@ -336,6 +336,8 @@ public partial class MapEditorViewModel
     {
         "type", "name", "position", "rotation", "unique id", "origin bsp index", "source", "bsp policy", "editor folder",
         "manual bsp flags", "canonical manual bsp index", "object id",
+        // edited in the Zone section, with only the sizes its shape uses
+        "boundary shape", "boundary width or radius", "boundary box length", "boundary positive height", "boundary negative height",
     };
 
     private async Task LoadPropertiesAsync()
@@ -379,6 +381,61 @@ public partial class MapEditorViewModel
             Properties.Clear();
             HasProperties = false;
             _main.Log("Object properties unavailable: " + ex.Message);
+        }
+    }
+
+    /// <summary>Names an object (Sapien's object names): shown in the object list, e.g. "hill_1" or "red_goal". Empty removes it.</summary>
+    public async Task RenameAsync(PlacementItem item, string name)
+    {
+        if (_main.Host == null || item.Category == Kalo.Protocol.StartLocations.Category) return;
+        name = (name ?? "").Trim();
+        if (name == (item.PlacedName ?? "")) return;
+        using var edit = await EditAsync("rename");
+        try
+        {
+            var r = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Category = item.Category, Op = PlacementOps.Rename, Index = item.Index, Tag = name });
+            var p = r.Category?.Items?.FirstOrDefault(x => x.Index == item.Index);
+            if (p != null) item.Update(p);
+            IsDirty = true;
+            Status = name.Length == 0 ? $"{item.Name}: name removed." : $"Named {item.Name} \"{name}\".";
+            BuildOutliner();
+            RevealInOutliner(item);
+            OutlinerChanged?.Invoke();
+            QueueStatusRefresh();
+        }
+        catch (HostException ex)
+        {
+            _main.AddProblem("error", $"Rename {item.Display}: {ex.Message}", Path);
+            item.ResetNameText();
+        }
+    }
+
+    /// <summary>Changes one field of an object's objective zone (shape or a size), then reloads the object.</summary>
+    public async Task SetZoneAsync(PlacementItem item, string field, string value)
+    {
+        if (_main.Host == null || item.Category == Kalo.Protocol.StartLocations.Category) return;
+        using var edit = await EditAsync("change zone");
+        string mp = $"Block:{item.Category}[{item.Index}]/Struct:multiplayer data[0]/";
+        try
+        {
+            await _main.Host.SetFieldAsync(Path, mp + field, value.Trim());
+            // A new zone with no size gets a visible default: 3 units around, 2 up, 1 down.
+            if (field.StartsWith("CharEnum") && value != "0" && item.ZoneSize.X <= 0.001f)
+            {
+                await _main.Host.SetFieldAsync(Path, mp + "Real:boundary width or radius", "3");
+                await _main.Host.SetFieldAsync(Path, mp + "Real:boundary box length", "3");
+                await _main.Host.SetFieldAsync(Path, mp + "Real:boundary positive height", "2");
+                await _main.Host.SetFieldAsync(Path, mp + "Real:boundary negative height", "1");
+            }
+            IsDirty = true;
+            var p = await _main.Host.SetPlacementAsync(new SetPlacementParams { Path = Path, Category = item.Category, Index = item.Index });
+            item.Update(p);
+            SceneChanged?.Invoke();
+            QueueStatusRefresh();
+        }
+        catch (HostException ex)
+        {
+            _main.AddProblem("error", $"Zone of {item.Display}: {ex.Message}", Path);
         }
     }
 

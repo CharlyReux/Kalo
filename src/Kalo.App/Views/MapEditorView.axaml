@@ -62,7 +62,7 @@
           <TextBox Classes="compact" Watermark="Filter objects" Text="{Binding Filter}" Margin="0,0,4,0" />
         </DockPanel>
         <TreeView x:Name="Outliner" ItemsSource="{Binding OutlinerRoots}" SelectionMode="Multiple" Background="Transparent"
-                  SelectionChanged="Outliner_SelectionChanged" DoubleTapped="Outliner_DoubleTapped">
+                  SelectionChanged="Outliner_SelectionChanged" DoubleTapped="Outliner_DoubleTapped" KeyDown="Outliner_KeyDown">
           <TreeView.ItemTemplate>
             <TreeDataTemplate DataType="vm:OutlinerNode" ItemsSource="{Binding Children}">
               <DockPanel>
@@ -90,6 +90,7 @@
           <TreeView.ContextMenu>
             <ContextMenu>
               <MenuItem Header="Go to (double-click)" Click="GoTo_Click" />
+              <MenuItem Header="Rename… (F2)" Click="Rename_Click" />
               <Separator />
               <MenuItem Header="Copy" Command="{Binding CopySelectionCommand}" />
               <MenuItem Header="Cut" Command="{Binding CutSelectionCommand}" />

@@ -1,0 +1,197 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             xmlns:views="using:Kalo.App.Views"
+             x:Class="Kalo.App.Views.GametypeSettingsView"
+             x:DataType="vm:GametypeSettingsViewModel">
+  <!-- The gametype's declarations as forms (like ReachVariantTool). Every change is written into the script. -->
+  <UserControl.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="{StaticResource KPanel}" />
+      <Setter Property="BorderBrush" Value="{StaticResource KBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="5" />
+      <Setter Property="Padding" Value="12,10" />
+      <Setter Property="Margin" Value="0,0,0,8" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="Foreground" Value="{StaticResource KMuted}" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.section">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,14,0,6" />
+    </Style>
+  </UserControl.Styles>
+
+  <ScrollViewer HorizontalScrollBarVisibility="Disabled" Background="{StaticResource KBg}">
+    <StackPanel Margin="20,14,20,40" MaxWidth="900" HorizontalAlignment="Left" Spacing="2">
+      <TextBlock Text="{Binding Status}" Foreground="{StaticResource KMuted}" FontSize="12" TextWrapping="Wrap" />
+
+      <!-- Base settings -->
+      <TextBlock Classes="section" Text="Game settings" />
+      <TextBlock Classes="label" TextWrapping="Wrap" Margin="0,0,0,6"
+                 Text="Leave a value empty to use the game's default. Lock it so players can't change it in the lobby. Drag a number left/right to change it." />
+      <Border Classes="card">
+        <ItemsControl ItemsSource="{Binding Settings}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:SettingRow">
+              <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,2">
+                <TextBlock Classes="label" Text="{Binding Label}" ToolTip.Tip="{Binding Help}" TextTrimming="CharacterEllipsis" />
+                <TextBox Grid.Column="1" Classes="compact mono" Width="110" Watermark="default" views:NumberDrag.Step="1" ToolTip.Tip="{Binding Name}"
+                         Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                <Button Grid.Column="2" Classes="tool" Content="▾" Padding="6,0" IsVisible="{Binding HasSuggestions}" ToolTip.Tip="Common values" Click="Suggest_Click" />
+                <CheckBox Grid.Column="3" Content="Locked" FontSize="11.5" Margin="8,0,0,0" IsChecked="{Binding IsLocked}" ToolTip.Tip="Players can't change it in the lobby" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <!-- Traits -->
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Classes="outline" Content="+ Traits" Command="{Binding AddTraitsCommand}" VerticalAlignment="Bottom" />
+        <TextBlock Classes="section" Text="Player traits" />
+      </DockPanel>
+      <ItemsControl ItemsSource="{Binding Traits}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:TraitsCard">
+            <Border Classes="card">
+              <StackPanel Spacing="6">
+                <DockPanel>
+                  <Button DockPanel.Dock="Right" Classes="tool" Content="{Binding RemoveLabel}" Command="{Binding RemoveCommand}" />
+                  <TextBlock Text="{Binding Heading}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                </DockPanel>
+                <Grid ColumnDefinitions="Auto,160,Auto,*" RowDefinitions="Auto,Auto" IsVisible="{Binding IsNamed}">
+                  <TextBlock Classes="label" Text="Name" Margin="0,0,8,0" />
+                  <TextBox Grid.Column="1" Classes="compact mono" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                           ToolTip.Tip="Used in the script: apply_player_traits(player, name)" />
+                  <TextBlock Grid.Column="2" Classes="label" Text="Title" Margin="12,0,8,0" />
+                  <TextBox Grid.Column="3" Classes="compact" Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                  <TextBlock Grid.Row="1" Classes="label" Text="About" Margin="0,4,8,0" />
+                  <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Classes="compact" Margin="0,4,0,0" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding Rows}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="vm:TraitRow">
+                      <Grid ColumnDefinitions="*,Auto,Auto,Auto" Margin="0,1">
+                        <TextBlock Classes="label" Text="{Binding Label}" ToolTip.Tip="{Binding Help}" TextTrimming="CharacterEllipsis" />
+                        <TextBox Grid.Column="1" Classes="compact mono" Width="110" views:NumberDrag.Step="5" ToolTip.Tip="{Binding Key}" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                        <Button Grid.Column="2" Classes="tool" Content="▾" Padding="6,0" IsVisible="{Binding HasSuggestions}" ToolTip.Tip="Common values" Click="Suggest_Click" />
+                        <Button Grid.Column="3" Classes="tool" Content="×" Padding="6,0" ToolTip.Tip="Remove"
+                                Command="{Binding Card.RemoveRowCommand}" CommandParameter="{Binding}" />
+                      </Grid>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ComboBox ItemsSource="{Binding AvailableKeys}" SelectedItem="{Binding NewKey}" PlaceholderText="+ Add a trait…" MinWidth="220" FontSize="12" />
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- Lobby options -->
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Classes="outline" Content="+ Option" Command="{Binding AddOptionCommand}" VerticalAlignment="Bottom" />
+        <TextBlock Classes="section" Text="Lobby options" />
+      </DockPanel>
+      <TextBlock Classes="label" TextWrapping="Wrap" Margin="0,0,0,6" Text="Options players pick before the game. In the script, use the option's name like a number." />
+      <ItemsControl ItemsSource="{Binding Options}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="vm:OptionCard">
+            <Border Classes="card">
+              <StackPanel Spacing="6">
+                <Grid ColumnDefinitions="Auto,160,Auto,*,Auto" RowDefinitions="Auto,Auto">
+                  <TextBlock Classes="label" Text="Name" Margin="0,0,8,0" />
+                  <TextBox Grid.Column="1" Classes="compact mono" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                  <TextBlock Grid.Column="2" Classes="label" Text="Title" Margin="12,0,8,0" />
+                  <TextBox Grid.Column="3" Classes="compact" Text="{Binding Title, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                  <Button Grid.Column="4" Classes="tool" Content="Remove" Margin="8,0,0,0" Command="{Binding RemoveCommand}" />
+                  <TextBlock Grid.Row="1" Classes="label" Text="About" Margin="0,4,8,0" />
+                  <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Classes="compact" Margin="0,4,0,0" Text="{Binding Description, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Classes="label" Text="Default" />
+                  <TextBox Classes="compact mono" Width="80" views:NumberDrag.Step="1" Text="{Binding Default, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                  <CheckBox Content="Number range" IsChecked="{Binding IsRanged}" FontSize="12" Margin="10,0,0,0" />
+                  <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsRanged}">
+                    <TextBlock Classes="label" Text="from" />
+                    <TextBox Classes="compact mono" Width="70" views:NumberDrag.Step="1" Text="{Binding Min, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                    <TextBlock Classes="label" Text="to" />
+                    <TextBox Classes="compact mono" Width="70" views:NumberDrag.Step="1" Text="{Binding Max, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                  </StackPanel>
+                  <CheckBox Content="Hidden" IsChecked="{Binding IsHidden}" FontSize="12" Margin="10,0,0,0" ToolTip.Tip="Not shown in the lobby" />
+                </StackPanel>
+                <StackPanel Spacing="3" IsVisible="{Binding IsList}">
+                  <ItemsControl ItemsSource="{Binding Values}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate DataType="vm:ValueRow">
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
+                          <TextBlock Classes="label" Text="value" />
+                          <TextBox Classes="compact mono" Width="80" views:NumberDrag.Step="1" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                          <TextBox Classes="compact" Width="260" Watermark="label shown in the lobby" Text="{Binding Label, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                          <Button Classes="tool" Content="×" Padding="6,0" Command="{Binding Card.RemoveValueCommand}" CommandParameter="{Binding}" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                  <Button Classes="tool" Content="+ Value" HorizontalAlignment="Left" Command="{Binding AddValueCommand}" />
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+
+      <!-- Map objects -->
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Classes="outline" Content="+ Objects" Command="{Binding AddObjectsCommand}" VerticalAlignment="Bottom" />
+        <TextBlock Classes="section" Text="Map objects" />
+      </DockPanel>
+      <TextBlock Classes="label" TextWrapping="Wrap" Margin="0,0,0,6"
+                 Text="Objects of the map the script works with, found by their Megalo label (set it on an object in the map editor: Properties › megalo label) or by type. In the script: for each NAME do ... end." />
+      <Border Classes="card">
+        <ItemsControl ItemsSource="{Binding Objects}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:ObjectsRow">
+              <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2">
+                <TextBox Classes="compact mono" Width="170" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                <TextBlock Classes="label" Text="with" />
+                <ComboBox ItemsSource="{x:Static vm:ObjectsRow.ByChoices}" SelectedItem="{Binding By}" FontSize="12" MinWidth="80" />
+                <TextBox Classes="compact mono" Width="200" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                <TextBlock Classes="label" Text="at least" />
+                <TextBox Classes="compact mono" Width="50" Watermark="0" views:NumberDrag.Step="1" Text="{Binding Min, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                <Button Classes="tool" Content="×" Padding="6,0" Command="{Binding RemoveCommand}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+
+      <!-- Constants -->
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Classes="outline" Content="+ Constant" Command="{Binding AddConstantCommand}" VerticalAlignment="Bottom" />
+        <TextBlock Classes="section" Text="Constants" />
+      </DockPanel>
+      <Border Classes="card">
+        <ItemsControl ItemsSource="{Binding Constants}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:ConstantRow">
+              <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,2">
+                <TextBox Classes="compact mono" Width="260" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                <TextBlock Classes="label" Text="=" />
+                <TextBox Classes="compact mono" Width="90" views:NumberDrag.Step="1" Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                <Button Classes="tool" Content="×" Padding="6,0" Command="{Binding RemoveCommand}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Border>
+      <TextBlock Classes="label" TextWrapping="Wrap" Margin="0,8,0,0"
+                 Text="Other declarations (engine name and icon, teams, loadouts, HUD widgets, statistics) are edited in the code." />
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

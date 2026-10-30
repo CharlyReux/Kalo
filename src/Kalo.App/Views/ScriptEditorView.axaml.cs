@@ -1,7 +1,9 @@
 using System.Xml;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Threading;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.Document;
 using AvaloniaEdit.Editing;
@@ -36,8 +38,35 @@ public partial class ScriptEditorView : UserControl
             char c = e.Text[^1];
             if (char.IsLetterOrDigit(c) || c == '_' || c == ' ') ShowCompletion(false);
         };
+        // Hover help: after a short pause over a word, a popup explains it.
+        _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+        _hoverTimer.Tick += (_, _) => { _hoverTimer.Stop(); ShowHover(); };
+        Editor.TextArea.AddHandler(PointerMovedEvent, (_, e) =>
+        {
+            _hoverPoint = e.GetPosition(Editor);
+            var word = WordAt(_hoverPoint.Value);
+            if (word != _hoverWord) HideHover();
+            _hoverTimer.Stop();
+            if (word != null) _hoverTimer.Start();
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
+        Editor.TextArea.AddHandler(PointerExitedEvent, (_, _) => { _hoverTimer.Stop(); HideHover(); }, Avalonia.Interactivity.RoutingStrategies.Bubble, true);
+        Editor.TextArea.AddHandler(PointerPressedEvent, (_, _) => { _hoverTimer.Stop(); HideHover(); }, Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
         Editor.TextArea.KeyDown += (_, e) =>
         {
+            HideHover();
+            if (e.Key == Key.F1)
+            {
+                // F1: the documentation, at the word under the caret.
+                var line = Editor.Document.GetLineByOffset(Editor.CaretOffset);
+                string text = Editor.Document.GetText(line.Offset, line.Length);
+                int col = Editor.CaretOffset - line.Offset;
+                int a = col, b = col;
+                while (a > 0 && (char.IsLetterOrDigit(text[a - 1]) || text[a - 1] == '_')) a--;
+                while (b < text.Length && (char.IsLetterOrDigit(text[b]) || text[b] == '_')) b++;
+                if (TopLevel.GetTopLevel(this) is Window w && _vm != null) DocsWindow.Open(w, _vm.Main, b > a ? text[a..b] : null);
+                e.Handled = true;
+                return;
+            }
             if (e.Key == Key.Space && e.KeyModifiers.HasFlag(KeyModifiers.Control))
             {
                 ShowCompletion(true);
@@ -47,6 +76,76 @@ public partial class ScriptEditorView : UserControl
     }
 
     private CompletionWindow? _completion;
+    private readonly DispatcherTimer _hoverTimer;
+    private Avalonia.Point? _hoverPoint;
+    private string? _hoverWord;
+
+    /// <summary>"line:start:word" under a point of the editor, or null.</summary>
+    private string? WordAt(Avalonia.Point point)
+    {
+        var pos = Editor.GetPositionFromPoint(point);
+        if (pos == null) return null;
+        var line = Editor.Document.GetLineByNumber(pos.Value.Line);
+        string text = Editor.Document.GetText(line.Offset, line.Length);
+        int col = pos.Value.Column - 1;
+        if (col < 0 || col >= text.Length || !(char.IsLetterOrDigit(text[col]) || text[col] == '_')) return null;
+        int a = col;
+        while (a > 0 && (char.IsLetterOrDigit(text[a - 1]) || text[a - 1] == '_')) a--;
+        return $"{pos.Value.Line}:{a}";
+    }
+
+    private void ShowHover()
+    {
+        if (_vm == null || _hoverPoint == null || _completion != null) return;
+        var pos = Editor.GetPositionFromPoint(_hoverPoint.Value);
+        if (pos == null) return;
+        var line = Editor.Document.GetLineByNumber(pos.Value.Line);
+        string text = Editor.Document.GetText(line.Offset, line.Length);
+        var info = _vm.Hover(text, pos.Value.Column - 1);
+        if (info == null) return;
+        _hoverWord = WordAt(_hoverPoint.Value);
+        HoverPopup.Child = HoverCard.Build(info);
+        HoverPopup.IsOpen = false;
+        HoverPopup.IsOpen = true;
+    }
+
+    private void HideHover()
+    {
+        _hoverWord = null;
+        if (HoverPopup.IsOpen) HoverPopup.IsOpen = false;
+    }
+
+    /// <summary>For tests: renders the open hover popup to a PNG (popups are separate windows, not in the window's screenshot).</summary>
+    public bool SaveHoverShot(string path)
+    {
+        if (!HoverPopup.IsOpen || HoverPopup.Child is not Control card) return false;
+        var size = new Avalonia.PixelSize(Math.Max(1, (int)card.Bounds.Width), Math.Max(1, (int)card.Bounds.Height));
+        using var bitmap = new Avalonia.Media.Imaging.RenderTargetBitmap(size, new Avalonia.Vector(96, 96));
+        bitmap.Render(card);
+        bitmap.Save(path);
+        return true;
+    }
+
+    /// <summary>For tests: the hover help at a 1-based line and column.</summary>
+    public HoverInfo? HoverAt(int line, int column)
+    {
+        if (_vm == null || line < 1 || line > Editor.Document.LineCount) return null;
+        var l = Editor.Document.GetLineByNumber(line);
+        return _vm.Hover(Editor.Document.GetText(l.Offset, l.Length), column - 1);
+    }
+
+    /// <summary>For tests: shows the hover popup for a word, as if the mouse rested on it.</summary>
+    public bool ShowHoverFor(string word)
+    {
+        int offset = Editor.Text.IndexOf(word, StringComparison.Ordinal);
+        if (offset < 0) return false;
+        var loc = Editor.Document.GetLocation(offset + 1);
+        var visual = Editor.TextArea.TextView.GetVisualPosition(new AvaloniaEdit.TextViewPosition(loc), AvaloniaEdit.Rendering.VisualYPosition.LineMiddle);
+        Editor.ScrollTo(loc.Line, loc.Column);
+        _hoverPoint = Editor.TextArea.TextView.TranslatePoint(visual - Editor.TextArea.TextView.ScrollOffset, Editor);
+        ShowHover();
+        return HoverPopup.IsOpen;
+    }
 
     /// <summary>Opens the suggestion list for the word at the caret (Ctrl+Space, or while typing).</summary>
     private void ShowCompletion(bool explicitRequest)
@@ -137,7 +236,9 @@ public partial class ScriptEditorView : UserControl
     <Span color='String'><Begin>""</Begin><End>""</End></Span>
     <Span color='Raw' multiline='true'><Begin>\[\[</Begin><End>\]\]</End></Span>
     <Keywords color='Section'>
-      <Word>declare</Word><Word>alias</Word><Word>megalo</Word><Word>include</Word><Word>on</Word>
+      <Word>declare</Word><Word>alias</Word><Word>megalo</Word><Word>include</Word><Word>on</Word><Word>setting</Word><Word>option</Word>
+      <Word>traits</Word><Word>objects</Word><Word>constant</Word><Word>widget</Word><Word>stat</Word><Word>engine</Word><Word>teams</Word><Word>loadout</Word>
+      <Word>hidden</Word><Word>locked</Word><Word>value</Word><Word>range</Word>
     </Keywords>
     <Keywords color='Keyword'>
       <Word>if</Word><Word>then</Word><Word>else</Word><Word>elseif</Word><Word>end</Word><Word>for</Word><Word>each</Word><Word>do</Word><Word>inline</Word>
@@ -208,7 +309,8 @@ internal sealed class MegaloCompletion(CompletionItem item) : ICompletionData
     };
     public object? Description => new TextBlock
     {
-        Text = string.IsNullOrEmpty(item.Description) ? item.Kind : item.Text + " " + item.Description,
+        Text = string.IsNullOrEmpty(item.Description) ? item.Kind
+            : item.Description.StartsWith(item.Text + "(", StringComparison.Ordinal) ? item.Description : item.Text + " " + item.Description,
         Foreground = Palette.Text,
         TextWrapping = TextWrapping.Wrap,
         MaxWidth = 420,
@@ -219,10 +321,47 @@ internal sealed class MegaloCompletion(CompletionItem item) : ICompletionData
         textArea.Document.Replace(completionSegment, Text);
 }
 
+/// <summary>The hover popup's content: title, call form, what it does, an example. Explicit colors (popups don't inherit).</summary>
+internal static class HoverCard
+{
+    private static readonly FontFamily Mono = new("Cascadia Mono, Consolas, monospace");
+
+    public static Control Build(HoverInfo info)
+    {
+        var panel = new StackPanel { Spacing = 5, MaxWidth = 520 };
+        panel.Children.Add(new TextBlock { Text = info.Title, FontWeight = FontWeight.SemiBold, Foreground = Palette.Text, FontFamily = Mono, FontSize = 12.5 });
+        if (!string.IsNullOrEmpty(info.Signature))
+            panel.Children.Add(new TextBlock { Text = info.Signature, Foreground = Palette.Code, FontFamily = Mono, FontSize = 12, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = info.Text, Foreground = Palette.Text, FontSize = 12.5, TextWrapping = TextWrapping.Wrap });
+        if (!string.IsNullOrEmpty(info.Example))
+            panel.Children.Add(new Border
+            {
+                Background = Palette.Bg, CornerRadius = new Avalonia.CornerRadius(3), Padding = new Avalonia.Thickness(6, 4),
+                Child = new TextBlock { Text = info.Example, Foreground = Palette.Code, FontFamily = Mono, FontSize = 12, TextWrapping = TextWrapping.Wrap },
+            });
+        if (!string.IsNullOrEmpty(info.Megalo))
+            panel.Children.Add(new TextBlock { Text = "Megalo: " + info.Megalo, Foreground = Palette.Muted, FontFamily = Mono, FontSize = 11, TextWrapping = TextWrapping.Wrap });
+        panel.Children.Add(new TextBlock { Text = "F1: documentation", Foreground = Palette.Muted, FontSize = 10.5 });
+        return new Border
+        {
+            Background = Palette.Panel,
+            BorderBrush = Palette.Border,
+            BorderThickness = new Avalonia.Thickness(1),
+            CornerRadius = new Avalonia.CornerRadius(4),
+            Padding = new Avalonia.Thickness(10, 8),
+            BoxShadow = Avalonia.Media.BoxShadows.Parse("0 4 12 0 #60000000"),
+            Child = panel,
+        };
+    }
+}
+
 /// <summary>Kalo's palette for controls built in code (same values as App.axaml).</summary>
 internal static class Palette
 {
     public static readonly IBrush Panel = new SolidColorBrush(Color.Parse("#2B2D30"));
     public static readonly IBrush Text = new SolidColorBrush(Color.Parse("#DFE1E5"));
     public static readonly IBrush Muted = new SolidColorBrush(Color.Parse("#9DA0A8"));
+    public static readonly IBrush Code = new SolidColorBrush(Color.Parse("#9CDCFE"));
+    public static readonly IBrush Bg = new SolidColorBrush(Color.Parse("#1E1F22"));
+    public static readonly IBrush Border = new SolidColorBrush(Color.Parse("#43454A"));
 }
