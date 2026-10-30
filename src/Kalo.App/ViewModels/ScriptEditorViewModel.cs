@@ -476,7 +476,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
             CompileOk = r.Succeeded;
             int errors = Messages.Count(m => m.IsError);
             CompileSummary = live
-                ? r.Succeeded ? "No errors" + (Messages.Count > 0 ? $" ({Messages.Count} warning(s), underlined in yellow)" : "") + ". Checked as you type."
+                ? r.Succeeded ? "No errors" + (Messages.Count > 0 ? $" ({Messages.Count} warning(s) listed below)" : "") + ". Checked as you type."
                     : $"{errors} error(s), underlined in red. Point at one to read it."
                 : r.Succeeded
                     ? $"Compiled in {r.Ms} ms" + (Messages.Count > 0 ? $" with {Messages.Count} warning(s)" : "") + "."
