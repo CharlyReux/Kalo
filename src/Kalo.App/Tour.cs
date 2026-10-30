@@ -733,6 +733,16 @@ public sealed class Tour
         Check(!doc.CompileOk && memberError?.Line == 3 && memberError.Message.Contains("no player variable called deaths") && memberError.Token == "current_player.deaths",
             $"an undeclared member is explained ({memberError?.Line}: {memberError?.Message})");
 
+        // An object type that doesn't exist: named, with the real one for a free camera.
+        doc.Text = "for each player do\n  temp object mon = none\n  if not object_is_type(current_player, \"free_cam\") then\n    create_object(\"free_cam\", set mon, at current_player)\n  end\nend\n";
+        await doc.CompileCommand.ExecuteAsync(null);
+        var typeError = doc.Messages.FirstOrDefault(m => m.IsError);
+        Check(!doc.CompileOk && typeError != null && typeError.Message.Contains("is not an object type") && typeError.Message.Contains("monitor"),
+            $"an unknown object type is explained ({typeError?.Line}: {typeError?.Message})");
+        doc.Text = doc.Text.Replace("free_cam", "monitor");
+        await doc.CompileCommand.ExecuteAsync(null);
+        Check(doc.CompileOk, "with \"monitor\" it compiles: " + doc.CompileSummary);
+
         doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
         await doc.CompileCommand.ExecuteAsync(null);
         var first = doc.Messages.FirstOrDefault();

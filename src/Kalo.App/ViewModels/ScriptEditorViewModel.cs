@@ -397,6 +397,52 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         return message;
     }
 
+    /// <summary>
+    /// Object types that don't exist in create_object / object_is_type (Kalo Script): a clear error with the closest
+    /// real names (HREK's own message is hard to read).
+    /// </summary>
+    private List<ScriptMessage> UnknownObjectTypes(string text)
+    {
+        var result = new List<ScriptMessage>();
+        var lists = _main.MegaloCatalog?.Lists;
+        if (lists == null || !lists.TryGetValue("objectTypes", out var types) || types == null || types.Count == 0) return result;
+        var known = new HashSet<string>(types, StringComparer.Ordinal);
+        var lines = text.Replace("\r\n", "\n").Split('\n');
+        var calls = new[]
+        {
+            new System.Text.RegularExpressions.Regex(@"\bcreate_object\s*\(\s*""?(\w+)""?\s*[,)]"),
+            new System.Text.RegularExpressions.Regex(@"\bobject_is_type\s*\(\s*[\w.]+\s*,\s*""?(\w+)""?\s*\)"),
+        };
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string code = lines[i];
+            int comment = code.IndexOf("--", StringComparison.Ordinal);
+            if (comment >= 0) code = code[..comment];
+            foreach (var call in calls)
+            foreach (System.Text.RegularExpressions.Match m in call.Matches(code))
+            {
+                string type = m.Groups[1].Value;
+                if (known.Contains(type)) continue;
+                var close = types.Select(t => (t, d: Distance(t, type))).OrderBy(x => x.d).Take(3).Select(x => x.t).ToList();
+                if (type.Contains("cam") || type.Contains("spect") || type.Contains("ghost")) close.Insert(0, "monitor");
+                result.Add(new ScriptMessage(i + 1, -1, 0, "error",
+                    $"\"{type}\" is not an object type. Close names: {string.Join(", ", close.Distinct().Take(3))}. (The flying Forge camera is \"monitor\"; all types: Reference › Value lists.)", type));
+            }
+        }
+        return result;
+    }
+
+    private static int Distance(string a, string b)
+    {
+        var d = new int[a.Length + 1, b.Length + 1];
+        for (int i = 0; i <= a.Length; i++) d[i, 0] = i;
+        for (int j = 0; j <= b.Length; j++) d[0, j] = j;
+        for (int i = 1; i <= a.Length; i++)
+            for (int j = 1; j <= b.Length; j++)
+                d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+        return d[a.Length, b.Length];
+    }
+
     /// <summary>Megalo's own members of players, teams and objects (anything else after a dot must be declared).</summary>
     private static readonly HashSet<string> BuiltinMembers = new(StringComparer.Ordinal) { "score", "team", "biped", "rating", "money", "spawn_sequence", "owner" };
 
@@ -510,6 +556,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 }
                 else fresh.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", Friendly(m.Message ?? ""), m.Token));
             }
+            if (kalo != null) fresh.InsertRange(0, UnknownObjectTypes(text));
             if (!await ApplyMessagesAsync(fresh, text, live, Stale)) return;
             Stats.Clear();
             var stats = r.Stats ?? new();
