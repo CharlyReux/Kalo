@@ -168,7 +168,7 @@ public static class ScriptFormatter
             {
                 var t = l[k];
                 if (t.Kind != T.Word) continue;
-                bool call = k + 1 < l.Count && l[k + 1].Is("(");
+                bool call = k + 1 < l.Count && l[k + 1].Is("(") && !(t.Is("if") || t.Is("elseif") || t.Is("and") || t.Is("or") || t.Is("not"));
                 bool member = k > 0 && l[k - 1].Is(".");
                 if (call || member) continue;
                 if (t.Is("if") || t.Is("do") || (t.Is("inline") && k == l.Count - 1)) stack.Push("code");

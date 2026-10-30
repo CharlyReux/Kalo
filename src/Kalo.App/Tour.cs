@@ -711,6 +711,13 @@ public sealed class Tour
         Check(doc.CompileOk, "the starter compiles: " + doc.CompileSummary);
         Check(doc.GeneratedMegalo.Contains("trigger player") && doc.GeneratedMegalo.Contains("action set killer.score += kill_points"), "it turns into the expected Megalo");
 
+        // Grouped conditions: a or (b and c) compiles (as (a or b) and (a or c)).
+        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("if killer.streak == 5 then",
+            "if killer.streak == 5 or (killer.score > 10 and not current_player.team == none) then");
+        await doc.CompileCommand.ExecuteAsync(null);
+        Check(doc.CompileOk && doc.GeneratedMegalo.Contains("condition if killer.streak == 5 or"),
+            "an if with parentheses compiles: " + doc.CompileSummary);
+
         doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
         await doc.CompileCommand.ExecuteAsync(null);
         var first = doc.Messages.FirstOrDefault();
@@ -812,7 +819,14 @@ public sealed class Tour
                 await Pause(300);
                 return done();
             }
-            doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
+            // Grouped conditions: a or (b and c) compiles (as (a or b) and (a or c)).
+        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("if killer.streak == 5 then",
+            "if killer.streak == 5 or (killer.score > 10 and not current_player.team == none) then");
+        await doc.CompileCommand.ExecuteAsync(null);
+        Check(doc.CompileOk && doc.GeneratedMegalo.Contains("condition if killer.streak == 5 or"),
+            "an if with parentheses compiles: " + doc.CompileSummary);
+
+        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
             bool underlined = await Settle(() => view.Underlined.Any(m => m.IsError));
             var marks = view.UnderlinedText;
             int streakAt = Line("killer.streak += 1");

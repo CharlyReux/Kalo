@@ -141,9 +141,22 @@ else
   ...
 end
 "),
-            P("Comparisons: == != < > <= >=. Use == to compare (= changes a value). Conditions join with and / or."),
-            Tip("Megalo has no operator precedence and no parentheses: conditions are read left to right, so a or b and c means " +
-                "(a or b) and c. Split complex tests into nested ifs."),
+            P("Comparisons: == != < > <= >=. Use == to compare (= changes a value). Conditions join with and / or, " +
+              "and parentheses group them. not inverts a condition or a group."),
+            C(@"
+if end_playing == 1 or (timer_expired(playtime_timer) and playing_time == 1) then
+  ...
+end
+
+if not (current_player.score > 5 or current_player.team == none) then
+  ...
+end
+"),
+            Tip("When and and or are both used, parentheses are required, so it is always clear which you mean: write " +
+                "(a or b) and c, or a or (b and c)."),
+            P("How it compiles: Megalo can only AND groups of ORed conditions. Kalo rewrites the expression in that form: " +
+              "a or (b and c) becomes (a or b) and (a or c), which costs one more condition. Very large expressions are refused; " +
+              "split them into nested ifs."),
             P("How it compiles: an if becomes a block whose conditions gate its contents. An if that is the last thing in its block " +
               "needs no block of its own, so it costs nothing extra. else / elseif add a temporary number that remembers whether a " +
               "branch already ran."),

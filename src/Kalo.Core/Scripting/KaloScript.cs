@@ -673,21 +673,105 @@ internal sealed partial class Transpiler
         return false;
     }
 
-    /// <summary>cond (and|or cond)* → Megalo condition lines ("or" at the end of a line joins it with the next).</summary>
+    /// <summary>
+    /// A condition expression → Megalo condition lines. and binds tighter than or, parentheses group, not negates
+    /// (also a group). Megalo can only AND groups of ORed conditions, so the expression is rewritten in that form:
+    /// a or (b and c) becomes (a or b) and (a or c). "or" at the end of a line joins it with the next.
+    /// </summary>
     private List<(string Text, int Line)> Conditions()
     {
+        var expr = OrExpr(out _);
+        var clauses = Cnf(expr, false);
+        int count = clauses.Sum(c => c.Count);
+        if (count > 32) throw new ParseError(Peek, $"this condition becomes {count} Megalo conditions: split it into nested ifs");
         var list = new List<(string Text, int Line)>();
-        while (true)
+        foreach (var clause in clauses)
+            for (int k = 0; k < clause.Count; k++)
+            {
+                var (lit, negated) = clause[k];
+                list.Add(((negated ? "condition not " : "condition ") + lit.Text + (k < clause.Count - 1 ? " or" : ""), lit.Line));
+            }
+        return list;
+    }
+
+    private abstract record CondNode;
+    private sealed record CondLit(string Text, int Line) : CondNode;
+    private sealed record CondNot(CondNode A) : CondNode;
+    private sealed record CondAnd(CondNode A, CondNode B) : CondNode;
+    private sealed record CondOr(CondNode A, CondNode B) : CondNode;
+
+    /// <param name="mixed">True when the expression is an unparenthesized "and" chain (for the and/or mixing check).</param>
+    private CondNode OrExpr(out bool mixed)
+    {
+        var left = AndExpr(out bool leftAnd);
+        mixed = leftAnd;
+        bool anyOr = false, anyAnd = leftAnd;
+        Tok? orTok = null;
+        while (Peek.Is("or"))
         {
-            var t = Peek;
-            bool negate = false;
-            while (Peek.Is("not")) { Next(); negate = !negate; }
-            if (Peek.Is("(")) throw new ParseError(Peek, "Megalo can't group conditions with parentheses: use nested ifs");
-            string text = Condition();
-            list.Add(((negate ? "condition not " : "condition ") + text, t.Line));
-            if (Peek.Is("or")) { Next(); list[^1] = (list[^1].Text + " or", list[^1].Line); continue; }
-            if (Peek.Is("and")) { Next(); continue; }
-            return list;
+            orTok ??= Peek;
+            Next();
+            anyOr = true;
+            var right = AndExpr(out bool rightAnd);
+            anyAnd |= rightAnd;
+            left = new CondOr(left, right);
+        }
+        if (anyOr && anyAnd)
+            throw new ParseError(orTok!, "and / or are mixed: add parentheses to say which you mean, e.g. (a or b) and c, or a or (b and c)");
+        if (anyOr) mixed = false;
+        return left;
+    }
+
+    private CondNode AndExpr(out bool hasAnd)
+    {
+        var left = Unary();
+        hasAnd = false;
+        while (Peek.Is("and"))
+        {
+            Next();
+            hasAnd = true;
+            left = new CondAnd(left, Unary());
+        }
+        return left;
+    }
+
+    private CondNode Unary()
+    {
+        if (Peek.Is("not")) { Next(); return new CondNot(Unary()); }
+        if (Peek.Is("("))
+        {
+            Next();
+            var inner = OrExpr(out _);
+            Expect(")", "expected ')' to close the parentheses");
+            return inner;
+        }
+        var t = Peek;
+        return new CondLit(Condition(), t.Line);
+    }
+
+    /// <summary>The expression as ANDed groups of ORed conditions (each possibly negated).</summary>
+    private static List<List<(CondLit Lit, bool Negated)>> Cnf(CondNode node, bool negate)
+    {
+        switch (node)
+        {
+            case CondLit lit:
+                return new() { new() { (lit, negate) } };
+            case CondNot n:
+                return Cnf(n.A, !negate);
+            case CondAnd when !negate:
+            case CondOr when negate: // not (a or b) = not a and not b
+            {
+                var (x, y) = node is CondAnd an ? (an.A, an.B) : (((CondOr)node).A, ((CondOr)node).B);
+                return Cnf(x, negate).Concat(Cnf(y, negate)).ToList();
+            }
+            default:
+            {
+                // a or b (or not (a and b) = not a or not b): every group of one side with every group of the other.
+                var (x, y) = node is CondOr either ? (either.A, either.B) : (((CondAnd)node).A, ((CondAnd)node).B);
+                var left = Cnf(x, negate);
+                var right = Cnf(y, negate);
+                return left.SelectMany(l => right.Select(r => l.Concat(r).ToList())).ToList();
+            }
         }
     }
 
@@ -994,15 +1078,18 @@ internal static class Decompiler
                     if (body[i].Comment.Length > 0) trailing.Add(body[i].Comment);
                     i++;
                 }
-                var text = new StringBuilder();
+                // Megalo ANDs groups of ORed conditions: (a or b) and c.
+                var groups = new List<List<string>> { new() };
                 for (int k = 0; k < conds.Count; k++)
                 {
                     string c = conds[k];
                     bool or = c.EndsWith(" or", StringComparison.Ordinal);
                     if (or) c = c[..^3];
-                    text.Append(c);
-                    if (k < conds.Count - 1) text.Append(or ? " or " : " and ");
+                    groups[^1].Add(c);
+                    if (!or && k < conds.Count - 1) groups.Add(new());
                 }
+                var text = new StringBuilder(string.Join(" and ", groups.Select(g =>
+                    g.Count > 1 && groups.Count > 1 ? "(" + string.Join(" or ", g) + ")" : string.Join(" or ", g))));
                 foreach (var c in trailing) sb.AppendLine(pad + "--" + c);
                 sb.AppendLine($"{pad}if {text} then");
                 WriteBody(sb, body.Skip(i).ToList(), level + 1);

@@ -77,6 +77,16 @@ switch (command)
     case "sound-wav":
         SoundWav(argsList.ElementAtOrDefault(1) ?? @"sound\dialog\multiplayer\capture_the_flag\flag_captured.sound");
         break;
+    case "kscript-check":
+    {
+        // Transpile Kalo Script files and list their errors (no compiler needed).
+        foreach (string file in argsList.Skip(1))
+        {
+            var r = KaloScript.Transpile(File.ReadAllText(file));
+            Check($"{Path.GetFileName(file)} reads as Kalo Script{(r.Succeeded ? "" : ": " + string.Join("; ", r.Errors.Take(5)))}", r.Succeeded);
+        }
+        break;
+    }
     case "dump":
         await Dump(argsList.ElementAtOrDefault(1) ?? Weapon, int.Parse(argsList.ElementAtOrDefault(2) ?? "2"));
         break;
