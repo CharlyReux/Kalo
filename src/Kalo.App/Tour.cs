@@ -726,6 +726,13 @@ public sealed class Tour
         Check(!doc.CompileOk && doc.Messages.Count == 1 && timerError?.Line == 4 && timerError.Message.Contains("Did you mean the number placing_time"),
             $"comparing a timer with == explains it ({timerError?.Line}: {timerError?.Message})");
 
+        // An undeclared member (current_player.deaths): HREK's message is replaced by an explanation.
+        doc.Text = "for each player do\n  temp number alive = 0\n  if current_player.deaths < 3 then\n    alive += 1\n  end\nend\n";
+        await doc.CompileCommand.ExecuteAsync(null);
+        var memberError = doc.Messages.FirstOrDefault(m => m.IsError);
+        Check(!doc.CompileOk && memberError?.Line == 3 && memberError.Message.Contains("no player variable called deaths") && memberError.Token == "current_player.deaths",
+            $"an undeclared member is explained ({memberError?.Line}: {memberError?.Message})");
+
         doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
         await doc.CompileCommand.ExecuteAsync(null);
         var first = doc.Messages.FirstOrDefault();

@@ -397,6 +397,32 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         return message;
     }
 
+    /// <summary>Megalo's own members of players, teams and objects (anything else after a dot must be declared).</summary>
+    private static readonly HashSet<string> BuiltinMembers = new(StringComparer.Ordinal) { "score", "team", "biped", "rating", "money", "spawn_sequence", "owner" };
+
+    /// <summary>
+    /// "Expected a variable reference ... but got 'current_player'" on a Kalo Script line that uses current_player.x:
+    /// x is not a variable. Explains it and underlines the whole current_player.x. Null when it is something else.
+    /// </summary>
+    private (string Message, string Token)? UndeclaredMember(string message, string? token, int kaloLine)
+    {
+        if (token == null || !message.Contains("Expected a variable reference")) return null;
+        var lines = Text.Replace("\r\n", "\n").Split('\n');
+        if (kaloLine < 1 || kaloLine > lines.Length) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(lines[kaloLine - 1], $@"\b{System.Text.RegularExpressions.Regex.Escape(token)}\.(\w+)");
+        if (!m.Success || BuiltinMembers.Contains(m.Groups[1].Value)) return null;
+        string member = m.Groups[1].Value;
+        var declared = KaloCompletion.Scan(Text).Members;
+        if (declared.Any(d => d.Name == member)) return null; // declared: something else is wrong
+        string scope = token switch { "current_team" => "team", "current_object" => "object", _ => KaloCompletion.Scan(Text).Of("team").Contains(token) ? "team" : KaloCompletion.Scan(Text).Of("object").Contains(token) ? "object" : "player" };
+        string text = $"{token}.{member}: there is no {scope} variable called {member}. Declare it at the top of the script: declare {scope}.number {member} = 0";
+        if (member is "deaths" or "kills" or "lives")
+            text += member == "kills"
+                ? $". Megalo doesn't count kills for you: add 1 to the killer when player_died(current_player, enemy) is true (see the starter script)."
+                : $". Megalo doesn't count deaths for you: add 1 when player_died(current_player, any) is true, e.g. if player_died(current_player, any) then current_player.{member} += 1 end";
+        return (text + ".", m.Value);
+    }
+
     /// <summary>
     /// Shows a check's messages (list, Problems, underlines). Nothing is redrawn when they did not change. While typing,
     /// a new error waits for a longer pause first, so half-written lines don't flash red. False when dropped (text changed).
@@ -478,7 +504,9 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                     // Point at the Kalo Script line the Megalo line came from.
                     int line = kalo.SourceLine(m.Line);
                     string where = m.Line > 0 && line == 0 ? $" (generated Megalo line {m.Line})" : "";
-                    fresh.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", Friendly(m.Message ?? "") + where, m.Token));
+                    if (UndeclaredMember(m.Message ?? "", m.Token, line) is { } explained)
+                        fresh.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", explained.Message, explained.Token));
+                    else fresh.Add(new ScriptMessage(line, -1, 0, m.Severity ?? "error", Friendly(m.Message ?? "") + where, m.Token));
                 }
                 else fresh.Add(new ScriptMessage(m.Line, m.Start, m.Length, m.Severity ?? "error", Friendly(m.Message ?? ""), m.Token));
             }
