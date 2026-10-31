@@ -9,6 +9,15 @@ public static class MegaloDocs
 {
     public sealed record Doc(string Text, string? Example = null);
 
+    // Declared first: the doc tables below use it (static fields initialize in order).
+    /// <summary>The buttons get_button_time accepts (from HREK's compiler), written without quotes.</summary>
+    public static readonly string[] Buttons =
+    {
+        "fire_primary", "fire_secondary", "fire_tertiary", "melee_attack", "jump", "crouch", "grenade", "throw_grenade",
+        "switch_weapon", "context_primary", "equipment", "scope_zoom", "night_vision", "vehicle_trick",
+    };
+
+
     public static readonly IReadOnlyDictionary<string, Doc> Conditions = new Dictionary<string, Doc>(StringComparer.Ordinal)
     {
         ["if"] = new("Compares two values: numbers, timers, objects, players or teams. In Kalo Script just write the comparison.",
@@ -63,7 +72,8 @@ public static class MegaloDocs
         ["get_player_holding_object"] = new("Stores the player carrying the object (a flag, a bomb, a ball) in a player variable, or none."),
         ["for_each"] = new("Megalo's block: runs its contents for each player, team, object, or once (general). Kalo Script writes it as 'for each player do ... end' or 'do ... end'."),
         ["end_round"] = new("Ends the current round now (scores decide who wins)."),
-        ["boundary_set_visible"] = new("Shows or hides the object's boundary shape (the outline drawn on the ground)."),
+        ["boundary_set_visible"] = new("Shows the object's boundary shape (the outline drawn on the ground) to no_one, everyone, allies or enemies, or to one player: player, then the player, then 1 (show) or 0 (hide).",
+            "boundary_set_visible(the_hill, everyone)\nboundary_set_visible(marker, player, current_player, 1)"),
         ["object_destroy"] = new("Destroys the object as if it had been killed (with effects, and it counts as a kill unless no_statistics)."),
         ["object_set_invincibility"] = new("Makes the object (or a player's biped) take no damage, or normal damage again."),
         ["random"] = new("Picks a random whole number from 0 to count-1 and stores it.",
@@ -148,7 +158,8 @@ public static class MegaloDocs
         ["boundary_set_player_color"] = new("Colors an object's boundary with a player's color (the player variable must belong to the object)."),
         ["begin"] = new("An inline block: its conditions only gate what is inside, and it doesn't use one of the gametype's limited triggers. Kalo Script writes it 'inline ... end'."),
         ["hs_function_call"] = new("Calls a map script (HaloScript) function by name."),
-        ["get_button_time"] = new("Stores how long (ms) the player has been holding a button."),
+        ["get_button_time"] = new("Stores how long (milliseconds) the player has been holding a button, 0 when not pressed. The button is a word, without quotes: " + string.Join(", ", Buttons) + ".",
+            "temp number held = 0\nget_button_time(current_player, fire_primary, held)\nif held > 500 then ... end"),
         ["team_set_vehicle_spawning"] = new("Lets the team spawn in vehicles (or not)."),
         ["player_set_vehicle_spawning"] = new("Lets the player spawn in vehicles (or not)."),
         ["set_player_respawn_vehicle"] = new("Makes the player respawn in this vehicle."),
@@ -276,6 +287,26 @@ public static class MegaloDocs
     /// <summary>
     /// The compiler's argument list as a Kalo Script call: "&lt;a&gt; {x|y} [opt]" → name(&lt;a&gt;, {x|y}, [opt]).
     /// </summary>
+    /// <summary>
+    /// Signatures where HREK's compiler describes an action wrongly: boundary_set_visible says "&lt;object&gt; &lt;boolean&gt;"
+    /// but takes the same player filter as navpoint_set_visible (Bungie's scripts write no_one / everyone / player P 1).
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, string> SignatureFixes = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["boundary_set_visible"] = "<object> {no_one|everyone|allies|enemies|player <player_reference> <boolean>}",
+        ["get_button_time"] = "<player> <button> <milliseconds_out>",
+    };
+
+    /// <summary>Corrects the compiler's catalog in place (signatures above, the button list). Safe to call twice.</summary>
+    public static void Fix(Kalo.Protocol.MegaloCatalog? catalog)
+    {
+        if (catalog == null) return;
+        foreach (var a in catalog.Actions ?? new())
+            if (a.Name != null && SignatureFixes.TryGetValue(a.Name, out var sig)) a.Description = sig;
+        catalog.Lists ??= new();
+        catalog.Lists["buttons"] = Buttons.ToList();
+    }
+
     public static string KaloSignature(string name, string? megaloSignature) =>
         string.IsNullOrWhiteSpace(megaloSignature) ? name + "()" : $"{name}({string.Join(", ", KaloArguments(megaloSignature))})";
 

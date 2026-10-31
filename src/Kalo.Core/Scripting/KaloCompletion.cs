@@ -118,6 +118,7 @@ public static class KaloCompletion
             "timer" => "timer",
             "timer_name" => "timer_member",
             "object_type" => "objectTypes",
+            "button" => "buttons",
             "sound" => "sounds",
             "incident_name" => "incidents",
             "loadout" => "loadouts",
@@ -153,6 +154,7 @@ public static class KaloCompletion
         "timer" => "a timer variable",
         "timer_member" => "the name of a timer of that object",
         "objectTypes" => "an object type",
+        "buttons" => "a button (no quotes)",
         "sounds" => "a sound",
         "incidents" => "an incident (medal, announcer event)",
         "loadouts" => "a loadout",
@@ -317,6 +319,7 @@ public static class KaloCompletion
     private static string KindLabel(string kind) => kind.Replace("_out", "").Replace("_member", "") switch
     {
         "objectTypes" => "object type",
+        "buttons" => "button",
         "sounds" => "sound",
         "incidents" => "incident",
         "loadouts" => "loadout",
@@ -346,7 +349,8 @@ public static class KaloCompletion
                 foreach (string v in placeholder.Trim('{', '}').Split('|'))
                 {
                     string w = v.Trim();
-                    if (w.StartsWith("player ")) { foreach (string p in Players(names)) yield return "player " + p; }
+                    // "player <p> <boolean>" (navpoint_set_visible, boundary_set_visible...): who, then 1 = yes / 0 = no.
+                    if (w.StartsWith("player ")) { foreach (string p in Players(names)) yield return w.Contains("<boolean>") ? $"player, {p}, 1" : "player " + p; }
                     else if (w.Length > 0 && !w.StartsWith('<')) yield return w;
                 }
                 yield break;
@@ -397,6 +401,9 @@ public static class KaloCompletion
                 yield break;
             case "string":
                 yield return "\"\"";
+                yield break;
+            case "buttons":
+                foreach (string v in MegaloDocs.Buttons) yield return v;
                 yield break;
             case "objectTypes" or "sounds" or "incidents" or "loadouts" or "loadoutPalettes" or "hudWidgetIcons":
                 foreach (string v in List(kind) ?? new List<string>()) yield return v;

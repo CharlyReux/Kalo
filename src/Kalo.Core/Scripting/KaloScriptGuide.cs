@@ -474,6 +474,7 @@ constants number k 0 end          constant k = 0
             ["objectTypes"] = "Object types", ["weaponSets"] = "Weapon sets", ["vehicleSets"] = "Vehicle sets", ["sounds"] = "Sounds",
             ["incidents"] = "Incidents (medals, announcer, stats)", ["loadouts"] = "Loadouts", ["loadoutPalettes"] = "Loadout palettes",
             ["hudWidgetIcons"] = "HUD widget icons", ["gameOptions"] = "Overridable game options",
+            ["buttons"] = "Buttons (get_button_time, written without quotes)",
         };
         if (catalog?.Lists is { Count: > 0 } lists)
         {

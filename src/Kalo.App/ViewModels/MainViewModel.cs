@@ -473,6 +473,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             MegaloCatalog = await Host.MegaloCatalogAsync(Paths.MegaloObjectLists);
+            Kalo.Core.Scripting.MegaloDocs.Fix(MegaloCatalog);
             Log($"Gametype compiler ready: {MegaloCatalog.Actions?.Count} actions, {MegaloCatalog.Conditions?.Count} conditions.");
         }
         catch (Exception ex)

@@ -253,6 +253,7 @@ async Task MegaloTest(string file)
     await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
     var sw = Stopwatch.StartNew();
     var cat = await host.MegaloCatalogAsync(paths.MegaloObjectLists);
+    MegaloDocs.Fix(cat);
     Console.WriteLine($"Catalog in {sw.ElapsedMilliseconds} ms: {cat.Actions?.Count} actions, {cat.Conditions?.Count} conditions, engine {cat.EngineBuild}, encoding {cat.EncodingVersion}, deploy dir '{cat.DeployDirectory}'");
     foreach (var kv in cat.Lists ?? new()) Console.WriteLine($"  {kv.Key}: {kv.Value.Count} e.g. {string.Join(", ", kv.Value.Take(4))}");
     foreach (var a in (cat.Actions ?? new()).Take(3)) Console.WriteLine($"  action {a.Name}: {a.Description}");
@@ -521,6 +522,7 @@ async Task MegaloCatalogDump(string output)
 {
     await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
     var cat = await host.MegaloCatalogAsync(paths.MegaloObjectLists);
+    MegaloDocs.Fix(cat);
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
     File.WriteAllText(output, System.Text.Json.JsonSerializer.Serialize(cat, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
     Console.WriteLine($"Catalog written to {output}: {cat.Actions?.Count} actions, {cat.Conditions?.Count} conditions");
@@ -640,6 +642,7 @@ async Task KscriptGuide()
 {
     await using var host = await HostClient.StartAsync(paths, line => { });
     var cat = await host.MegaloCatalogAsync(paths.MegaloObjectLists);
+    MegaloDocs.Fix(cat);
     var sections = KaloScriptGuide.Build(cat);
     Console.WriteLine($"{sections.Count} pages, {sections.Sum(s => s.Blocks.Count)} blocks");
     int n = 0, bad = 0;

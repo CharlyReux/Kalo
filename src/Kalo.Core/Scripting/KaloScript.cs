@@ -968,6 +968,7 @@ internal sealed partial class Transpiler
         }
         Expect(")", $"expected ')' to close {name}(");
         CheckPlayerFilter(name, args, open);
+        CheckButton(name, args, open);
         // "{current_player} reached the goal!": Megalo's format tokens (%p player, %t team, %n number, %s timer), the
         // values added after the text. At most two per text.
         for (int i = 0; i < args.Count; i++)
@@ -1001,6 +1002,22 @@ internal sealed partial class Transpiler
         string first = string.Join(", ", args.Take(filter));
         throw new ParseError(at, $"'player' here means one player only: write which player, then 1 or 0, e.g. {name}({first}, player, current_player, 1). " +
                                  "Or use no_one, everyone, allies or enemies");
+    }
+
+    /// <summary>
+    /// get_button_time takes a button word without quotes (fire_primary, jump...). A quoted or unknown name made HREK's
+    /// compiler fail the whole line and then complain about the next lines' variables.
+    /// </summary>
+    private void CheckButton(string name, List<string> args, Tok at)
+    {
+        if (name != "get_button_time" || args.Count < 2) return;
+        string button = args[1].Trim();
+        string bare = button.Trim('"');
+        if (button == bare && MegaloDocs.Buttons.Contains(bare)) return;
+        string hint = bare is "fire" or "fire_weapon" or "shoot" or "attack" ? "fire_primary" : bare is "melee" ? "melee_attack" : bare is "zoom" ? "scope_zoom" : "";
+        string what = button != bare && MegaloDocs.Buttons.Contains(bare) ? $"write the button without quotes: {bare}"
+            : $"\"{bare}\" is not a button" + (hint != "" ? $" (did you mean {hint}?)" : "");
+        throw new ParseError(at, $"get_button_time: {what}. Buttons: {string.Join(", ", MegaloDocs.Buttons)}");
     }
 
     private (string Format, List<string> Values) Interpolate(string text, Tok at)
