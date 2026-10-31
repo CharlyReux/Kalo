@@ -97,8 +97,10 @@ public sealed class Tour
             var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _vm.Game!.Loaded += () => loaded.TrySetResult();
             // The game's own messages about the gametype (variant loading, megalo, script errors).
+            var gametypeErrors = new System.Collections.Concurrent.ConcurrentQueue<string>();
             _vm.Game.Output += l =>
             {
+                if (l.Contains("main_game_start:") || (l.Contains("megalogamengine:") && l.Contains("fail"))) gametypeErrors.Enqueue(l);
                 if (System.Text.RegularExpressions.Regex.IsMatch(l, "variant|megalo|main_game|FATAL|hs:|game engine|game_engine", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
                     && !l.Contains("objects: model") && !l.Contains("spawn influencer"))
                     Say("game: " + (l.Length > 220 ? l[..220] : l));
@@ -115,6 +117,7 @@ public sealed class Tour
             }
             var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
             Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, $"the game loaded the map ({sw.Elapsed.TotalSeconds:F0} s)");
+            if (gametype != null) Check(gametypeErrors.IsEmpty, "the game started the gametype" + (gametypeErrors.TryPeek(out var ge) ? ": " + ge : ""));
             Say($"holding the game for {_hold:F0} s");
             await Task.Delay(TimeSpan.FromSeconds(_hold));
             _vm.StopGameCommand.Execute(null);

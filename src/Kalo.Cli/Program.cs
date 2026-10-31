@@ -139,6 +139,29 @@ switch (command)
         File.Move(argsList[1], argsList[2]);
         Console.WriteLine($"moved {argsList[1]} -> {argsList[2]}");
         break;
+    case "copy":
+    {
+        // copy <from> <to>: test helper; the target must be in the Kalo folder or HREK's maps\megalo.
+        string to = Path.GetFullPath(argsList[2]);
+        if (!to.StartsWith(paths.Repo, StringComparison.OrdinalIgnoreCase) && !to.StartsWith(Path.Combine(paths.Hrek, "maps", "megalo"), StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("copy only writes inside the Kalo folder or HREK\\maps\\megalo");
+        Directory.CreateDirectory(Path.GetDirectoryName(to)!);
+        File.Copy(argsList[1], to, true);
+        Console.WriteLine($"copied {argsList[1]} -> {to}");
+        break;
+    }
+    case "delete-test-file":
+    {
+        // delete-test-file <file>: removes a kalo_*.mglo test file Kalo put in HREK\maps\megalo (and the folder if it is then empty).
+        string f = Path.GetFullPath(argsList[1]);
+        string dir = Path.Combine(paths.Hrek, "maps", "megalo");
+        if (!f.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(f).StartsWith("kalo_", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("only kalo_* files in HREK\\maps\\megalo");
+        File.Delete(f);
+        Console.WriteLine("deleted " + f);
+        if (!Directory.EnumerateFileSystemEntries(dir).Any()) { Directory.Delete(dir); Console.WriteLine("removed empty " + dir); }
+        break;
+    }
     case "strings-near":
     {
         // strings-near <file> <exact string> <n>: the n strings before and after each occurrence (help texts of console commands sit next to them).

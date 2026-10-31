@@ -130,7 +130,16 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             try { File.Delete(file); } catch { }
             return mesh;
         };
-        Game.Output += line => Post(() => AppendOutput("[game] " + line));
+        Game.Output += line => Post(() =>
+        {
+            AppendOutput("[game] " + line);
+            // The gametype didn't load: the game then runs with no gametype at all (no script, default traits).
+            if (line.Contains("main_game_start:", StringComparison.Ordinal) && !line.Contains("-ERROR-", StringComparison.Ordinal))
+                AddProblem("error", "The game could not start the gametype (" + line[(line.IndexOf("main_game_start:", StringComparison.Ordinal) + 16)..].Trim() + "): it runs without it.", "Play");
+            else if (line.Contains("megalogamengine:", StringComparison.Ordinal) && !line.Contains("-ERROR-", StringComparison.Ordinal)
+                     && (line.Contains("failed", StringComparison.Ordinal) || line.Contains("not valid", StringComparison.Ordinal) || line.Contains("doesn't match", StringComparison.Ordinal)))
+                AddProblem("error", "Gametype: " + line[line.IndexOf("megalogamengine:", StringComparison.Ordinal)..].Trim(), "Play");
+        });
         Game.Loaded += () => Post(() => { GameStatus = "Game running · map loaded"; GameBrush = Brushes.LimeGreen; Log("Map loaded in the game."); });
         Game.TagReloaded += tag => Post(() => { StatusMessage = "Game reloaded " + System.IO.Path.GetFileName(tag); Log("Game hot-reloaded " + tag); });
         Game.Exited += code => Post(() =>

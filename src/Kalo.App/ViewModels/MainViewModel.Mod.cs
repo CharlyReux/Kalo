@@ -135,8 +135,14 @@ public partial class MainViewModel
         else AddProblem("warning", "Play from camera works from a map tab: open a map and place the camera where you want to start.", "Play");
     }
 
-    /// <summary>The console commands that load the gametype ({engine}, {bin}, {binrel} are replaced); --engine-cmd changes it for tests.</summary>
-    public static string EngineCommands { get; set; } = "load_binary_game_engine {engine}";
+    /// <summary>
+    /// The console commands that load the gametype ({engine}, {bin}, {binrel} are replaced); --engine-cmd changes it for tests.
+    /// "game_multiplayer megalo" makes the next map a Megalo game, and "game_set_variant" makes game_start load
+    /// HotReload\&lt;engine&gt;.mglo as its variant (base settings and script). Without game_multiplayer, game_start
+    /// reports "variant was not of the correct gametype" and runs with no gametype.
+    /// load_binary_game_engine only works on a game that already runs a Megalo gametype, so it does nothing at startup.
+    /// </summary>
+    public static string EngineCommands { get; set; } = "game_multiplayer megalo;game_set_variant {engine}";
 
     /// <summary>Console commands run before the map starts: split-screen players and the chosen gametype. Null if the gametype failed.</summary>
     private async Task<(List<string> Commands, string Note)?> PlayInitAsync()
@@ -202,6 +208,10 @@ public partial class MainViewModel
             if (open == null) await OpenScriptAsync(relativePath);
             return null;
         }
+        // reach_tag_test starts a gametype with "game_set_variant <name>", which opens HotReload\<name>.mglo next to the game.
+        string hotReload = System.IO.Path.Combine(Paths.Workspace, "HotReload");
+        Directory.CreateDirectory(hotReload);
+        File.Copy(mglo, System.IO.Path.Combine(hotReload, name + ".mglo"), true);
         return name;
     }
 

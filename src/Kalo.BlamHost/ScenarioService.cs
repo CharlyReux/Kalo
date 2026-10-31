@@ -368,10 +368,9 @@ namespace Kalo.BlamHost
                     var f = tag.SelectField(b + "Angle:facing") as TagFieldElementSingle;
                     if (f != null) f.Data = facing;
                 }
-                if (players > 1)
                 {
-                    // With several players the game picks respawn points, not starting locations: the copy's spawn
-                    // points are replaced by one per player at the same spots (later respawns happen there too).
+                    // With several players, and with any gametype, the game picks respawn points, not starting locations:
+                    // the copy's spawn points are replaced by one per player at the same spots (later respawns happen there too).
                     var kind = Kind("scenery");
                     var block = tag.SelectField("Block:scenery") as TagFieldBlock;
                     var palette = new List<string>();

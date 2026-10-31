@@ -226,6 +226,95 @@ __declspec(dllexport) DWORD WINAPI XInputGetKeystroke(DWORD slot, DWORD reserved
 __declspec(dllexport) DWORD WINAPI XInputGetAudioDeviceIds(DWORD slot, LPWSTR r, UINT *rc, LPWSTR c, UINT *cc)
 { LoadReal(); int p = PadFor(slot); return (g_getAudio && p >= 0) ? g_getAudio(p, r, rc, c, cc) : ERROR_DEVICE_NOT_CONNECTED; }
 
+
+/* ---- Diagnostics: log the game's attempts to open .mglo files (path, access, result). ---- */
+typedef HANDLE (WINAPI *CreateFileWFn)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
+typedef HANDLE (WINAPI *CreateFileAFn)(LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
+static CreateFileWFn g_realCreateFileW;
+static CreateFileAFn g_realCreateFileA;
+
+static void LogLine(const char *text)
+{
+    char path[MAX_PATH + 32];
+    snprintf(path, sizeof path, "%skalo_input.log", g_dir);
+    FILE *f = fopen(path, "a");
+    if (!f) return;
+    SYSTEMTIME t; GetLocalTime(&t);
+    fprintf(f, "%02d:%02d:%02d %s\n", t.wHour, t.wMinute, t.wSecond, text);
+    fclose(f);
+}
+
+static void LogOpen(const char *what, const char *path, DWORD access, DWORD share, DWORD disp, DWORD flags, HANDLE h, DWORD err)
+{
+    char line[MAX_PATH * 2 + 200];
+    snprintf(line, sizeof line, "kalo files: %s '%s' access %08lX share %lX disp %lu flags %08lX -> %s (error %lu)",
+             what, path, (unsigned long)access, (unsigned long)share, (unsigned long)disp, (unsigned long)flags,
+             h == INVALID_HANDLE_VALUE ? "FAILED" : "ok", (unsigned long)err);
+    LogLine(line);
+}
+
+static HANDLE WINAPI HookCreateFileW(LPCWSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD flags, HANDLE tmpl)
+{
+    HANDLE h = g_realCreateFileW(name, access, share, sa, disp, flags, tmpl);
+    if (name && (wcsstr(name, L".mglo") || wcsstr(name, L"megalo")))
+    {
+        DWORD err = GetLastError();
+        char a[MAX_PATH * 2];
+        WideCharToMultiByte(CP_UTF8, 0, name, -1, a, sizeof a, NULL, NULL);
+        LogOpen("CreateFileW", a, access, share, disp, flags, h, err);
+        SetLastError(err);
+    }
+    return h;
+}
+
+static HANDLE WINAPI HookCreateFileA(LPCSTR name, DWORD access, DWORD share, LPSECURITY_ATTRIBUTES sa, DWORD disp, DWORD flags, HANDLE tmpl)
+{
+    HANDLE h = g_realCreateFileA(name, access, share, sa, disp, flags, tmpl);
+    if (name && (strstr(name, ".mglo") || strstr(name, "megalo")))
+    {
+        DWORD err = GetLastError();
+        LogOpen("CreateFileA", name, access, share, disp, flags, h, err);
+        SetLastError(err);
+    }
+    return h;
+}
+
+/* Points the game exe's imports of CreateFileA/W at the hooks above. */
+static void HookImports(void)
+{
+    BYTE *base = (BYTE *)GetModuleHandleA(NULL);
+    IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)base;
+    IMAGE_NT_HEADERS *nt = (IMAGE_NT_HEADERS *)(base + dos->e_lfanew);
+    IMAGE_DATA_DIRECTORY dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (!dir.VirtualAddress) return;
+    int hooked = 0;
+    for (IMAGE_IMPORT_DESCRIPTOR *d = (IMAGE_IMPORT_DESCRIPTOR *)(base + dir.VirtualAddress); d->Name; d++)
+    {
+        if (!d->OriginalFirstThunk) continue;
+        IMAGE_THUNK_DATA *names = (IMAGE_THUNK_DATA *)(base + d->OriginalFirstThunk);
+        IMAGE_THUNK_DATA *funcs = (IMAGE_THUNK_DATA *)(base + d->FirstThunk);
+        for (; names->u1.AddressOfData; names++, funcs++)
+        {
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+            const char *fn = (const char *)((IMAGE_IMPORT_BY_NAME *)(base + names->u1.AddressOfData))->Name;
+            void *hook = NULL;
+            if (!strcmp(fn, "CreateFileW")) { g_realCreateFileW = (CreateFileWFn)(ULONG_PTR)funcs->u1.Function; hook = (void *)HookCreateFileW; }
+            else if (!strcmp(fn, "CreateFileA")) { g_realCreateFileA = (CreateFileAFn)(ULONG_PTR)funcs->u1.Function; hook = (void *)HookCreateFileA; }
+            if (!hook) continue;
+            DWORD old;
+            if (VirtualProtect(&funcs->u1.Function, sizeof(ULONG_PTR), PAGE_READWRITE, &old))
+            {
+                funcs->u1.Function = (ULONG_PTR)hook;
+                VirtualProtect(&funcs->u1.Function, sizeof(ULONG_PTR), old, &old);
+                hooked++;
+            }
+        }
+    }
+    char line[96];
+    snprintf(line, sizeof line, "kalo files: watching %d file-open imports for .mglo", hooked);
+    LogLine(line);
+}
+
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
 {
     if (reason == DLL_PROCESS_ATTACH)
@@ -236,6 +325,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
         char *slash = strrchr(g_dir, '\\');
         if (slash) slash[1] = 0; else g_dir[0] = 0;
         Log("kalo xinput: loaded (%d gamepad slots)%.0d", PADS, 0);
+        HookImports();
     }
     return TRUE;
 }
