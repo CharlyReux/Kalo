@@ -23,6 +23,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Gamepad routing for split-screen playtests (source in tools\xinput, built with mingw-w64). -->
+    <None Include="..\..\tools\xinput\xinput1_4.dll" Link="xinput\xinput1_4.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Kalo.Core\Kalo.Core.csproj" />
     <!-- Build order only: the app starts the Blam Host from its build output. -->
     <ProjectReference Include="..\Kalo.BlamHost\Kalo.BlamHost.csproj" ReferenceOutputAssembly="false" SkipGetTargetFrameworkProperties="true" />

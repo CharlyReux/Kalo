@@ -1,0 +1,12 @@
+LIBRARY xinput1_4
+EXPORTS
+    XInputGetState
+    XInputSetState
+    XInputGetCapabilities
+    XInputEnable
+    XInputGetBatteryInformation
+    XInputGetKeystroke
+    XInputGetAudioDeviceIds
+    XInputGetState_proxy
+    XInputSetState_proxy
+    XInputGetStateEx @100 NONAME

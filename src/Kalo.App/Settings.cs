@@ -64,6 +64,8 @@ public sealed class AppSettings
 
     public string Layout { get; set; } = "qwerty";
     public Dictionary<string, string> Keys { get; set; } = new();
+    /// <summary>Playtest: the player each gamepad drives (0-3), -1 off, -2 auto (see Kalo.Core.PlaytestInput).</summary>
+    public List<int> GamepadPlayers { get; set; } = new() { -2, -2, -2, -2 };
 
     public string GestureText(string action) =>
         Keys.TryGetValue(action, out var g) ? g : (Layout == "azerty" ? Azerty : Qwerty).GetValueOrDefault(action, "");
@@ -122,7 +124,7 @@ public sealed class AppSettings
         Changed?.Invoke();
     }
 
-    public AppSettings Clone() => new() { Layout = Layout, Keys = new Dictionary<string, string>(Keys) };
+    public AppSettings Clone() => new() { Layout = Layout, Keys = new Dictionary<string, string>(Keys), GamepadPlayers = new List<int>(GamepadPlayers) };
 
     /// <summary>French and Belgian keyboard layouts are AZERTY.</summary>
     public static string DetectLayout()

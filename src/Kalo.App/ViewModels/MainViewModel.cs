@@ -100,6 +100,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         InitGroups();
         SelectedPlayers = PlayerChoices[0];
+        AppSettings.Changed += () => Post(OnSettingsChanged);
         _args = args;
         try
         {
@@ -626,6 +627,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (IsGameRunning) Game.Stop();
         try
         {
+            ApplyPlaytestInput(PlayerCount);
             Game.Start(scenario, initCommands);
             if (note != null) Log(note);
             IsGameRunning = true;
@@ -642,6 +644,40 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     [RelayCommand(CanExecute = nameof(IsGameRunning))]
     private void StopGame() => Game?.Stop();
+
+    private int _runningPlayers = 1;
+
+    /// <summary>
+    /// Gamepads for the playtest: installs Kalo's xinput1_4.dll next to the game (once) and writes which player each
+    /// gamepad drives (kalo_input.txt), from Settings › Playtest gamepads and the players picker.
+    /// </summary>
+    private void ApplyPlaytestInput(int players)
+    {
+        if (Paths == null) return;
+        _runningPlayers = players;
+        var map = PlaytestInput.Resolve(AppSettings.Current.GamepadPlayers, players);
+        string dll = System.IO.Path.Combine(AppContext.BaseDirectory, "xinput", PlaytestInput.DllName);
+        if (!PlaytestInput.Deploy(Paths.Workspace, dll, out string why)) { AddProblem("warning", "Gamepads: " + why, "Play"); return; }
+        try
+        {
+            PlaytestInput.WriteConfig(Paths.Workspace, players, map);
+            Log("Gamepads: " + PlaytestInput.Describe(players, map) + ". In game: Back + D-pad right/left (or F8 for gamepad 1) moves a gamepad to another player.");
+        }
+        catch (Exception ex) { AddProblem("warning", "Gamepads: " + ex.Message, "Play"); }
+    }
+
+    /// <summary>Settings saved while the game runs: the game picks up the new gamepad players within a second.</summary>
+    private void OnSettingsChanged()
+    {
+        if (!IsGameRunning || Paths == null) return;
+        try
+        {
+            var map = PlaytestInput.Resolve(AppSettings.Current.GamepadPlayers, _runningPlayers);
+            PlaytestInput.WriteConfig(Paths.Workspace, _runningPlayers, map);
+            Log("Gamepads (live): " + PlaytestInput.Describe(_runningPlayers, map) + ".");
+        }
+        catch { }
+    }
 
     // ---- panels ----------------------------------------------------------------------------
 

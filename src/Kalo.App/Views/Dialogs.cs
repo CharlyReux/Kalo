@@ -95,13 +95,37 @@ public static class Dialogs
         };
         Build();
 
+        // Playtest gamepads: which split-screen player each gamepad drives.
+        while (settings.GamepadPlayers.Count < Kalo.Core.PlaytestInput.Pads) settings.GamepadPlayers.Add(Kalo.Core.PlaytestInput.Auto);
+        var padChoices = new[] { "Auto", "Player 1", "Player 2", "Player 3", "Player 4", "Off" };
+        int ToIndex(int v) => v == Kalo.Core.PlaytestInput.Auto ? 0 : v == Kalo.Core.PlaytestInput.Off ? 5 : v + 1;
+        int FromIndex(int i) => i == 0 ? Kalo.Core.PlaytestInput.Auto : i == 5 ? Kalo.Core.PlaytestInput.Off : i - 1;
+        var pads = new StackPanel { Spacing = 4 };
+        pads.Children.Add(new TextBlock { Text = "PLAYTEST GAMEPADS", Classes = { "header" }, Margin = new Thickness(0, 4, 0, 0) });
+        pads.Children.Add(new TextBlock
+        {
+            Text = "The keyboard and mouse always play player 1. Auto: alone, gamepad 1 plays player 1 too; in split-screen gamepads 1-3 play players 2-4. " +
+                   "In game, Back + D-pad right/left moves a gamepad to the next/previous player, and F8 moves gamepad 1. Saving while the game runs applies at once.",
+            Foreground = Brush("KMuted"), TextWrapping = TextWrapping.Wrap, FontSize = 12,
+        });
+        for (int pad = 0; pad < Kalo.Core.PlaytestInput.Pads; pad++)
+        {
+            int index = pad;
+            var box = new ComboBox { ItemsSource = padChoices, SelectedIndex = ToIndex(settings.GamepadPlayers[pad]), MinWidth = 140 };
+            box.SelectionChanged += (_, _) => settings.GamepadPlayers[index] = FromIndex(box.SelectedIndex);
+            var padRow = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(box, Dock.Right);
+            padRow.Children.Add(box);
+            padRow.Children.Add(new TextBlock { Text = $"Gamepad {pad + 1}", VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("KText") });
+            pads.Children.Add(padRow);
+        }
         var save = new Button { Content = "Save", Classes = { "primary" }, MinWidth = 80 };
         var cancel = new Button { Content = "Cancel", Classes = { "tool" }, IsCancel = true };
         var window = new Window
         {
             Title = "Kalo settings",
             Width = 460,
-            Height = 640,
+            Height = 720,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = Brush("KPanel"),
         };
@@ -121,7 +145,7 @@ public static class Dialogs
         DockPanel.SetDock(buttons, Dock.Bottom);
         body.Children.Add(top);
         body.Children.Add(buttons);
-        body.Children.Add(new ScrollViewer { Content = rows, Margin = new Thickness(0, 8, 0, 0) });
+        body.Children.Add(new ScrollViewer { Content = new StackPanel { Spacing = 8, Children = { rows, new Border { Height = 1, Background = Brush("KBorder"), Margin = new Thickness(0, 10, 0, 6) }, pads } }, Margin = new Thickness(0, 8, 0, 0) });
         window.Content = body;
 
         window.AddHandler(InputElement.KeyDownEvent, (object? _, KeyEventArgs e) =>
