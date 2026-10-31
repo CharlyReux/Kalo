@@ -52,6 +52,8 @@ public sealed class Baseline
             {
                 string rel = f.FullName.Substring(_paths.Workspace.Length + 1);
                 seen.Add(rel);
+                // Kalo's own throwaway maps (play copies, test maps) are not changes of the mod.
+                if (rel.Contains(@"\_kalo_", StringComparison.OrdinalIgnoreCase)) continue;
                 if (!_entries.TryGetValue(rel, out var e)) changes.Add(new WorkspaceChange(rel, ChangeKind.Added));
                 else if (e.Size != f.Length || e.Ticks != f.LastWriteTimeUtc.Ticks) changes.Add(new WorkspaceChange(rel, ChangeKind.Modified));
             }

@@ -99,6 +99,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public MainViewModel(AppArgs args)
     {
         InitGroups();
+        SelectedPlayers = PlayerChoices[0];
         _args = args;
         try
         {
@@ -131,7 +132,16 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Game.Output += line => Post(() => AppendOutput("[game] " + line));
         Game.Loaded += () => Post(() => { GameStatus = "Game running · map loaded"; GameBrush = Brushes.LimeGreen; Log("Map loaded in the game."); });
         Game.TagReloaded += tag => Post(() => { StatusMessage = "Game reloaded " + System.IO.Path.GetFileName(tag); Log("Game hot-reloaded " + tag); });
-        Game.Exited += code => Post(() => { IsGameRunning = false; GameStatus = "Game not running"; GameBrush = Brushes.Gray; Log($"Game exited (code {code})."); });
+        Game.Exited += code => Post(() =>
+        {
+            Log($"Game exited (code {code}).");
+            if (Game?.IsRunning == true) return; // the old game, replaced by the one just started
+            IsGameRunning = false; GameStatus = "Game not running"; GameBrush = Brushes.Gray;
+            // Play-from-camera copies are throwaway.
+            // Not when this exit is the old game being replaced by a new one (which may be using the copy).
+            if (Game?.IsRunning != true && !IsPreparingPlay)
+                try { string play = System.IO.Path.Combine(Paths!.WorkspaceTags, @"levels\mods\_kalo_play"); if (Directory.Exists(play)) Directory.Delete(play, true); } catch { }
+        });
 
         string tagsRoot = Paths.WorkspaceTags;
         if (Directory.Exists(tagsRoot))
@@ -596,6 +606,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             foreach (string f in Directory.EnumerateFiles(dir, "*.scenario", SearchOption.AllDirectories).OrderBy(x => x))
             {
                 string rel = f.Substring(tagsRoot.Length + 1);
+                if (rel.Contains(@"\_kalo_", StringComparison.OrdinalIgnoreCase)) continue; // play copies and test maps
                 Scenarios.Add(rel.Substring(0, rel.Length - ".scenario".Length));
             }
         }
@@ -606,16 +617,21 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <summary>Starts reach_tag_test on the selected map, optionally running console commands first.</summary>
     public void StartGame(IReadOnlyList<string> initCommands, string? note)
     {
-        if (Game == null || SelectedScenario == null) return;
+        if (SelectedScenario != null) StartGame(SelectedScenario, initCommands, note);
+    }
+
+    public void StartGame(string scenario, IReadOnlyList<string> initCommands, string? note)
+    {
+        if (Game == null) return;
         if (IsGameRunning) Game.Stop();
         try
         {
-            Game.Start(SelectedScenario, initCommands);
+            Game.Start(scenario, initCommands);
             if (note != null) Log(note);
             IsGameRunning = true;
-            GameStatus = "Game loading " + System.IO.Path.GetFileName(SelectedScenario) + "…";
+            GameStatus = "Game loading " + System.IO.Path.GetFileName(scenario) + "…";
             GameBrush = Brushes.Orange;
-            Log("Play: launched reach_tag_test on " + SelectedScenario + ". Saved tags reload in the game automatically.");
+            Log("Play: launched reach_tag_test on " + scenario + ". Saved tags reload in the game automatically.");
             BottomPanel = "output";
         }
         catch (Exception ex)

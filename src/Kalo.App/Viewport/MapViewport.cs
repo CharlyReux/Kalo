@@ -223,6 +223,7 @@ void main() {
             _subscribed.CaptureRequested -= OnCaptureRequested;
             // Another view may already show this map (moved to the other editor group): keep its provider.
             if (_subscribed.PlacementPointProvider is { } provider && ReferenceEquals(provider.Target, this)) _subscribed.PlacementPointProvider = null;
+            if (_subscribed.PlayFromProvider is { } play && ReferenceEquals(play.Target, this)) _subscribed.PlayFromProvider = null;
         }
         _subscribed = Map;
         if (_subscribed != null)
@@ -233,6 +234,7 @@ void main() {
             _subscribed.CameraRequested += OnCameraRequested;
             _subscribed.CaptureRequested += OnCaptureRequested;
             _subscribed.PlacementPointProvider = PlacementPoint;
+            _subscribed.PlayFromProvider = PlayFromPoint;
             _cameraPlaced = false;
         }
         RequestNextFrameRendering();
@@ -962,6 +964,17 @@ void main() {
         Vector3 ahead = _eye + fwd * 6f;
         var below = HitScene(ahead + new Vector3(0, 0, 0.5f), -Vector3.UnitZ);
         return below is { } b && ahead.Z - b.Z < 12f ? b : ahead;
+    }
+
+    /// <summary>
+    /// Play from camera: the ground (level or object) straight below the camera, facing where the camera looks.
+    /// With nothing below within 60 units the player starts at the camera and falls.
+    /// </summary>
+    private (Vector3 Position, float FacingDegrees) PlayFromPoint()
+    {
+        var below = HitScene(_eye + new Vector3(0, 0, 0.2f), -Vector3.UnitZ);
+        Vector3 p = below is { } b && _eye.Z - b.Z < 60f ? b + new Vector3(0, 0, 0.1f) : _eye - new Vector3(0, 0, 0.6f);
+        return (p, _yaw * 180f / MathF.PI);
     }
 
     private static float? HitMesh(Mesh mesh, Vector3 o, Vector3 d)

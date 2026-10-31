@@ -18,6 +18,7 @@
   <Window.KeyBindings>
     <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveActiveCommand}" />
     <KeyBinding Gesture="F5" Command="{Binding PlayCommand}" />
+    <KeyBinding Gesture="Ctrl+F5" Command="{Binding PlayFromCameraCommand}" />
     <KeyBinding Gesture="Shift+F5" Command="{Binding StopGameCommand}" />
   </Window.KeyBindings>
 
@@ -42,6 +43,7 @@
           </MenuItem>
           <MenuItem Header="_Play">
             <MenuItem Header="Play (map and gametype chosen at the top)" InputGesture="F5" Command="{Binding PlayCommand}" />
+            <MenuItem Header="Play from camera (open map: start where the editor camera is)" InputGesture="Ctrl+F5" Command="{Binding PlayFromCameraCommand}" />
             <MenuItem Header="Stop" InputGesture="Shift+F5" Command="{Binding StopGameCommand}" />
           </MenuItem>
           <MenuItem Header="_Help">
@@ -57,6 +59,8 @@
           <TextBlock Text="with" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" />
           <ComboBox ItemsSource="{Binding GametypeChoices}" SelectedItem="{Binding SelectedGametype}" Width="200" MinHeight="26" FontSize="12"
                     ToolTip.Tip="Gametype to play. 'Map default' plays the map as it is; your own gametypes are compiled and loaded first." />
+          <ComboBox ItemsSource="{Binding PlayerChoices}" SelectedItem="{Binding SelectedPlayers}" Width="96" MinHeight="26" FontSize="12"
+                    ToolTip.Tip="Local players, split-screen in one game window. Player 1 uses the keyboard and mouse (or the first gamepad); plug in gamepads for the others." />
           <Button Classes="primary" Command="{Binding PlayCommand}" ToolTip.Tip="{Binding PlaySummary}" Padding="10,3">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" VerticalAlignment="Center" />

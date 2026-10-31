@@ -20,7 +20,7 @@ public partial class MainViewModel
     [ObservableProperty] private bool _isPreparingPlay;
 
     /// <summary>What Play will launch, in words, for the title bar tooltip.</summary>
-    public string PlaySummary => $"Play {System.IO.Path.GetFileName(SelectedScenario ?? "?")} with {SelectedGametype?.Label ?? "its default gametype"} in reach_tag_test (F5). Unsaved changes are saved first.";
+    public string PlaySummary => $"Play {System.IO.Path.GetFileName(SelectedScenario ?? "?")} with {SelectedGametype?.Label ?? "its default gametype"}{(PlayerCount > 1 ? $", {PlayerCount} players split-screen" : "")} in reach_tag_test (F5). Ctrl+F5 in a map: play from the camera. Unsaved changes are saved first.";
 
     partial void OnSelectedGametypeChanged(GametypeChoice? value) => OnPropertyChanged(nameof(PlaySummary));
     partial void OnSelectedScenarioChanged(string? value) => OnPropertyChanged(nameof(PlaySummary));
@@ -57,6 +57,16 @@ public partial class MainViewModel
         }
     }
 
+    // ---- players (split-screen) ---------------------------------------------------------------------
+
+    public IReadOnlyList<PlayerChoice> PlayerChoices { get; } = new[]
+    {
+        new PlayerChoice(1, "1 player"), new PlayerChoice(2, "2 players"), new PlayerChoice(3, "3 players"), new PlayerChoice(4, "4 players"),
+    };
+    [ObservableProperty] private PlayerChoice? _selectedPlayers;
+    public int PlayerCount => SelectedPlayers?.Count ?? 1;
+    partial void OnSelectedPlayersChanged(PlayerChoice? value) => OnPropertyChanged(nameof(PlaySummary));
+
     /// <summary>
     /// Saves what is unsaved, compiles and deploys the chosen gametype (if any), then starts the chosen map.
     /// Restarts the game if it is already running.
@@ -72,21 +82,78 @@ public partial class MainViewModel
             // Warn (without blocking) about objects the game will delete because they are off the level.
             var openMap = Tabs.OfType<MapEditorViewModel>().FirstOrDefault(m => m.Scenario.Equals(SelectedScenario, StringComparison.OrdinalIgnoreCase));
             if (openMap?.HasOutside == true) AddProblem("warning", openMap.OutsideText, openMap.Path);
-            var commands = new List<string>();
-            string note = "";
-            if (SelectedGametype?.Path is { } gametype)
-            {
-                string? engine = await DeployGametypeAsync(gametype);
-                if (engine == null) return;
-                commands.Add("load_binary_game_engine " + engine);
-                note = $" with gametype {System.IO.Path.GetFileNameWithoutExtension(gametype)}";
-            }
-            StartGame(commands, $"Play: {SelectedScenario}{note}.");
+            var init = await PlayInitAsync();
+            if (init == null) return;
+            StartGame(SelectedScenario, init.Value.Commands, $"Play: {SelectedScenario}{init.Value.Note}.");
         }
         finally
         {
             IsPreparingPlay = false;
         }
+    }
+
+    /// <summary>
+    /// Play from camera (Ctrl+F5): saves, makes a throwaway copy of the map (levels\mods\_kalo_play) whose start
+    /// locations are on the ground under the editor camera, and plays that copy. The map's own Start location stays.
+    /// </summary>
+    public async Task PlayFromAsync(MapEditorViewModel map, System.Numerics.Vector3 position, float facing)
+    {
+        if (Game == null || Host == null || IsPreparingPlay) return;
+        IsPreparingPlay = true;
+        try
+        {
+            foreach (var doc in Tabs.Where(t => t.IsDirty).ToList()) await doc.SaveDocumentAsync();
+            if (map.IsDirty) { AddProblem("warning", "Save the map first: Play from camera plays the saved map.", map.Path); return; }
+            string name = System.IO.Path.GetFileNameWithoutExtension(map.Path);
+            string copy = $@"levels\mods\_kalo_play\{name}\{name}.scenario";
+            if (IsGameRunning) Game.Stop();
+            var r = await Host.PlacementOpAsync(new PlacementOpParams
+            {
+                Path = map.Path, Op = PlacementOps.MakePlayCopy, Tag = copy, Index = PlayerCount,
+                Position = new[] { position.X, position.Y, position.Z, facing },
+            });
+            var init = await PlayInitAsync();
+            if (init == null) return;
+            StartGame(copy[..^".scenario".Length], init.Value.Commands,
+                $"Play from camera: {map.Scenario} at {position.X:F1}, {position.Y:F1}, {position.Z:F1}{init.Value.Note}. The map's own Start location is unchanged.");
+        }
+        catch (HostException ex)
+        {
+            AddProblem("error", "Play from camera: " + ex.Message, map.Path);
+        }
+        finally
+        {
+            IsPreparingPlay = false;
+        }
+    }
+
+    /// <summary>Ctrl+F5: Play from camera in the map tab that is open.</summary>
+    [RelayCommand]
+    private async Task PlayFromCamera()
+    {
+        if (ActiveDocument is MapEditorViewModel map) await map.PlayFromCameraCommand.ExecuteAsync(null);
+        else AddProblem("warning", "Play from camera works from a map tab: open a map and place the camera where you want to start.", "Play");
+    }
+
+    /// <summary>Console commands run before the map starts: split-screen players and the chosen gametype. Null if the gametype failed.</summary>
+    private async Task<(List<string> Commands, string Note)?> PlayInitAsync()
+    {
+        var commands = new List<string>();
+        string note = "";
+        if (PlayerCount > 1)
+        {
+            // Reach's test build: "sets the number of multiplayer splitscreen players for the next map".
+            commands.Add("game_splitscreen " + PlayerCount);
+            note += $", {PlayerCount} players split-screen";
+        }
+        if (SelectedGametype?.Path is { } gametype)
+        {
+            string? engine = await DeployGametypeAsync(gametype);
+            if (engine == null) return null;
+            commands.Add("load_binary_game_engine " + engine);
+            note = $" with gametype {System.IO.Path.GetFileNameWithoutExtension(gametype)}" + note;
+        }
+        return (commands, note);
     }
 
     /// <summary>Compiles a gametype script (the open tab's text if it is open) and writes maps\megalo\kalo_&lt;name&gt;.mglo. Returns the engine name.</summary>
@@ -504,4 +571,10 @@ public sealed record ModEntry(MainViewModel Main, string Path, string Kind)
     public string TypeText => System.IO.Path.GetExtension(Path).TrimStart('.').Replace('_', ' ');
     public string Badge => Kind switch { "Added" => "new", "Deleted" => "deleted", _ => "changed" };
     public bool IsNew => Kind == "Added";
+}
+
+/// <summary>How many local players Play starts (split-screen in one game window).</summary>
+public sealed record PlayerChoice(int Count, string Label)
+{
+    public override string ToString() => Label;
 }

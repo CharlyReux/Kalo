@@ -342,6 +342,76 @@ public sealed class Tour
         return _failures == 0 ? 0 : 1;
     }
 
+    /// <summary>
+    /// --playfrom-test: a throwaway Forge World map, the camera put on solid ground in the Coliseum facing a tall block,
+    /// then Play from camera with N split-screen players. The runner screenshots the game; the copy must be gone after.
+    /// </summary>
+    public async Task<int> PlayFromTestAsync(int players)
+    {
+        Say($"play-from-camera test started ({players} player(s))");
+        const string path = @"levels\mods\_kalo_tour\playfrom\playfrom.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour\playfrom");
+        string copyFolder = System.IO.Path.Combine(_vm.Paths.WorkspaceTags, @"levels\mods\_kalo_play");
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = @"levels\multi\forge_halo\forge_halo.scenario", NewPath = path, Empty = true, MapId = 7985 });
+            var map = await _vm.OpenMapAsync(path);
+            var until = DateTime.UtcNow.AddMinutes(3);
+            while ((map.Bsp == null || map.ModelVersion == 0) && DateTime.UtcNow < until) await Task.Delay(500);
+            // A template spawn on the Coliseum floor; a tall block 8 units ahead (+x) as a landmark.
+            var center = map.Items.Where(i => i.Category == "scenery" && i.Tag.Contains("respawn_point")).Select(i => i.Position).DefaultIfEmpty(new Vector3(60.92f, 210.05f, 44.65f)).First();
+            var block = await map.AddTagAtAsync(@"objects\levels\forge\ff_plat_4x4_tall\ff_plat_4x4_tall.crate", center + new Vector3(8, 0, 0));
+            Check(block != null, "landmark block placed 8 units ahead");
+            await _vm.Host.SaveTagAsync(path); // not through the map's Save: test maps stay out of the mod project
+            map.IsDirty = false;
+            _vm.ActiveDocument = map;
+            map.Shading = ViewShading.Textured;
+            map.LookFrom(center + new Vector3(0, 0, 1.6f), 0, -5);
+            await Pause(2000);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "playfrom-kalo-camera.png"));
+            Check(map.PlayFromProvider != null, "the 3D view gives the camera's start point");
+            if (map.PlayFromProvider != null)
+            {
+                var (pos, facing) = map.PlayFromProvider();
+                Check(Math.Abs(pos.Z - (center.Z + 0.1f)) < 0.6f, $"start point on the ground under the camera ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F2}; facing {facing:F0})");
+            }
+            _vm.SelectedPlayers = _vm.PlayerChoices.First(c => c.Count == players);
+            _vm.SelectedGametype = _vm.GametypeChoices.FirstOrDefault(g => string.Equals(System.IO.Path.GetFileName(g.Path), "slayer.txt", StringComparison.OrdinalIgnoreCase)) ?? _vm.SelectedGametype;
+            Check(_vm.SelectedGametype?.Path != null, $"gametype {_vm.SelectedGametype?.Label}");
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            _vm.Game.Exited += _ => { exited.TrySetResult(); loaded.TrySetException(new Exception("the game exited while loading")); };
+            var sw = Stopwatch.StartNew();
+            await map.PlayFromCameraCommand.ExecuteAsync(null);
+            Check(File.Exists(System.IO.Path.Combine(copyFolder, "playfrom", "playfrom.scenario")), "a play copy was made in levels\\mods\\_kalo_play");
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, $"the game loaded the play copy ({sw.Elapsed.TotalSeconds:F0} s)");
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+            await Task.Delay(1500);
+            Check(!Directory.Exists(copyFolder), "the play copy is deleted when the game exits");
+            Check(!_vm.Scenarios.Any(s => s.Contains("_kalo_play")), "the play copy is not in the Play list");
+        }
+        catch (Exception ex)
+        {
+            Check(false, "unexpected error: " + ex.Message);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+            await Task.Delay(1000);
+            try { if (Directory.Exists(folder)) Directory.Delete(folder, true); Say("removed the test map"); } catch (Exception ex) { Say("could not remove the test map: " + ex.Message); }
+        }
+        Say(_failures == 0 ? "PLAYFROM PASS" : $"PLAYFROM FAIL ({_failures})");
+        return _failures == 0 ? 0 : 1;
+    }
+
     private static IEnumerable<FieldNode> Flatten(IEnumerable<FieldNode>? nodes)
     {
         foreach (var n in nodes ?? Enumerable.Empty<FieldNode>())

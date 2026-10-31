@@ -127,6 +127,7 @@ namespace Kalo.BlamHost
 
         public PlacementOpResult Op(PlacementOpParams p)
         {
+            if (p.Op == PlacementOps.MakePlayCopy) return MakePlayCopy(p);
             TagFile tag = _tags.GetOrOpen(p.Path);
             if (p.Category == StartLocations.Category) return StartOp(tag, p);
             switch (p.Op)
@@ -296,6 +297,71 @@ namespace Kalo.BlamHost
             tag.Save();
             result.Ms = sw.ElapsedMilliseconds;
             return result;
+        }
+
+        /// <summary>
+        /// A copy of the saved map whose player starting locations are at one point (the editor camera), for "Play from
+        /// camera". With several players (split-screen) they stand side by side, 1.2 units apart, facing the same way.
+        /// </summary>
+        private PlacementOpResult MakePlayCopy(PlacementOpParams p)
+        {
+            if (p.Position == null || p.Position.Length < 3) throw new ArgumentException("Play copy: position missing.");
+            string dest = p.Tag;
+            if (string.IsNullOrWhiteSpace(dest) || !dest.Replace('/', '\\').StartsWith(@"levels\mods\_kalo_play\", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Play copies go in levels\\mods\\_kalo_play.");
+            if (_tags.IsOpen(dest)) _tags.Close(dest);
+            string src = _tags.FullPath(p.Path), dst = _tags.FullPath(dest);
+            if (!System.IO.File.Exists(src)) throw new InvalidOperationException("Save the map first: " + p.Path + " is not on disk.");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(dst));
+            System.IO.File.Copy(src, dst, true);
+            int players = Math.Max(1, Math.Min(4, p.Index));
+            float facing = p.Position.Length > 3 ? p.Position[3] : 0f;
+            double yaw = facing * Math.PI / 180.0;
+            // Side by side, across the facing direction: 0, +1.2, -1.2, +2.4.
+            float sideX = (float)-Math.Sin(yaw), sideY = (float)Math.Cos(yaw);
+            float[] offsets = { 0f, 1.2f, -1.2f, 2.4f };
+            using (var tag = new TagFile(TagService.TagPathOf(dest)))
+            {
+                var starts = tag.SelectField("Block:" + StartLocations.Block) as TagFieldBlock;
+                if (starts == null) throw new InvalidOperationException("This map has no player starting locations block.");
+                starts.RemoveAllElements();
+                for (int i = 0; i < players; i++)
+                {
+                    starts.AddElement();
+                    string b = "Block:" + StartLocations.Block + "[" + i + "]/";
+                    SetFloats(tag.SelectField(b + "RealPoint3d:position"), new[] { p.Position[0] + sideX * offsets[i], p.Position[1] + sideY * offsets[i], p.Position[2] });
+                    var f = tag.SelectField(b + "Angle:facing") as TagFieldElementSingle;
+                    if (f != null) f.Data = facing;
+                }
+                if (players > 1)
+                {
+                    // With several players the game picks respawn points, not starting locations: the copy's spawn
+                    // points are replaced by one per player at the same spots (later respawns happen there too).
+                    var kind = Kind("scenery");
+                    var block = tag.SelectField("Block:scenery") as TagFieldBlock;
+                    var palette = new List<string>();
+                    var pal = tag.SelectField("Block:scenery palette") as TagFieldBlock;
+                    for (int i = 0; pal != null && i < pal.Elements.Count; i++)
+                        palette.Add(TagService.ValueOf(tag.SelectField("Block:scenery palette[" + i + "]/Reference:name")) ?? "");
+                    for (int i = (block?.Elements.Count ?? 0) - 1; i >= 0; i--)
+                    {
+                        int type = Int(tag.SelectField("Block:scenery[" + i + "]/ShortBlockIndex:type"));
+                        string objectTag = type >= 0 && type < palette.Count ? palette[type] : "";
+                        if (objectTag.IndexOf(@"\spawning\", StringComparison.OrdinalIgnoreCase) >= 0 && objectTag.IndexOf("spawn_point", StringComparison.OrdinalIgnoreCase) >= 0)
+                            block.RemoveElement(i);
+                    }
+                    int respawn = PaletteIndex(tag, kind, @"objects\multi\spawning\respawn_point.scenery");
+                    for (int i = 0; i < players; i++)
+                    {
+                        Op(tag, kind, respawn, new[] { p.Position[0] + sideX * offsets[i], p.Position[1] + sideY * offsets[i], p.Position[2] });
+                        int last = ((TagFieldBlock)tag.SelectField("Block:scenery")).Elements.Count - 1;
+                        SetFloats(tag.SelectField("Block:scenery[" + last + "]/Struct:object data[0]/RealEulerAngles3d:rotation"), new[] { facing, 0f, 0f });
+                    }
+                }
+                DetachTemplateResources(tag, dest);
+                tag.Save();
+            }
+            return new PlacementOpResult { SelectIndex = players };
         }
 
         /// <summary>The split resource tags that hold object placements (scenario resources / new split resources).</summary>

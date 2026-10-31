@@ -55,14 +55,16 @@ public sealed class GameSession : IDisposable
             RedirectStandardError = true,
             RedirectStandardInput = true,
         };
-        _process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        _process.OutputDataReceived += (_, e) => OnLine(e.Data);
-        _process.ErrorDataReceived += (_, e) => OnLine(e.Data);
-        _process.Exited += (_, _) =>
+        var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        _process = process;
+        process.OutputDataReceived += (_, e) => OnLine(e.Data);
+        process.ErrorDataReceived += (_, e) => OnLine(e.Data);
+        process.Exited += (_, _) =>
         {
             int code = 0;
-            try { code = _process.ExitCode; } catch { }
-            StopTail();
+            try { code = process.ExitCode; } catch { }
+            // A restart replaces the process: only the current one's exit stops the log tail.
+            if (ReferenceEquals(_process, process)) StopTail();
             Exited?.Invoke(code);
         };
         lock (_gate)

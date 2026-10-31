@@ -44,6 +44,8 @@ public partial class MapEditorViewModel : DocumentViewModel
     public Vector3? CursorPoint { get; set; }
     /// <summary>Set by the 3D view: where a new object should go (the surface in front of the camera).</summary>
     public Func<Vector3>? PlacementPointProvider { get; set; }
+    /// <summary>Set by the 3D view: where "Play from camera" starts (ground under the camera) and the facing.</summary>
+    public Func<(Vector3 Position, float FacingDegrees)>? PlayFromProvider { get; set; }
 
     public event Action? SceneChanged;
     public event Action<Vector3, float>? FocusRequested;
@@ -667,6 +669,15 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     [RelayCommand]
     private Task PlayHere() => _main.PlayScenarioAsync(Scenario);
+
+    /// <summary>Play this map starting where the editor camera is (on the ground below it), without moving the Start location.</summary>
+    [RelayCommand]
+    private async Task PlayFromCamera()
+    {
+        if (PlayFromProvider == null) { Status = "Open the 3D view first."; return; }
+        var (position, facing) = PlayFromProvider();
+        await _main.PlayFromAsync(this, position, facing);
+    }
 
     private static float[] ToArray(Vector3 v) => new[] { v.X, v.Y, v.Z };
 }

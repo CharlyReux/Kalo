@@ -18,6 +18,13 @@
           <Button Classes="tool" Command="{Binding RedoCommand}" IsEnabled="{Binding CanRedo}" ToolTip.Tip="Redo (Ctrl+Y)">
             <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE7A6;" />
           </Button>
+          <Button Classes="outline" Command="{Binding PlayFromCameraCommand}"
+                  ToolTip.Tip="Play this map starting here: on the ground under the camera, facing where it looks (Ctrl+F5). The map's Start location does not move.">
+            <StackPanel Orientation="Horizontal" Spacing="5">
+              <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" VerticalAlignment="Center" FontSize="11" />
+              <TextBlock Text="Play here" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
           <Button Classes="outline" Content="Spawn view" Command="{Binding ViewFromSpawnCommand}" IsEnabled="{Binding HasSpawn}"
                   ToolTip.Tip="Camera where the player spawns, at eye height: compare with the game" />
           <Button Classes="outline" Content="Frame all" Command="{Binding FrameAllCommand}" ToolTip.Tip="Put the camera back over the play space (Home)" />

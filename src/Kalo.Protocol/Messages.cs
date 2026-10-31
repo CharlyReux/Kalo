@@ -343,6 +343,11 @@ namespace Kalo.Protocol
         public const string DeleteFolder = "deleteFolder";
         /// <summary>Gives placement Index the object name Tag (empty: no name). Names are unique in a map.</summary>
         public const string Rename = "rename";
+        /// <summary>
+        /// Play from here: copies the saved scenario Path to Tag (a throwaway path) with Index player starting locations at
+        /// Position (x, y, z, facing in degrees), so the game starts there. The map itself is not changed.
+        /// </summary>
+        public const string MakePlayCopy = "makePlayCopy";
     }
 
     public sealed class PlacementOpParams

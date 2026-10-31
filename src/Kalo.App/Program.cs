@@ -42,6 +42,8 @@ public sealed class AppArgs
     public string? PlayWith { get; private set; }
     /// <summary>--crate-probe q1|q0|packing|nopalette: a throwaway Forge World map with one object under the start, played once.</summary>
     public string? CrateProbe { get; private set; }
+    /// <summary>--playfrom-test &lt;players&gt;: Play from camera on a throwaway Forge World map with that many split-screen players.</summary>
+    public string? PlayFromTest { get; private set; }
     public string? Select { get; private set; }
     public string? Screenshot { get; private set; }
     public double ScreenshotDelay { get; private set; } = 3;
@@ -70,6 +72,7 @@ public sealed class AppArgs
                 case "--open-map": a.OpenMap = next; i++; break;
                 case "--play-map": a.PlayMap = next; a.Tour = ".kalo\\shots\\play-map"; i++; break;
                 case "--play-with": a.PlayWith = next; i++; break;
+                case "--playfrom-test": a.PlayFromTest = next; a.Tour = ".kalo\\shots\\playfrom"; i++; break;
                 case "--crate-probe": a.CrateProbe = next; a.Tour = ".kalo\\shots\\crate-probe"; i++; break;
                 case "--select": a.Select = next; i++; break;
                 case "--screenshot": a.Screenshot = next; i++; break;
