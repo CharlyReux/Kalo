@@ -326,6 +326,9 @@ constant k_state_normal = 0                   -- a fixed number with a name
 widget hill_timer at bottom_center            -- a HUD widget (hud_widget_set_text...)
 stat stat_time_in_hill = timer stat_time_in_hill team 0
 "),
+            P("A name declared with objects is a group (a filter), not one object: use it with for each, or keep one of its objects in a variable, " +
+              "e.g. declare global.object spot = none, then get_random_object(hill, none, spot) (or for each hill do spot = current_object end). Megalo has no teleport: " +
+              "object_attach(thing, spot, 0, 0, 0) then object_detach(thing) moves thing onto spot."),
             H("Other declarations"),
             P("engine (menu name, description, icon), teams, loadout, loadout_palette, map_permissions and player_rating use " +
               "the same form: the block name, name = value lines, nested blocks, end."),

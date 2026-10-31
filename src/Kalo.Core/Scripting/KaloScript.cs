@@ -969,6 +969,7 @@ internal sealed partial class Transpiler
         Expect(")", $"expected ')' to close {name}(");
         CheckPlayerFilter(name, args, open);
         CheckButton(name, args, open);
+        CheckObjectGroup(name, args, open);
         // "{current_player} reached the goal!": Megalo's format tokens (%p player, %t team, %n number, %s timer), the
         // values added after the text. At most two per text.
         for (int i = 0; i < args.Count; i++)
@@ -1018,6 +1019,36 @@ internal sealed partial class Transpiler
         string what = button != bare && MegaloDocs.Buttons.Contains(bare) ? $"write the button without quotes: {bare}"
             : $"\"{bare}\" is not a button" + (hint != "" ? $" (did you mean {hint}?)" : "");
         throw new ParseError(at, $"get_button_time: {what}. Buttons: {string.Join(", ", MegaloDocs.Buttons)}");
+    }
+
+    /// <summary>
+    /// "objects NAME with label ..." declares a group of map objects (a Megalo filter), which only for each and
+    /// object_matches_filter accept. Passed as an object, HREK's compiler reads it as an unknown player name
+    /// ("Invalid explicit player") and then fails on everything after it.
+    /// </summary>
+    private static readonly HashSet<string> SingleObjectActions = new(StringComparer.Ordinal)
+    {
+        "object_attach", "object_detach", "object_destroy", "delete_object", "object_set_invincibility", "object_get_distance",
+        "object_set_scale", "object_copy_rotation", "object_face_object", "object_get_orientation", "object_get_velocity",
+        "object_set_shape", "set_boundary", "boundary_set_visible", "boundary_set_player_color", "navpoint_set_visible",
+        "navpoint_set_icon", "navpoint_set_priority", "navpoint_set_timer", "navpoint_set_text", "navpoint_set_visible_range",
+        "set_pickup_filter", "set_respawn_filter", "set_progress_bar", "object_set_health", "object_get_health",
+        "object_set_shield", "object_get_shield", "object_set_progress_bar", "object_set_spawn_location_permissions",
+    };
+
+    private void CheckObjectGroup(string name, List<string> args, Tok at)
+    {
+        // Only actions that take one object: others legitimately take a filter (get_random_object, for_each...) or
+        // words that can share a group's name (sounds, incidents).
+        if (!SingleObjectActions.Contains(name)) return;
+        foreach (string arg in args)
+        {
+            if (!_objectFilters.Contains(arg.Trim())) continue;
+            string g = arg.Trim();
+            throw new ParseError(at, $"{g} is a group of map objects (objects {g} with label ...), not one object, so it can't be passed to {name}. " +
+                $"Pick one of its objects into an object variable first: declare global.object my_{g} = none, then get_random_object({g}, none, my_{g}) " +
+                $"(or for each {g} do ... current_object ... end)");
+        }
     }
 
     private (string Format, List<string> Values) Interpolate(string text, Tok at)

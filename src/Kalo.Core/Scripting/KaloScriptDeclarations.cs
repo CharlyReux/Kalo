@@ -281,11 +281,15 @@ internal sealed partial class Transpiler
         return lines;
     }
 
+    /// <summary>Names declared with objects NAME ...: groups of map objects (filters), not single objects.</summary>
+    private readonly HashSet<string> _objectFilters = new(StringComparer.Ordinal);
+
     /// <summary>objects NAME with label "x" [min N] | objects NAME + key = value lines + end → map_object.</summary>
     private void Objects()
     {
         var t = Next();
         string name = Word("a name for the objects");
+        _objectFilters.Add(name);
         _out.Add(($"map_object {name}", t.Line));
         if (Peek.Is("with") && Peek.Line == t.Line)
         {
