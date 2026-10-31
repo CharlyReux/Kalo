@@ -72,6 +72,8 @@ public sealed class AppArgs
                 case "--open-map": a.OpenMap = next; i++; break;
                 case "--play-map": a.PlayMap = next; a.Tour = ".kalo\\shots\\play-map"; i++; break;
                 case "--play-with": a.PlayWith = next; i++; break;
+                case "--init-order": Kalo.Core.GameSession.InitOrder = next; i++; break;
+                case "--engine-cmd": Kalo.App.ViewModels.MainViewModel.EngineCommands = next; i++; break;
                 case "--playfrom-test": a.PlayFromTest = next; a.Tour = ".kalo\\shots\\playfrom"; i++; break;
                 case "--crate-probe": a.CrateProbe = next; a.Tour = ".kalo\\shots\\crate-probe"; i++; break;
                 case "--select": a.Select = next; i++; break;

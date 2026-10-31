@@ -135,6 +135,9 @@ public partial class MainViewModel
         else AddProblem("warning", "Play from camera works from a map tab: open a map and place the camera where you want to start.", "Play");
     }
 
+    /// <summary>The console commands that load the gametype ({engine}, {bin}, {binrel} are replaced); --engine-cmd changes it for tests.</summary>
+    public static string EngineCommands { get; set; } = "load_binary_game_engine {engine}";
+
     /// <summary>Console commands run before the map starts: split-screen players and the chosen gametype. Null if the gametype failed.</summary>
     private async Task<(List<string> Commands, string Note)?> PlayInitAsync()
     {
@@ -150,7 +153,9 @@ public partial class MainViewModel
         {
             string? engine = await DeployGametypeAsync(gametype);
             if (engine == null) return null;
-            commands.Add("load_binary_game_engine " + engine);
+            string bin = System.IO.Path.Combine(Paths!.Workspace, "maps", "megalo", engine + ".bin");
+            foreach (string c in EngineCommands.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                commands.Add(c.Replace("{engine}", engine).Replace("{binrel}", @"maps\megalo\" + engine + ".bin").Replace("{bin}", bin));
             note = $" with gametype {System.IO.Path.GetFileNameWithoutExtension(gametype)}" + note;
         }
         return (commands, note);
@@ -185,7 +190,9 @@ public partial class MainViewModel
             IncludeFolder = Paths.MegaloSource,
             Text = text,
             OutputFolder = System.IO.Path.Combine(Paths.KaloData, "megalo", name),
-            MgloFile = mglo
+            MgloFile = mglo,
+            // The whole game variant (base settings + script), as a packed BLF file.
+            BinFile = System.IO.Path.ChangeExtension(mglo, ".bin")
         });
         if (!r.Succeeded || !File.Exists(mglo))
         {

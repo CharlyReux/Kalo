@@ -31,6 +31,9 @@ public sealed class GameSession : IDisposable
 
     public GameSession(KaloPaths paths) => _paths = paths;
 
+    /// <summary>Test option (--init-order after): the console commands go after game_start instead of before.</summary>
+    public static string InitOrder { get; set; } = "before";
+
     /// <param name="scenario">Tag path without extension, e.g. levels\multi\20_sword_slayer\20_sword_slayer</param>
     public void Start(string scenario) => Start(scenario, Array.Empty<string>());
 
@@ -43,7 +46,10 @@ public sealed class GameSession : IDisposable
         if (!File.Exists(Path.Combine(_paths.WorkspaceTags, scenario + ".scenario")))
             throw new FileNotFoundException("Scenario not found: " + scenario);
 
-        string init = "run_game_scripts 1\r\n" + string.Concat(initCommands.Select(c => c + "\r\n")) + $"game_start {scenario}\r\n";
+        string commands = string.Concat(initCommands.Select(c => c + "\r\n"));
+        string init = InitOrder == "after"
+            ? $"run_game_scripts 1\r\ngame_start {scenario}\r\n" + commands
+            : "run_game_scripts 1\r\n" + commands + $"game_start {scenario}\r\n";
         File.WriteAllText(Path.Combine(_paths.Workspace, "bonobo_init.txt"), init);
         Scenario = scenario;
 

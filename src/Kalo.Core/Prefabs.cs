@@ -10,6 +10,12 @@ public sealed class PrefabObject
     public float[] Offset { get; set; } = new float[3];
     /// <summary>Degrees: yaw, pitch, roll.</summary>
     public float[] Rotation { get; set; } = new float[3];
+    /// <summary>Placement category (crates, scenery...) and every field of the placement when it was copied (base64), so a
+    /// paste keeps its scale, zone, label, team and spawn settings. Older prefabs have neither: they place a plain object.</summary>
+    public string? Category { get; set; }
+    public string? Data { get; set; }
+    /// <summary>The map it was copied from (pasting in the same map keeps its editor folder).</summary>
+    public string? SourceMap { get; set; }
 }
 
 /// <summary>A reusable group of objects, saved with the mod (projects\&lt;mod&gt;\prefabs\&lt;name&gt;.json).</summary>

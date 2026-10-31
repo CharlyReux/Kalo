@@ -118,6 +118,6 @@ public partial class MapEditorView : UserControl
         if (_vm == null || Owner == null) return;
         if (_vm.Selection.Count == 0) { _vm.Status = "Select the objects to make a prefab from."; return; }
         string? name = await Dialogs.PromptAsync(Owner, "New prefab", $"Prefab name ({_vm.Selection.Count} object(s)). You will find it in the Prefabs tab.");
-        if (name != null) _vm.CreatePrefab(name);
+        if (name != null) await _vm.CreatePrefab(name);
     }
 }

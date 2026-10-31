@@ -50,7 +50,10 @@ static FILETIME g_fileTime;
 static ULONGLONG g_lastCheck;
 static WORD g_prevButtons[PADS];
 static BOOL g_prevF8;
+static ULONGLONG g_lastF8Check;
 static char g_dir[MAX_PATH];
+static DWORD g_idlePacket = 1;
+static unsigned g_polls[PADS];   /* how often the game asked for each slot since the last log (diagnostics) */
 
 static void Log(const char *fmt, int a, int b)
 {
@@ -114,6 +117,8 @@ static void Cycle(int pad, int step)
     slot = ((slot + step) % g_players + g_players) % g_players;
     g_map[pad] = slot;
     Log("kalo xinput: gamepad %d now drives player %d", pad + 1, slot + 1);
+    Log("kalo xinput: game polls since last change: slot 1 %d, slot 2 %d", (int)g_polls[0], (int)g_polls[1]);
+    for (int i = 0; i < PADS; i++) g_polls[i] = 0;
 }
 
 static BOOL OurWindowFocused(void)
@@ -131,12 +136,18 @@ static DWORD Query(DWORD slot, XSTATE *state, GetStateFn fn)
     LoadReal();
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
     EnterCriticalSection(&g_lock);
+    if (slot < PADS) g_polls[slot]++;
     ReadConfig();
-    if (slot == 0)
     {
-        BOOL f8 = OurWindowFocused() && (GetAsyncKeyState(VK_F8) & 0x8000);
-        if (f8 && !g_prevF8) Cycle(0, 1);
-        g_prevF8 = f8;
+        /* F8 is checked on every query (whichever slot the game is polling), at most every 30 ms. */
+        ULONGLONG now = GetTickCount64();
+        if (now - g_lastF8Check >= 30)
+        {
+            g_lastF8Check = now;
+            BOOL f8 = (GetAsyncKeyState(VK_F8) & 0x8000) && OurWindowFocused();
+            if (f8 && !g_prevF8) Cycle(0, 1);
+            g_prevF8 = f8;
+        }
     }
     DWORD result = ERROR_DEVICE_NOT_CONNECTED;
     for (int pad = 0; pad < PADS; pad++)
@@ -156,6 +167,14 @@ static DWORD Query(DWORD slot, XSTATE *state, GetStateFn fn)
         *state = s;
         result = ERROR_SUCCESS;
         break;
+    }
+    /* Every player slot stays "connected" (idle when no pad drives it): games stop polling a slot that reported
+       no controller and only look again on a device change, so a pad moved there in game would be ignored. */
+    if (result != ERROR_SUCCESS && (int)slot < g_players)
+    {
+        ZeroMemory(state, sizeof *state);
+        state->dwPacketNumber = g_idlePacket;
+        result = ERROR_SUCCESS;
     }
     LeaveCriticalSection(&g_lock);
     return result;
@@ -179,8 +198,26 @@ __declspec(dllexport) DWORD WINAPI XInputSetState_proxy(DWORD slot, XVIBRATION *
 /* Capabilities, battery, keystrokes: reported for the pad that drives the slot. */
 static int PadFor(DWORD slot) { for (int p = 0; p < PADS; p++) if (g_map[p] == (int)slot) return p; return -1; }
 
+typedef struct { BYTE Type, SubType; WORD Flags; XGAMEPAD Gamepad; XVIBRATION Vibration; } XCAPS;
+
 __declspec(dllexport) DWORD WINAPI XInputGetCapabilities(DWORD slot, DWORD flags, void *caps)
-{ LoadReal(); int p = PadFor(slot); return (g_getCaps && p >= 0) ? g_getCaps(p, flags, caps) : ERROR_DEVICE_NOT_CONNECTED; }
+{
+    LoadReal();
+    int p = PadFor(slot);
+    if (g_getCaps && p >= 0 && g_getCaps(p, flags, caps) == ERROR_SUCCESS) return ERROR_SUCCESS;
+    if ((int)slot < g_players && caps)
+    {
+        /* An idle player slot looks like a standard gamepad (see Query). */
+        XCAPS *c = (XCAPS *)caps;
+        ZeroMemory(c, sizeof *c);
+        c->Type = 1; c->SubType = 1;
+        c->Gamepad.wButtons = 0xF3FF; c->Gamepad.bLeftTrigger = c->Gamepad.bRightTrigger = 0xFF;
+        c->Gamepad.sThumbLX = c->Gamepad.sThumbLY = c->Gamepad.sThumbRX = c->Gamepad.sThumbRY = (SHORT)0xFFC0;
+        c->Vibration.wLeftMotorSpeed = c->Vibration.wRightMotorSpeed = 0xFF;
+        return ERROR_SUCCESS;
+    }
+    return ERROR_DEVICE_NOT_CONNECTED;
+}
 __declspec(dllexport) void WINAPI XInputEnable(BOOL enable) { LoadReal(); if (g_enable) g_enable(enable); }
 __declspec(dllexport) DWORD WINAPI XInputGetBatteryInformation(DWORD slot, BYTE type, void *info)
 { LoadReal(); int p = PadFor(slot); return (g_getBattery && p >= 0) ? g_getBattery(p, type, info) : ERROR_DEVICE_NOT_CONNECTED; }

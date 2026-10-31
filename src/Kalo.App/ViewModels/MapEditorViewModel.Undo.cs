@@ -115,7 +115,7 @@ public partial class MapEditorViewModel
         if (has && keys.Matches("delete", e)) return () => DeleteSelectedCommand.ExecuteAsync(null);
         if (keys.Matches("selectAll", e)) return Do(() => SetSelection(OutlinerItems.ToList()));
         if (has && keys.Matches("duplicate", e)) return () => DuplicateSelectedCommand.ExecuteAsync(null);
-        if (has && keys.Matches("copy", e)) return Do(CopySelection);
+        if (has && keys.Matches("copy", e)) return CopySelection;
         if (has && keys.Matches("cut", e)) return CutSelectionAsync;
         if (keys.Matches("paste", e)) return () => PasteAsync(placementPoint?.Invoke() ?? PlacementPointProvider?.Invoke());
         if (has && keys.Matches("turn", e)) return () => RotateSelectedAsync(15f);

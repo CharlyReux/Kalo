@@ -95,6 +95,9 @@ switch (command)
         }
         break;
     }
+    case "kscript-compile":
+        await KscriptCompile(argsList[1], argsList.ElementAtOrDefault(2));
+        break;
     case "kscript-check":
     {
         // Transpile Kalo Script files and list their errors (no compiler needed).
@@ -103,6 +106,59 @@ switch (command)
             var r = KaloScript.Transpile(File.ReadAllText(file));
             Check($"{Path.GetFileName(file)} reads as Kalo Script{(r.Succeeded ? "" : ": " + string.Join("; ", r.Errors.Take(5)))}", r.Succeeded);
         }
+        break;
+    }
+    case "strings":
+    {
+        // strings <file> <regex>: the distinct ASCII strings of a binary that match (e.g. game console commands).
+        var bytes = File.ReadAllBytes(argsList[1]);
+        var re = new System.Text.RegularExpressions.Regex(argsList[2]);
+        var found = new SortedSet<string>(StringComparer.Ordinal);
+        var sb = new System.Text.StringBuilder();
+        foreach (byte b in bytes)
+        {
+            if (b >= 0x20 && b < 0x7f) { sb.Append((char)b); continue; }
+            if (sb.Length >= 4 && re.IsMatch(sb.ToString())) found.Add(sb.ToString());
+            sb.Clear();
+        }
+        foreach (var s in found) Console.WriteLine(s);
+        break;
+    }
+    case "find":
+    {
+        // find <folder> <pattern...>: files under a folder (read only), with size.
+        foreach (string pattern in argsList.Skip(2))
+            foreach (var f in Directory.EnumerateFiles(argsList[1], pattern, new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true }).Take(500))
+                Console.WriteLine($"{new FileInfo(f).Length,10} {f}");
+        break;
+    }
+    case "move":
+        // move <from> <to>: rename a file inside the Kalo folder (test helper).
+        if (!Path.GetFullPath(argsList[1]).StartsWith(paths.Repo, StringComparison.OrdinalIgnoreCase) || !Path.GetFullPath(argsList[2]).StartsWith(paths.Repo, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("move only works inside the Kalo folder");
+        File.Move(argsList[1], argsList[2]);
+        Console.WriteLine($"moved {argsList[1]} -> {argsList[2]}");
+        break;
+    case "strings-near":
+    {
+        // strings-near <file> <exact string> <n>: the n strings before and after each occurrence (help texts of console commands sit next to them).
+        var bytes = File.ReadAllBytes(argsList[1]);
+        int n = int.Parse(argsList.ElementAtOrDefault(3) ?? "6");
+        var all = new List<string>();
+        var sb = new System.Text.StringBuilder();
+        foreach (byte b in bytes)
+        {
+            if (b >= 0x20 && b < 0x7f || b == '\t' || b == '\n') { sb.Append((char)b); continue; }
+            if (sb.Length >= 3) all.Add(sb.ToString());
+            sb.Clear();
+        }
+        foreach (string target in argsList[2].Split('|'))
+            for (int i = 0; i < all.Count; i++)
+                if (all[i] == target)
+                {
+                    Console.WriteLine($"--- {target} (#{i})");
+                    for (int j = Math.Max(0, i - n); j <= Math.Min(all.Count - 1, i + n); j++) Console.WriteLine((j == i ? ">> " : "   ") + all[j].Replace("\n", "\\n"));
+                }
         break;
     }
     case "dump":
@@ -196,6 +252,34 @@ async Task MegaloTest(string file)
     var bad = await host.MegaloCompileAsync(new MegaloCompileParams { ObjectLists = paths.MegaloObjectLists, IncludeFolder = paths.MegaloSource, Text = text + "\r\non_tick\r\n  this_is_not_an_action 3\r\nend\r\n" });
     foreach (var m in (bad.Messages ?? new()).Take(5)) Console.WriteLine($"  bad: {m.Severity} line {m.Line} pos {m.Start} '{m.Token}': {m.Message}");
     Check("broken script fails with a message", !bad.Succeeded && bad.Messages?.Count > 0);
+}
+
+// kscript-compile <file>: Kalo Script → Megalo → HREK's compiler; every message with its Kalo Script line.
+async Task KscriptCompile(string file, string? mglo)
+{
+    string text = File.ReadAllText(file);
+    // A Megalo .txt compiles as it is (kscript-compile x.txt out.mglo).
+    var kalo = file.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ? KaloScript.Transpile("megalo [[\n" + text + "\n]]") : KaloScript.Transpile(text);
+    if (!kalo.Succeeded) { foreach (var e in kalo.Errors) Console.WriteLine($"  kalo error {e}"); Check("reads as Kalo Script", false); return; }
+    await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+    var r = await host.MegaloCompileAsync(new MegaloCompileParams
+    {
+        ObjectLists = paths.MegaloObjectLists, IncludeFolder = paths.MegaloSource, Text = kalo.Megalo,
+        OutputFolder = Path.Combine(paths.KaloData, "kscript-compile"),
+        MgloFile = mglo == null ? null : Path.GetFullPath(mglo),
+    });
+    var kaloLines = text.Replace("\r\n", "\n").Split('\n');
+    var megaloLines = kalo.Megalo.Replace("\r\n", "\n").Split('\n');
+    foreach (var m in r.Messages ?? new())
+    {
+        int src = kalo.SourceLine(m.Line);
+        Console.WriteLine($"  {m.Severity} megalo line {m.Line} pos {m.Start} '{m.Token}': {m.Message}");
+        if (m.Line >= 1 && m.Line <= megaloLines.Length) Console.WriteLine($"      megalo> {megaloLines[m.Line - 1].Trim()}");
+        if (src >= 1 && src <= kaloLines.Length) Console.WriteLine($"      kalo {src}> {kaloLines[src - 1].Trim()}");
+    }
+    foreach (var kv in r.Stats ?? new()) Console.Write($"{kv.Key}={kv.Value} ");
+    Console.WriteLine();
+    Check($"{Path.GetFileName(file)} compiles", r.Succeeded);
 }
 
 async Task BlockTest()

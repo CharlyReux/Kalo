@@ -348,6 +348,13 @@ namespace Kalo.Protocol
         /// Position (x, y, z, facing in degrees), so the game starts there. The map itself is not changed.
         /// </summary>
         public const string MakePlayCopy = "makePlayCopy";
+        /// <summary>Copy: Data = placement Index serialized (every field), Tag = its object tag. Nothing changes.</summary>
+        public const string CopyElement = "copyElement";
+        /// <summary>
+        /// Paste: a new placement from Data (a CopyElement result) for object Tag at Position, with a fresh object id and
+        /// no name. Folder -2 keeps the copied editor folder and parent (same map); otherwise they are cleared.
+        /// </summary>
+        public const string PasteElement = "pasteElement";
     }
 
     public sealed class PlacementOpParams
@@ -360,12 +367,17 @@ namespace Kalo.Protocol
         public string Tag { get; set; }
         public float[] Position { get; set; }
         public int Folder { get; set; } = -1;
+        /// <summary>pasteElement: a serialized placement (base64).</summary>
+        public string Data { get; set; }
     }
 
     public sealed class PlacementOpResult
     {
         /// <summary>repairMultiplayer: object resource tags of the template map the scenario stopped using (see DetachTemplateResources).</summary>
         public int Detached { get; set; }
+        /// <summary>copyElement: the serialized placement (base64) and its object tag in Tag.</summary>
+        public string Data { get; set; }
+        public string Tag { get; set; }
         public PlacementCategory Category { get; set; }
         public int SelectIndex { get; set; }
         /// <summary>Set by folder operations: every folder after the change.</summary>

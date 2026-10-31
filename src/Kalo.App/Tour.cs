@@ -96,9 +96,23 @@ public sealed class Tour
             var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _vm.Game!.Loaded += () => loaded.TrySetResult();
+            // The game's own messages about the gametype (variant loading, megalo, script errors).
+            _vm.Game.Output += l =>
+            {
+                if (System.Text.RegularExpressions.Regex.IsMatch(l, "variant|megalo|main_game|FATAL|hs:|game engine|game_engine", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                    && !l.Contains("objects: model") && !l.Contains("spawn influencer"))
+                    Say("game: " + (l.Length > 220 ? l[..220] : l));
+            };
             _vm.Game.Exited += _ => { exited.TrySetResult(); loaded.TrySetException(new Exception("the game exited while loading")); };
             var sw = Stopwatch.StartNew();
             await _vm.PlayAsync();
+            if (!_vm.IsGameRunning)
+            {
+                // Play stopped before launching (usually the gametype): say why instead of waiting for a game that never comes.
+                foreach (var pr in _vm.Problems.Take(5)) Say($"problem: {pr.Severity}: {pr.Message}");
+                Check(false, "the game did not start");
+                return 1;
+            }
             var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
             Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, $"the game loaded the map ({sw.Elapsed.TotalSeconds:F0} s)");
             Say($"holding the game for {_hold:F0} s");
@@ -861,7 +875,7 @@ public sealed class Tour
             // Copy / paste.
             int count = map.Items.Count;
             map.Selected = weapon;
-            map.CopySelection();
+            await map.CopySelection();
             await map.PasteAsync(weapon.Position + new Vector3(2, 0, 0));
             Check(map.Items.Count == count + 1 && map.Selected?.Tag == weapon.Tag, "copy + paste made one more of the same weapon");
 
@@ -891,6 +905,19 @@ public sealed class Tour
             await map.RedoAsync();
             Check(map.Items.Count == beforeUndo, "redo put the paste back");
 
+            // Copy what the object is now, not its type: edit the pasted copy, copy it, paste: the new one has the edit.
+            var copyOne = map.Items.FirstOrDefault(i => i.Category == pasted.Category && i.Index == pasted.Index) ?? pasted;
+            string spawnField = $"Block:{copyOne.Category}[{copyOne.Index}]/Struct:multiplayer data[0]/ShortInteger:spawn time";
+            await _vm.Host!.SetFieldAsync(map.Path, spawnField, "77");
+            map.Selected = copyOne;
+            await map.CopySelection();
+            await map.PasteAsync(copyOne.Position + new Vector3(2, 0, 0));
+            var copyTwo = map.Selected!;
+            var copyDoc = await _vm.Host.ReadElementAsync(map.Path, copyTwo.Category, copyTwo.Index);
+            string? spawnTime = Flatten(copyDoc.Fields).FirstOrDefault(f => f.Name == "spawn time")?.Value;
+            Check(copyTwo.Index != copyOne.Index && spawnTime == "77", $"a copy of an edited copy keeps the edit (spawn time {spawnTime})");
+            await map.UndoAsync(); // that paste
+
             // Multiple selection and shortcuts: Ctrl+D duplicates both selected weapons.
             var pair = map.Items.Where(i => i.Category == "weapons").Take(2).ToList();
             map.SetSelection(pair);
@@ -906,7 +933,7 @@ public sealed class Tour
             // Prefabs.
             var two = map.Items.Where(i => i.Category == "weapons").Take(2).ToList();
             map.SetSelection(two);
-            map.CreatePrefab("kalo tour prefab");
+            await map.CreatePrefab("kalo tour prefab");
             var prefab = _vm.Prefabs.FirstOrDefault(p => p.Name == "kalo tour prefab");
             Check(prefab?.Objects.Count == 2, "prefab saved from two selected objects");
             if (prefab != null)

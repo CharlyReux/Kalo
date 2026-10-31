@@ -967,6 +967,7 @@ internal sealed partial class Transpiler
             }
         }
         Expect(")", $"expected ')' to close {name}(");
+        CheckPlayerFilter(name, args, open);
         // "{current_player} reached the goal!": Megalo's format tokens (%p player, %t team, %n number, %s timer), the
         // values added after the text. At most two per text.
         for (int i = 0; i < args.Count; i++)
@@ -978,6 +979,28 @@ internal sealed partial class Transpiler
             i += values.Count;
         }
         return (name, args);
+    }
+
+    /// <summary>Actions whose second argument says who sees / can use something: no_one, everyone, allies, enemies, or player P B.</summary>
+    private static readonly HashSet<string> PlayerFilterActions = new(StringComparer.Ordinal)
+    {
+        "boundary_set_visible", "navpoint_set_visible", "set_pickup_filter", "set_respawn_filter", "set_progress_bar",
+    };
+
+    /// <summary>
+    /// boundary_set_visible(obj, player) used to fail in HREK's compiler with "Failed to parse action!" plus confusing errors
+    /// on the next line (it read the next line as the missing player): the player form needs the player and a 1/0 after it.
+    /// </summary>
+    private void CheckPlayerFilter(string name, List<string> args, Tok at)
+    {
+        if (!PlayerFilterActions.Contains(name)) return;
+        int filter = args.FindIndex(a => a == "player");
+        if (filter < 0) return;
+        bool complete = args.Count >= filter + 3 && args[filter + 2] is "0" or "1" or "true" or "false";
+        if (complete) return;
+        string first = string.Join(", ", args.Take(filter));
+        throw new ParseError(at, $"'player' here means one player only: write which player, then 1 or 0, e.g. {name}({first}, player, current_player, 1). " +
+                                 "Or use no_one, everyone, allies or enemies");
     }
 
     private (string Format, List<string> Values) Interpolate(string text, Tok at)

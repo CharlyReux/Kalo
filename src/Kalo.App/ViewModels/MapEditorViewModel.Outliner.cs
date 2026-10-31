@@ -255,24 +255,45 @@ public partial class MapEditorViewModel
     private static List<PrefabObject> s_clipboard = new();
     public static bool HasClipboard => s_clipboard.Count > 0;
 
-    /// <summary>The selection as objects relative to its center on the ground.</summary>
-    private List<PrefabObject> SelectionAsObjects()
+    /// <summary>
+    /// The selection as objects relative to its center on the ground, each with every field of its placement as it is
+    /// now (scale, zone, label, team, spawn settings...), so pasting copies the object itself and not just its type.
+    /// </summary>
+    private async Task<List<PrefabObject>> SelectionAsObjectsAsync()
     {
         if (_selection.Count == 0) return new();
         var center = new Vector3(_selection.Average(i => i.Position.X), _selection.Average(i => i.Position.Y), _selection.Min(i => i.Position.Z));
-        return _selection.Select(i => new PrefabObject
+        var list = new List<PrefabObject>();
+        foreach (var i in _selection.ToList())
         {
-            Tag = i.Tag,
-            Offset = new[] { i.Position.X - center.X, i.Position.Y - center.Y, i.Position.Z - center.Z },
-            Rotation = new[] { i.Yaw, i.Pitch, i.Roll },
-        }).ToList();
+            var o = new PrefabObject
+            {
+                Tag = i.Tag,
+                Offset = new[] { i.Position.X - center.X, i.Position.Y - center.Y, i.Position.Z - center.Z },
+                Rotation = new[] { i.Yaw, i.Pitch, i.Roll },
+                SourceMap = Path,
+            };
+            if (_main.Host != null && i.Category != StartLocations.Category)
+            {
+                try
+                {
+                    var r = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Category = i.Category, Op = PlacementOps.CopyElement, Index = i.Index });
+                    o.Category = i.Category;
+                    o.Data = r.Data;
+                    if (!string.IsNullOrEmpty(r.Tag)) o.Tag = r.Tag;
+                }
+                catch (HostException ex) { _main.Log($"{Title}: copy of {i.Display} keeps only its type ({ex.Message})."); }
+            }
+            list.Add(o);
+        }
+        return list;
     }
 
     [RelayCommand]
-    public void CopySelection()
+    public async Task CopySelection()
     {
         if (_selection.Count == 0) return;
-        s_clipboard = SelectionAsObjects();
+        s_clipboard = await SelectionAsObjectsAsync();
         Status = $"Copied {s_clipboard.Count} object{(s_clipboard.Count == 1 ? "" : "s")}.";
     }
 
@@ -280,7 +301,7 @@ public partial class MapEditorViewModel
     public async Task CutSelectionAsync()
     {
         using var edit = await EditAsync("cut");
-        CopySelection();
+        await CopySelection();
         await DeleteSelectedCommand.ExecuteAsync(null);
     }
 
@@ -302,6 +323,12 @@ public partial class MapEditorViewModel
         foreach (var o in objects)
         {
             var offset = o.Offset is { Length: >= 3 } v ? new Vector3(v[0], v[1], v[2]) : Vector3.Zero;
+            if (o.Data != null && o.Category != null && CategoryFor(o.Tag) == o.Category)
+            {
+                // The whole copied placement (it already carries its rotation).
+                var pasted = await PasteElementAsync(o, at + offset);
+                if (pasted != null) { placed.Add((pasted.Category, pasted.Index)); continue; }
+            }
             var item = await AddTagAtAsync(o.Tag, at + offset);
             if (item == null) continue;
             if (o.Rotation is { Length: >= 3 } r && (r[0] != 0 || r[1] != 0 || r[2] != 0))
@@ -317,10 +344,42 @@ public partial class MapEditorViewModel
         QueueStatusRefresh();
     }
 
-    public void CreatePrefab(string name)
+    public async Task CreatePrefab(string name)
     {
         if (_selection.Count == 0 || string.IsNullOrWhiteSpace(name)) return;
-        _main.SavePrefab(new Prefab { Name = name.Trim(), Created = DateTime.Now, Objects = SelectionAsObjects() });
+        _main.SavePrefab(new Prefab { Name = name.Trim(), Created = DateTime.Now, Objects = await SelectionAsObjectsAsync() });
+    }
+
+    /// <summary>A copied placement, every field kept, as a new object at a point (host op pasteElement).</summary>
+    private async Task<PlacementItem?> PasteElementAsync(PrefabObject o, Vector3 position)
+    {
+        if (_main.Host == null) return null;
+        try
+        {
+            var r = await _main.Host.PlacementOpAsync(new PlacementOpParams
+            {
+                Path = Path, Category = o.Category, Op = PlacementOps.PasteElement, Tag = o.Tag, Data = o.Data,
+                Position = new[] { position.X, position.Y, position.Z },
+                Folder = string.Equals(o.SourceMap, Path, StringComparison.OrdinalIgnoreCase) ? -2 : -1,
+            });
+            if (r.Category != null) ReplaceCategory(r.Category);
+            IsDirty = true;
+            RefreshPalette();
+            var item = Items.FirstOrDefault(i => i.Category == o.Category && i.Index == r.SelectIndex);
+            if (item?.RenderModel != null && item.Model == null)
+            {
+                await _main.Models.LoadAsync(_main.Host, new[] { item.RenderModel });
+                foreach (var i in Items.Where(i => i.RenderModel == item.RenderModel)) i.Model = _main.Models.Get(i.RenderModel);
+                _ = EnsureTexturesAsync();
+                SceneChanged?.Invoke();
+            }
+            return item;
+        }
+        catch (HostException ex)
+        {
+            _main.Log($"{Title}: pasting {System.IO.Path.GetFileName(o.Tag)} as a plain copy ({ex.Message}).");
+            return null;
+        }
     }
 
     public Task PlacePrefabAsync(Prefab prefab) =>

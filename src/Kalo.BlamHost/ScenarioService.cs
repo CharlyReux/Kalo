@@ -187,6 +187,41 @@ namespace Kalo.BlamHost
                     if (p.Position != null) SetFloats(tag.SelectField(e + "Struct:object data[0]/RealPoint3d:position"), p.Position);
                     break;
                 }
+                case PlacementOps.CopyElement:
+                {
+                    if (p.Index < 0 || p.Index >= count) throw new ArgumentOutOfRangeException("index");
+                    int type = Int(tag.SelectField("Block:" + k[0] + "[" + p.Index + "]/ShortBlockIndex:type"));
+                    return new PlacementOpResult
+                    {
+                        SelectIndex = p.Index,
+                        Data = Convert.ToBase64String(block.SerializeElement(p.Index)),
+                        Tag = TagService.ValueOf(tag.SelectField("Block:" + k[1] + "[" + type + "]/Reference:name")),
+                    };
+                }
+                case PlacementOps.PasteElement:
+                {
+                    // Every field of the copied object (scale, zone, label, team, colors, spawn settings...), not just
+                    // its type: pasting used to copy the first object of that type instead.
+                    if (count >= block.MaximumElementCount) throw new InvalidOperationException("No room for more " + p.Category + ".");
+                    if (string.IsNullOrEmpty(p.Data) || string.IsNullOrEmpty(p.Tag)) throw new ArgumentException("Nothing to paste.");
+                    int type = PaletteIndex(tag, k, p.Tag);
+                    block.AddElement();
+                    select = block.Elements.Count - 1;
+                    block.DeserializeElement(select, Convert.FromBase64String(p.Data));
+                    string e = "Block:" + k[0] + "[" + select + "]/";
+                    ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:type")).Value = type;
+                    TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:name")).Value = -1);
+                    NewObjectId(tag, e, k[2]);
+                    if (p.Folder != -2)
+                    {
+                        // Another map: its folders and objects are not the copied map's.
+                        TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "Struct:object data[0]/ShortBlockIndex:editor folder")).Value = -1);
+                        TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "Struct:object data[0]/Struct:parent id[0]/ShortBlockIndex:parent object")).Value = -1);
+                        TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "Struct:multiplayer data[0]/Struct:map variant parent[0]/ShortBlockIndex:parent object")).Value = -1);
+                    }
+                    if (p.Position != null) SetFloats(tag.SelectField(e + "Struct:object data[0]/RealPoint3d:position"), p.Position);
+                    break;
+                }
                 case PlacementOps.Duplicate:
                 {
                     if (count >= block.MaximumElementCount) throw new InvalidOperationException("No room for more " + p.Category + ".");
