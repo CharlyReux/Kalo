@@ -359,6 +359,8 @@ namespace Kalo.Protocol
 
     public sealed class PlacementOpResult
     {
+        /// <summary>repairMultiplayer: object resource tags of the template map the scenario stopped using (see DetachTemplateResources).</summary>
+        public int Detached { get; set; }
         public PlacementCategory Category { get; set; }
         public int SelectIndex { get; set; }
         /// <summary>Set by folder operations: every folder after the change.</summary>

@@ -134,13 +134,27 @@ namespace Kalo.BlamHost
                 case PlacementOps.AddFolder: return AddFolder(tag, p);
                 case PlacementOps.RenameFolder: return RenameFolder(tag, p);
                 case PlacementOps.DeleteFolder: return DeleteFolder(tag, p);
+                case "debugForceField":
+                {
+                    // Diagnostics: sets a field the tag editor treats as read-only (Tag = "path=value"); SelectIndex = the value read back.
+                    int eq = p.Tag.LastIndexOf('=');
+                    string path = p.Tag.Substring(0, eq), value = p.Tag.Substring(eq + 1);
+                    var f = tag.SelectField(path);
+                    if (f is TagFieldBlockIndex) ((TagFieldBlockIndex)f).Value = int.Parse(value, CultureInfo.InvariantCulture);
+                    else if (f is TagFieldElementInteger) ((TagFieldElementInteger)f).Data = long.Parse(value, CultureInfo.InvariantCulture);
+                    else throw new InvalidOperationException("debugForceField: unsupported field " + path);
+                    f = tag.SelectField(path);
+                    long back = f is TagFieldBlockIndex ? ((TagFieldBlockIndex)f).Value : Convert.ToInt64(((TagFieldElementInteger)f).Data);
+                    return new PlacementOpResult { SelectIndex = (int)back };
+                }
                 case PlacementOps.RepairMultiplayer:
                 {
                     int repaired = RepairMultiplayer(tag) + (EnsureStartingProfile(tag) ? 1 : 0);
+                    int detached = DetachTemplateResources(tag, p.Path);
                     var all = new List<PlacementCategory>();
                     var allNames = ObjectNames(tag);
                     foreach (string[] kk in Kinds) { var c = Category(tag, kk, allNames); if (c != null) all.Add(c); }
-                    return new PlacementOpResult { SelectIndex = repaired, Categories = all };
+                    return new PlacementOpResult { SelectIndex = repaired, Categories = all, Detached = detached };
                 }
             }
             string[] k = Kind(p.Category);
@@ -278,9 +292,48 @@ namespace Kalo.BlamHost
                 }
             }
             if (p.Barebone) MakeBarebone(tag, result);
+            DetachTemplateResources(tag, p.NewPath);
             tag.Save();
             result.Ms = sw.ElapsedMilliseconds;
             return result;
+        }
+
+        /// <summary>The split resource tags that hold object placements (scenario resources / new split resources).</summary>
+        private static readonly string[] ObjectResources =
+        {
+            "scenery resource", "biped resource", "vehicle resource", "equipment resource", "weapon resource",
+            "device resource", "effect scenery", "sound scenery resource", "creature resource",
+        };
+
+        /// <summary>
+        /// Reach scenarios keep their objects twice: in their own blocks and in split resource tags
+        /// (levels\multi\forge_halo\resources\forge_halo.scenario_weapons_resource...), and the game loads the resource
+        /// tags. A map copied from a Reach level still pointed at the template's resources, so the game placed the
+        /// template's objects and ignored every object edited in Kalo (Sapien writes the resources back; ManagedBlam
+        /// saves only the .scenario). Clearing those references makes the game use the scenario's own blocks, which
+        /// already hold the full placements. Only references outside the map's own folder are cleared.
+        /// Returns how many were cleared.
+        /// </summary>
+        public static int DetachTemplateResources(TagFile tag, string scenarioPath)
+        {
+            var block = tag.SelectField("Block:scenario resources") as TagFieldBlock;
+            if (block == null || block.Elements.Count == 0) return 0;
+            string own = (System.IO.Path.GetDirectoryName(scenarioPath.Replace('/', '\\')) ?? "") + "\\";
+            int cleared = 0;
+            for (int r = 0; r < block.Elements.Count; r++)
+            {
+                var split = tag.SelectField("Block:scenario resources[" + r + "]/Block:new split resources") as TagFieldBlock;
+                for (int i = 0; split != null && i < split.Elements.Count; i++)
+                    foreach (string name in ObjectResources)
+                    {
+                        var field = tag.SelectField("Block:scenario resources[" + r + "]/Block:new split resources[" + i + "]/Reference:" + name) as TagFieldReference;
+                        string value = field == null ? null : TagService.ValueOf(field);
+                        if (string.IsNullOrEmpty(value) || value.StartsWith(own, StringComparison.OrdinalIgnoreCase)) continue;
+                        field.Path = null;
+                        cleared++;
+                    }
+            }
+            return cleared;
         }
 
         /// <summary>Turns a test level into a multiplayer map: settings MP maps have, a platform, spawn points on it.</summary>
@@ -926,7 +979,8 @@ namespace Kalo.BlamHost
         private void NewObjectId(TagFile tag, string element, string typeName)
         {
             string id = element + "Struct:object data[0]/Struct:object id[0]/";
-            TrySet(() => ((TagFieldElementInteger)tag.SelectField(id + "LongInteger:unique id")).Data = _random.Next(1, int.MaxValue));
+            // Bungie's ids have the top bit set (Sapien's); probe: do ids without it keep objects out of the game?
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(id + "LongInteger:unique id")).Data = _random.Next(1, int.MaxValue) | int.MinValue);
             TrySet(() => ((TagFieldEnum)tag.SelectField(id + "CharEnum:type")).SetValue(typeName));
             TrySet(() => ((TagFieldEnum)tag.SelectField(id + "CharEnum:source")).SetValue("editor"));
         }

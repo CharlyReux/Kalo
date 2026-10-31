@@ -356,6 +356,14 @@ public partial class MapEditorViewModel : DocumentViewModel
                     IsDirty = true;
                     _main.Log($"{Title}: {repair.SelectIndex} object(s) placed by an earlier Kalo now have multiplayer settings, so they spawn in game. Save the map to keep this.");
                 }
+                if (repair.Detached > 0)
+                {
+                    // Maps made by an earlier Kalo from a Reach level kept that level's object resource files, so the
+                    // game showed the level's original objects and none of the ones edited here.
+                    IsDirty = true;
+                    _main.Log($"{Title}: this map was still reading its objects from the original level's resource files, so the game ignored the objects placed in Kalo. Fixed: save the map, then Play shows your objects.");
+                    _main.AddProblem("warning", $"{Title}: save the map once so the game uses the objects placed in Kalo (it was still using the original level's).", Path);
+                }
             }
             int keepCategory = -1;
             string? selCat = Selected?.Category; int selIndex = Selected?.Index ?? -1;

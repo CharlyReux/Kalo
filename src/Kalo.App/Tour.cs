@@ -135,12 +135,101 @@ public sealed class Tour
         {
             await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            if (variant == "ulcopy")
+            {
+                // Charly's map, copied (his file is not touched): opening it applies the fixes, then play it.
+                const string ul = @"levels\mods\test_project\ul\ul.scenario";
+                Directory.CreateDirectory(folder);
+                await _vm.Host!.OpenTagAsync(ul);
+                await _vm.Host.SaveTagAsAsync(ul, path);
+                await _vm.Host.CloseTagAsync(path);
+                var copy = await _vm.OpenMapAsync(path);
+                Check(copy.IsDirty, "opening the copy repaired it (it no longer reads Forge World's object resources)");
+                Say($"copy: {copy.Items.Count(i => i.Category == "crates")} crates, {copy.Items.Count(i => i.Category == "scenery")} scenery");
+                await _vm.Host.SaveTagAsync(path);
+                copy.IsDirty = false;
+                foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+                if (!_vm.Scenarios.Contains(path[..^".scenario".Length])) _vm.Scenarios.Insert(0, path[..^".scenario".Length]);
+                await PlayMapAsync(path, null);
+                return _failures == 0 ? 0 : 1;
+            }
             string template = variant.Contains("sword") ? @"levels\multi\20_sword_slayer\20_sword_slayer.scenario" : @"levels\multi\forge_halo\forge_halo.scenario";
             bool bare = variant.Contains("barebone");
             if (bare) template = BareboneMap.Template;
-            var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = template, NewPath = path, Empty = true, Barebone = bare, MapId = 7990 + Math.Abs(variant.GetHashCode() % 9) });
+            var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = template, NewPath = path, Empty = !variant.Contains("full"), Barebone = bare, MapId = 7990 + Math.Abs(variant.GetHashCode() % 9) });
             Check(true, $"probe map created ({r.Kept} spawns kept)");
             var map = await _vm.OpenMapAsync(path);
+            if (variant.StartsWith("dup"))
+            {
+                // A Bungie weapon (W), Kalo's duplicate of it (D) and a weapon added fresh by Kalo (F), side by side in
+                // front of the start: which of them exist in game says which fields matter.
+                var spawns = map.Items.Where(i => i.Category == "scenery" && i.Tag.Contains("respawn_point")).ToList();
+                var weapons = map.Items.Where(i => i.Category == "weapons").ToList();
+                var pair = weapons.SelectMany(w => spawns.Select(sp => (w, sp, d: Vector3.Distance(w.Position, sp.Position))))
+                                  .Where(x => x.d > 2.5f && Math.Abs(x.w.Position.Z - x.sp.Position.Z) < 0.6f).OrderBy(x => x.d).FirstOrDefault();
+                Check(pair.w != null, $"Bungie weapon {pair.w?.Tag} {pair.d:F1} units from a spawn point");
+                if (pair.w == null) return 1;
+                var wp = pair.w.Position; var sp0 = pair.sp.Position;
+                var dir = Vector3.Normalize(new Vector3(wp.X - sp0.X, wp.Y - sp0.Y, 0));
+                var side = new Vector3(-dir.Y, dir.X, 0);
+                float yaw = MathF.Atan2(dir.Y, dir.X) * 180f / MathF.PI;
+                Say($"W = {pair.w.Tag} [{pair.w.Index}] at {wp.X:F2}, {wp.Y:F2}, {wp.Z:F2}; start at {sp0.X:F2}, {sp0.Y:F2}, {sp0.Z:F2} facing {yaw:F0}");
+                var dupR = await _vm.Host.PlacementOpAsync(new PlacementOpParams { Path = path, Category = "weapons", Op = PlacementOps.Duplicate, Index = pair.w.Index, Position = new[] { wp.X + side.X * 1.2f, wp.Y + side.Y * 1.2f, wp.Z } });
+                Say($"D = duplicate [{dupR.SelectIndex}] on the left");
+                var fresh = await map.AddTagAtAsync(pair.w.Tag, wp - side * 1.2f);
+                Say($"F = fresh {fresh?.Tag} [{fresh?.Index}] on the right");
+                async Task<int> Force(string field, string value) =>
+                    (await _vm.Host.PlacementOpAsync(new PlacementOpParams { Path = path, Category = "weapons", Op = "debugForceField", Tag = field + "=" + value })).SelectIndex;
+                string idOf(int i) => $"Block:weapons[{i}]/Struct:object data[0]/Struct:object id[0]/LongInteger:unique id";
+                if (variant.Contains("idw"))
+                {
+                    // W keeps everything but gets a new unique id (as Kalo gives).
+                    int back = await Force(idOf(pair.w.Index), "123456789");
+                    Say($"W unique id changed, reads back {back}");
+                }
+                if (variant.Contains("rmw"))
+                {
+                    await _vm.Host.PlacementOpAsync(new PlacementOpParams { Path = path, Category = "weapons", Op = PlacementOps.Remove, Index = pair.w.Index });
+                    Say("W removed: only D (left) and F (right) remain");
+                }
+                if (variant.Contains("idd"))
+                {
+                    // D gets W's original id (W keeps it too: a clash, just to see).
+                    int back = await Force(idOf(dupR.SelectIndex), "-1538523124");
+                    Say($"D unique id set to W's, reads back {back}");
+                }
+                var stl = map.Items.FirstOrDefault(i => i.Category == StartLocations.Category);
+                if (stl != null)
+                {
+                    map.MoveLocal(stl, sp0 + new Vector3(0, 0, 0.1f));
+                    stl.SetRotationLocal(yaw, 0, 0);
+                    await map.CommitMoveAsync(stl);
+                }
+                async Task<TagDocument?> Read(int i) { try { return await _vm.Host.ReadElementAsync(path, "weapons", i); } catch { return null; } }
+                bool removed = variant.Contains("rmw");
+                var d1 = removed ? null : await Read(pair.w.Index);
+                var d2 = await Read(dupR.SelectIndex - (removed ? 1 : 0));
+                var d3 = fresh == null ? null : await Read(fresh.Index - (removed ? 1 : 0));
+                string Row(TagDocument? d) => d == null ? "-" : string.Join(" | ", Flatten(d.Fields).Where(f => f.Value != null && f.Children == null || f.Children?.Count == 0).Select(f => (f.Name ?? "") + "=" + f.Value));
+                Say("W fields: " + Row(d1));
+                Say("D fields: " + Row(d2));
+                Say("F fields: " + Row(d3));
+                Directory.CreateDirectory(_dir);
+                var until2 = DateTime.UtcNow.AddMinutes(3);
+                while ((map.Bsp == null || map.ModelVersion == 0) && DateTime.UtcNow < until2) await Task.Delay(500);
+                map.Shading = ViewShading.Textured;
+                _vm.ActiveDocument = map;
+                await Task.Delay(3000);
+                map.LookFrom(sp0 + new Vector3(0, 0, 0.7f), yaw, -10);
+                await Pause(1500);
+                await map.CaptureViewAsync(System.IO.Path.Combine(_dir, variant + "-kalo-from-start.png"));
+                await _vm.Host.SaveTagAsync(path);
+                map.IsDirty = false;
+                foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+                if (!_vm.Scenarios.Contains(path[..^".scenario".Length])) _vm.Scenarios.Insert(0, path[..^".scenario".Length]);
+                await PlayMapAsync(path, null);
+                return _failures == 0 ? 0 : 1;
+            }
             if (variant.StartsWith("view"))
             {
                 // view-nopalettes: no Forge palettes at all (like the barebone map); view-nocompat: palettes kept, compatibility CRCs cleared.
