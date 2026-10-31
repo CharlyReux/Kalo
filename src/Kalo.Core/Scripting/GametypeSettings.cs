@@ -59,7 +59,7 @@ public static class GametypeSettings
                 continue;
             }
             // Triggers: if / do / inline open, end closes.
-            if (t.Is("if") || t.Is("do") || (t.Is("inline") && (i + 1 >= toks.Count || toks[i + 1].Line > t.Line))) depth++;
+            if (t.Is("if") || t.Is("do") || t.Is("function") || (t.Is("inline") && (i + 1 >= toks.Count || toks[i + 1].Line > t.Line))) depth++;
             else if (t.Is("end")) depth = Math.Max(0, depth - 1);
             i++;
         }

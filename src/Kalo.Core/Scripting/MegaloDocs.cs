@@ -175,6 +175,9 @@ public static class MegaloDocs
         ["and"] = new("Both conditions must be true. Mixed with or, parentheses are required.", "if a == 1 or (b == 2 and timer_expired(t)) then"),
         ["or"] = new("Either condition may be true. Mixed with and, parentheses are required: (a or b) and c.", "if (a == 1 or b == 2) and c == 3 then"),
         ["not"] = new("Inverts the condition (or the parenthesized group) that follows.", "if not (a == 1 or b == 2) then"),
+        ["function"] = new("Defines a function: a group of statements with parameters, used like an action. Each call is a copy of the body " +
+            "(it uses the budget each time); no return value, no recursion. Define it at the top level, call it on its own line.",
+            "function award(p, points)\n  p.score += points\nend\n...\naward(killer, 2)"),
         ["enum"] = new("A number whose values have names: declare player.enum{placer, player, spectator} role = spectator, then role == placer, role = player.",
             "declare player.enum{placer, player, spectator} role = spectator"),
         ["temp"] = new("A temporary variable that only lives during this tick: temp number|player|object|team name = value.",

@@ -259,6 +259,7 @@ internal sealed partial class Transpiler
     {
         _t = Lexer.Run(_source, _errors);
         ScanTypes();
+        ExtractFunctions();
         var body = new List<(string, int)>();
         // Top level: declarations collected, triggers and raw blocks written in order.
         while (Peek.Kind != T.End)
@@ -275,7 +276,7 @@ internal sealed partial class Transpiler
             }
             if (_p == before) _p++;
         }
-        if (_errors.Count > 0) return new TranspileResult { Errors = _errors.OrderBy(e => e.Line).ToList() };
+        if (_errors.Count > 0) return new TranspileResult { Errors = _errors.Distinct().OrderBy(e => e.Line).ToList() };
 
         // Map objects and variables first, then everything else in source order.
         var final = new List<(string Text, int Line)>
@@ -344,7 +345,7 @@ internal sealed partial class Transpiler
         {
             var t = Next();
             var n = Peek;
-            if (n.Col == 1 && n.Line > t.Line && (n.Is("for") || n.Is("on") || n.Is("do") || n.Is("declare") || n.Is("alias") || n.Is("megalo") || n.Is("include") ||
+            if (n.Col == 1 && n.Line > t.Line && (n.Is("for") || n.Is("on") || n.Is("do") || n.Is("function") || n.Is("declare") || n.Is("alias") || n.Is("megalo") || n.Is("include") ||
                                                     (n.Kind == T.Word && DeclarationWords.Contains(n.Text)))) return;
         }
     }
@@ -531,9 +532,13 @@ internal sealed partial class Transpiler
                     while (Peek.Kind != T.End && Peek.Line == line && !Peek.Is("end")) Next();
                 }
             }
-            if (_p == before) Next();
+            if (_p == before && !_expanded) Next();
+            _expanded = false;
         }
     }
+
+    /// <summary>Set when a function call was just replaced by its body (parsing goes on at the same place).</summary>
+    private bool _expanded;
 
     /// <summary>Skips a block statement (if / for each / do / inline) up to and including its matching end.</summary>
     private void SkipBlock()
@@ -551,6 +556,7 @@ internal sealed partial class Transpiler
     private void Statement()
     {
         var t = Peek;
+        if (ExpandCall()) { _expanded = true; return; }
         if (t.Is("if")) { If(); return; }
         if (t.Is("for"))
         {
@@ -911,6 +917,8 @@ internal sealed partial class Transpiler
             if (Peek.Is("("))
             {
                 _p = start;
+                if (_functions.ContainsKey(t.Text))
+                    throw new ParseError(t, $"{t.Text} is a function: call it on its own line (functions run actions and give no true / false)");
                 var (name, args) = Call();
                 return name + Args(args);
             }
@@ -987,6 +995,13 @@ internal sealed partial class Transpiler
             string expr = text[(i + 1)..close].Trim();
             if (expr.EndsWith(".name", StringComparison.Ordinal)) expr = expr[..^5]; // {current_player.name}: the player shows as their name
             expr = Resolve(expr);
+            if (System.Text.RegularExpressions.Regex.IsMatch(expr, @"^-?\d+(\.\d+)?$"))
+            {
+                // A number written in the code (e.g. a function's argument): just part of the text.
+                sb.Append(expr);
+                i = close;
+                continue;
+            }
             string? type = expr switch
             {
                 "current_player" => "player",
@@ -1004,6 +1019,7 @@ internal sealed partial class Transpiler
                 "number" => "%n",
                 "timer" => "%s",
                 "object" => throw new ParseError(at, $"{{{expr}}}: objects can't be shown in a text (players, teams, numbers and timers can)"),
+                _ when _checkingBody => "%n", // a function's parameter: known once called
                 _ => throw new ParseError(at, $"{{{expr}}}: Kalo doesn't know what {expr} is. Declare it (declare / temp), or use current_player, current_team..."),
             };
             sb.Append(spec);

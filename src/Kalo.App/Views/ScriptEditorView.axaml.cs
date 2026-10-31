@@ -435,7 +435,7 @@ public partial class ScriptEditorView : UserControl
     <Span color='String'><Begin>""</Begin><End>""</End></Span>
     <Span color='Raw' multiline='true'><Begin>\[\[</Begin><End>\]\]</End></Span>
     <Keywords color='Section'>
-      <Word>declare</Word><Word>enum</Word><Word>alias</Word><Word>megalo</Word><Word>include</Word><Word>on</Word><Word>setting</Word><Word>option</Word>
+      <Word>declare</Word><Word>enum</Word><Word>function</Word><Word>alias</Word><Word>megalo</Word><Word>include</Word><Word>on</Word><Word>setting</Word><Word>option</Word>
       <Word>traits</Word><Word>objects</Word><Word>constant</Word><Word>widget</Word><Word>stat</Word><Word>engine</Word><Word>teams</Word><Word>loadout</Word>
       <Word>hidden</Word><Word>locked</Word><Word>value</Word><Word>range</Word>
     </Keywords>

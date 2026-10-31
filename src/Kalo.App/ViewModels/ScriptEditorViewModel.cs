@@ -44,7 +44,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     private static readonly string[] KaloKeywords =
     {
         "if", "then", "else", "elseif", "end", "for", "each", "do", "inline", "on", "init", "and", "or", "not", "temp", "declare", "alias",
-        "megalo", "include", "with", "label", "networked", "local", "global", "player", "team", "object", "number", "timer", "enum",
+        "megalo", "include", "with", "label", "networked", "local", "global", "player", "team", "object", "number", "timer", "enum", "function",
         "setting", "option", "value", "range", "traits", "hidden", "locked", "objects", "constant", "widget", "stat", "engine", "teams", "loadout",
         "current_player", "current_team", "current_object", "none", "true", "false", "random",
     };
@@ -102,6 +102,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                 .Concat((catalog?.Actions ?? new()).Select(a => new CompletionItem(a.Name!, "action", WithDoc(MegaloDocs.KaloSignature(a.Name!, a.Description), MegaloDocs.Actions, a.Name!))))
                 .Concat((catalog?.Conditions ?? new()).Where(c => c.Name != "if").Select(c => new CompletionItem(c.Name!, "condition", WithDoc(MegaloDocs.KaloSignature(c.Name!, c.Description), MegaloDocs.Conditions, c.Name!))))
                 .Concat(_scriptNames.Select(n => new CompletionItem(n, "script", "Declared in this script (from the last compile)")))
+                .Concat(UserFunctions().Select(f => new CompletionItem(f.Name, "function", $"{f.Name}({f.Params}) — your function")))
                 .Concat((catalog?.Lists ?? new()).SelectMany(kv => kv.Value.Select(v => new CompletionItem(v, kv.Key, null))));
         }
         else
@@ -122,6 +123,18 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         return (start, items);
     }
 
+    /// <summary>A user function's parameters as an argument list ("&lt;p&gt; &lt;points&gt;"), or null.</summary>
+    private string? UserSignature(string name)
+    {
+        var f = UserFunctions().FirstOrDefault(x => x.Name == name);
+        return f.Name == null ? null : string.Join(" ", f.Params.Split(", ", StringSplitOptions.RemoveEmptyEntries).Select(p => $"<{p}>"));
+    }
+
+    /// <summary>The functions this script defines: name and parameter list.</summary>
+    private IEnumerable<(string Name, string Params)> UserFunctions() =>
+        System.Text.RegularExpressions.Regex.Matches(Text, @"(?m)^\s*function\s+(\w+)\s*\(([^)]*)\)")
+            .Select(m => (m.Groups[1].Value, string.Join(", ", m.Groups[2].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))));
+
     /// <summary>"... killer" → "killer"; "x(current_player" → "current_player": the name before a dot.</summary>
     private static string BaseBeforeDot(string text)
     {
@@ -135,7 +148,8 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     {
         var catalog = _main.MegaloCatalog;
         string? SignatureOf(string name) =>
-            catalog?.Actions?.FirstOrDefault(a => a.Name == name)?.Description ?? catalog?.Conditions?.FirstOrDefault(c => c.Name == name && name != "if")?.Description;
+            catalog?.Actions?.FirstOrDefault(a => a.Name == name)?.Description ?? catalog?.Conditions?.FirstOrDefault(c => c.Name == name && name != "if")?.Description
+            ?? UserSignature(name);
         var r = KaloCompletion.Suggest(lineBeforeCaret, Text, SignatureOf, catalog?.Lists);
         if (r == null) return null;
         var (call, slots, items) = r.Value;
@@ -149,7 +163,8 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         if (!IsKaloScript) return null;
         var call = KaloCompletion.CallAt(lineBeforeCaret);
         var catalog = _main.MegaloCatalog;
-        string? sig = call == null ? null : catalog?.Actions?.FirstOrDefault(a => a.Name == call.Name)?.Description ?? catalog?.Conditions?.FirstOrDefault(c => c.Name == call.Name)?.Description;
+        string? sig = call == null ? null : catalog?.Actions?.FirstOrDefault(a => a.Name == call.Name)?.Description ?? catalog?.Conditions?.FirstOrDefault(c => c.Name == call.Name)?.Description
+            ?? UserSignature(call.Name);
         if (call == null || sig == null) return null;
         var args = MegaloDocs.KaloArguments(sig);
         var slots = KaloCompletion.Slots(sig);
@@ -240,6 +255,13 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                     $"A temporary {m.Groups[1].Value}: it only lives during this tick" + (m.Groups[2].Success ? $", starting at {m.Groups[2].Value.Trim()}." : "."), null);
             if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(networked\w*|local)\s+(\w+)\s+{w}\b\s*(.*)")).Success)
                 return new HoverInfo(word, $"{scope} {m.Groups[2].Value} {word}" + at, null, Describe(scope, m.Groups[2].Value, m.Groups[1].Value, m.Groups[3].Value), null);
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^function\s+{w}\s*\(([^)]*)\)")).Success)
+            {
+                // The comment just above the function, if any, describes it.
+                string about = i > 0 && lines[i - 1].Trim().StartsWith("--") ? lines[i - 1].Trim()[2..].Trim() + " " : "";
+                return new HoverInfo("function " + word, $"{word}({string.Join(", ", m.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))})" + at,
+                    null, about + "Your function: each call runs a copy of its body.", null);
+            }
             if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^alias\s+{w}\s*=\s*(.+)")).Success)
                 return new HoverInfo(word, "alias" + at, null, "Another name for " + m.Groups[1].Value.Trim() + ".", null);
             if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(?:(?:hidden|locked)\s+)*(ranged_option|option|player_traits|traits|map_object|objects|constant)\s+{w}\b")).Success)

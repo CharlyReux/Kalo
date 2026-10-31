@@ -226,6 +226,30 @@ hud_post_message(everyone, ball_taken, goal_message)
 "),
         });
 
+        yield return new("functions", "Guide", "Functions", new[]
+        {
+            P("A function names a group of statements so you can use them in several places. Define it at the top level " +
+              "(outside triggers) and call it on its own line, like an action."),
+            C(@"
+function award(p, points)
+  p.score += points
+  hud_post_message(player p, none, ""+{points}"")
+end
+
+for each player do
+  if player_died(current_player, enemy) then
+    temp player killer = none
+    player_death_get_killing_player(current_player, killer)
+    award(killer, 2)
+  end
+end
+"),
+            P("Parameters are replaced by what you pass (also inside {} in texts). temp variables declared in a function belong " +
+              "to each call. To get a result back, pass a variable and set it in the function."),
+            Tip("Megalo can't call a block from several places, so each call is a copy of the function: it counts against the " +
+                "action and condition budget every time. A function can call other functions, but not itself."),
+        });
+
         yield return new("math", "Guide", "Changing values", new[]
         {
             C(@"

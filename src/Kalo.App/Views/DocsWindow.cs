@@ -144,6 +144,7 @@ public sealed class DocsWindow : Window
             "if" or "then" or "else" or "elseif" or "and" or "or" or "not" => "if",
             "for" or "each" or "do" or "on" or "init" or "inline" or "with" or "random" => "triggers",
             "temp" or "declare" or "alias" or "networked" or "local" => "variables",
+            "function" => "functions",
             "megalo" or "include" or "setting" or "option" or "traits" or "objects" or "constant" or "widget" or "stat" or "engine"
                 or "teams" or "loadout" or "hidden" or "locked" or "value" or "range" => "declarations",
             _ => null,

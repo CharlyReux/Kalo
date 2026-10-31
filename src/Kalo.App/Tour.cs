@@ -739,6 +739,14 @@ public sealed class Tour
         Check(doc.CompileOk && doc.GeneratedMegalo.Contains("\"%p reached goal! %n points\" current_player current_player.score") && doc.GeneratedMegalo.Contains("applied_trait == 0"),
             "enum values and {values} in messages compile: " + doc.CompileSummary);
 
+        // Functions: each call is a copy of the body, compiled by HREK.
+        doc.Text = "declare player.number streak = 0\n\n-- give points and say so\nfunction award(p, points)\n  temp number bonus = 0\n  bonus = points\n  p.score += bonus\n  hud_post_message(player p, none, \"+{points} for {p}\")\nend\n\nfunction reset(p)\n  p.streak = 0\n  award(p, 1)\nend\n\nfor each player do\n  if player_died(current_player, enemy) then\n    temp player killer = none\n    player_death_get_killing_player(current_player, killer)\n    award(killer, 2)\n    reset(current_player)\n  end\nend\n";
+        await doc.CompileCommand.ExecuteAsync(null);
+        Check(doc.CompileOk && doc.GeneratedMegalo.Contains("action set killer.score += bonus_award_") && doc.GeneratedMegalo.Contains("action set current_player.streak = 0") && doc.GeneratedMegalo.Contains("\"+2 for %p\" killer"),
+            "functions compile (each call a copy): " + doc.CompileSummary + (doc.CompileOk ? "" : " " + string.Join(" | ", doc.Messages.Select(m => $"{m.Line}: {m.Message}"))));
+        var fnHover = doc.Hover("    award(killer, 2)", 6);
+        Check(fnHover?.Title == "function award" && fnHover.Text.StartsWith("give points and say so"), $"hovering a call shows the function ({fnHover?.Title}: {fnHover?.Text})");
+
         // An object type that doesn't exist: named, with the real one for a free camera.
         doc.Text = "for each player do\n  temp object mon = none\n  if not object_is_type(current_player, \"free_cam\") then\n    create_object(\"free_cam\", set mon, at current_player)\n  end\nend\n";
         await doc.CompileCommand.ExecuteAsync(null);

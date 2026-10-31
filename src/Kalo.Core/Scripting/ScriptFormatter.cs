@@ -144,6 +144,8 @@ public static class ScriptFormatter
                 continue;
             }
 
+            if (stack.Count == 0 && first.Is("function")) { stack.Push("code"); continue; }
+
             // Declarations at the top level: blocks unless written on one line.
             int w = 0;
             while (w < l.Count && (l[w].Is("hidden") || l[w].Is("locked"))) w++;
