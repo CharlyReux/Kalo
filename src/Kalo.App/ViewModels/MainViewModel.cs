@@ -109,6 +109,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             HostStatus = "No workspace";
             HostBrush = Brushes.IndianRed;
             AddProblem("error", ex.Message, "Kalo");
+            _hostStarting = false;
             _ready.TrySetResult();
             return;
         }
@@ -151,6 +152,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task StartAsync()
     {
+        // --open-map opens the map at once, before the Blam Host is up (as a quick click in the Project panel does).
+        var earlyMap = string.IsNullOrEmpty(_args.OpenMap) ? null : OpenMapAsync(_args.OpenMap);
         try
         {
             Baseline = await Task.Run(() => Kalo.Core.Baseline.Load(Paths!));
@@ -175,11 +178,31 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
                 if (field != null) tab.Reveal(field);
             }
         }
+        if (earlyMap != null)
+        {
+            var map = await earlyMap;
+            Log($"{map.Title}: " + string.Join(", ", map.Items.GroupBy(i => i.Category).Select(g => $"{g.Key} {g.Count()}")) + (map.HasSpawn ? ", start location" : ", no start location"));
+        }
         _ready.TrySetResult();
+    }
+
+    /// <summary>True from launch until the Blam Host is up (or failed), and while it restarts.</summary>
+    private volatile bool _hostStarting = true;
+
+    /// <summary>
+    /// The Blam Host, waiting for it while it starts. A map or tag opened in the first seconds after launch (before
+    /// the host is ready) used to stay empty without a word; now it waits. Null if the host failed to start.
+    /// </summary>
+    public async Task<HostClient?> WaitForHostAsync()
+    {
+        var until = DateTime.UtcNow.AddMinutes(2);
+        while (Host == null && _hostStarting && DateTime.UtcNow < until) await Task.Delay(200);
+        return Host;
     }
 
     private async Task StartHostAsync()
     {
+        _hostStarting = true;
         HostStatus = "Blam Host starting…";
         HostBrush = Brushes.Orange;
         try
@@ -197,11 +220,16 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             HostBrush = Brushes.IndianRed;
             AddProblem("error", "Could not start the Blam Host: " + ex.Message, "Kalo");
         }
+        finally
+        {
+            _hostStarting = false;
+        }
     }
 
     public async Task RestartHostAsync()
     {
         AddProblem("warning", "The engine stopped; restarting the Blam Host. Unsaved edits were lost.", "Kalo");
+        _hostStarting = true;
         if (Host != null) await Host.DisposeAsync();
         Host = null;
         await StartHostAsync();
@@ -229,9 +257,10 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private async Task ReloadTabAsync(TagEditorViewModel tab)
     {
-        if (Host == null)
+        if (await WaitForHostAsync() == null)
         {
             tab.Fail("the Blam Host is not running");
+            AddProblem("error", "Could not open " + tab.Path + ": the Blam Host is not running.", tab.Path);
             return;
         }
         try

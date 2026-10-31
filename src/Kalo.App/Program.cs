@@ -21,6 +21,8 @@ internal static class Program
 /// <summary>
 /// Command-line options, mostly for automated checks through the Kalo runner:
 ///   --open &lt;tag path&gt;          open a tag on start (relative to tags\, with extension)
+///   --open-map &lt;scenario&gt;      open a scenario in the map view on start
+///   --play-map &lt;scenario&gt;      play a map as it is on disk (Slayer, or --play-with &lt;gametype file&gt;), hold, stop
 ///   --select &lt;field path&gt;      select a field in that tag
 ///   --screenshot &lt;png&gt;         render the window to a PNG once loaded
 ///   --screenshot-delay &lt;s&gt;     wait before the screenshot (default 3)
@@ -35,6 +37,11 @@ public sealed class AppArgs
     public static AppArgs Current { get; set; } = new();
 
     public string? Open { get; private set; }
+    public string? OpenMap { get; private set; }
+    public string? PlayMap { get; private set; }
+    public string? PlayWith { get; private set; }
+    /// <summary>--crate-probe q1|q0|packing|nopalette: a throwaway Forge World map with one object under the start, played once.</summary>
+    public string? CrateProbe { get; private set; }
     public string? Select { get; private set; }
     public string? Screenshot { get; private set; }
     public double ScreenshotDelay { get; private set; } = 3;
@@ -60,6 +67,10 @@ public sealed class AppArgs
             switch (args[i])
             {
                 case "--open": a.Open = next; i++; break;
+                case "--open-map": a.OpenMap = next; i++; break;
+                case "--play-map": a.PlayMap = next; a.Tour = ".kalo\\shots\\play-map"; i++; break;
+                case "--play-with": a.PlayWith = next; i++; break;
+                case "--crate-probe": a.CrateProbe = next; a.Tour = ".kalo\\shots\\crate-probe"; i++; break;
                 case "--select": a.Select = next; i++; break;
                 case "--screenshot": a.Screenshot = next; i++; break;
                 case "--screenshot-delay": a.ScreenshotDelay = double.Parse(next, System.Globalization.CultureInfo.InvariantCulture); i++; break;

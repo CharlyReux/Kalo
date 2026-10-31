@@ -73,6 +73,195 @@ public sealed class Tour
         catch (Exception ex) { Check(false, name + " threw: " + ex); }
     }
 
+    /// <summary>
+    /// --play-map: plays a map exactly as saved (no edits, nothing saved) with Slayer or the given gametype, holds the
+    /// game so the runner can take screenshots, then stops it. For diagnosing "my object isn't in the game".
+    /// </summary>
+    public async Task<int> PlayMapAsync(string scenario, string? gametype)
+    {
+        Say("play-map started: " + scenario);
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            string name = scenario.Replace('/', '\\');
+            if (name.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) name = name[..^".scenario".Length];
+            Check(_vm.Scenarios.Contains(name, StringComparer.OrdinalIgnoreCase), "the map is in the Play list");
+            _vm.SelectedScenario = _vm.Scenarios.First(s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var choice = gametype == null
+                ? _vm.GametypeChoices.FirstOrDefault(g => string.Equals(System.IO.Path.GetFileName(g.Path), "slayer.txt", StringComparison.OrdinalIgnoreCase))
+                : _vm.GametypeChoices.FirstOrDefault(g => g.Path?.Replace('/', '\\').EndsWith(gametype.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase) == true);
+            Check(choice != null, "gametype " + (choice?.Label ?? gametype ?? "slayer"));
+            _vm.SelectedGametype = choice;
+            Check(!_vm.Tabs.Any(t => t.IsDirty), "nothing unsaved (Play would save it)");
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var exited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            _vm.Game.Exited += _ => { exited.TrySetResult(); loaded.TrySetException(new Exception("the game exited while loading")); };
+            var sw = Stopwatch.StartNew();
+            await _vm.PlayAsync();
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, $"the game loaded the map ({sw.Elapsed.TotalSeconds:F0} s)");
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Task.WhenAny(exited.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+            Check(!_vm.Game.IsRunning, "stopped the game");
+        }
+        catch (Exception ex)
+        {
+            Check(false, "unexpected error: " + ex.Message);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+        }
+        Say(_failures == 0 ? "PLAYMAP PASS" : $"PLAYMAP FAIL ({_failures})");
+        return _failures == 0 ? 0 : 1;
+    }
+
+    /// <summary>
+    /// --crate-probe: does a Forge block placed by Kalo exist in game on Forge World? Makes a throwaway map from
+    /// forge_halo (empty), puts ff_plat_4x4_flat under the start location with the given multiplayer quota maximum,
+    /// plays it (runner screenshots show whether the player stands or falls), then deletes the map.
+    /// </summary>
+    public async Task<int> CrateProbeAsync(string variant)
+    {
+        Say($"crate probe started ({variant})");
+        string name = "probe_" + variant;
+        string path = $@"levels\mods\_kalo_tour\{name}\{name}.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, $@"levels\mods\_kalo_tour\{name}");
+        const string block = @"objects\levels\forge\ff_plat_4x4_flat\ff_plat_4x4_flat.crate";
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            if (Directory.Exists(folder)) Directory.Delete(folder, true);
+            string template = variant.Contains("sword") ? @"levels\multi\20_sword_slayer\20_sword_slayer.scenario" : @"levels\multi\forge_halo\forge_halo.scenario";
+            bool bare = variant.Contains("barebone");
+            if (bare) template = BareboneMap.Template;
+            var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = template, NewPath = path, Empty = true, Barebone = bare, MapId = 7990 + Math.Abs(variant.GetHashCode() % 9) });
+            Check(true, $"probe map created ({r.Kept} spawns kept)");
+            var map = await _vm.OpenMapAsync(path);
+            if (variant.StartsWith("view"))
+            {
+                // view-nopalettes: no Forge palettes at all (like the barebone map); view-nocompat: palettes kept, compatibility CRCs cleared.
+                if (variant.Contains("nopalettes")) await _vm.Host.BlockOpAsync(path, "Block:map variant palettes", BlockOps.Clear);
+                if (variant.Contains("nocompat")) await _vm.Host.BlockOpAsync(path, "Block:map variant palettes compatibility", BlockOps.Clear);
+                if (variant.Contains("nozonesets")) await _vm.Host.BlockOpAsync(path, "Block:zone sets", BlockOps.Clear);
+                if (variant.Contains("nobudget")) await _vm.Host.SetFieldAsync(path, "Real:sandbox budget", "0");
+                // On solid ground (a template spawn), facing +X: a tall Forge block, a packing crate and a DMR in front.
+                // All around the start (whatever way the player faces): tall Forge blocks 7 units away, packing crates
+                // and DMRs 3 units away.
+                // Around a spawn point the template keeps (solid ground).
+                var spawnPoint = map.Items.Where(i => i.Category == "scenery" && i.Tag.Contains("respawn_point")).Select(i => i.Position).DefaultIfEmpty(new Vector3(60.92f, 210.05f, 44.65f)).First();
+                float cx = spawnPoint.X, cy = spawnPoint.Y, cz = spawnPoint.Z;
+                Say($"probe center {cx:F2}, {cy:F2}, {cz:F2}");
+                int placed = 0;
+                foreach (var (dx, dy) in new[] { (1f, 0f), (-1f, 0f), (0f, 1f), (0f, -1f) })
+                {
+                    if (await map.AddTagAtAsync(@"objects\levels\forge\ff_plat_4x4_tall\ff_plat_4x4_tall.crate", new Vector3(cx + 7 * dx, cy + 7 * dy, cz)) != null) placed++;
+                    if (await map.AddTagAtAsync(@"objects\gear\human\military\crate_packing\crate_packing.crate", new Vector3(cx + 3 * dx - 1.5f * dy, cy + 3 * dy + 1.5f * dx, cz)) != null) placed++;
+                    if (await map.AddTagAtAsync(@"objects\weapons\rifle\dmr\dmr.weapon", new Vector3(cx + 2.5f * dx + 1f * dy, cy + 2.5f * dy - 1f * dx, cz + 0.25f)) != null) placed++;
+                }
+                Check(placed == 12, $"placed {placed}/12 objects around the start (tall blocks, packing crates, DMRs)");
+                if (variant.Contains("bsp0"))
+                {
+                    // Bungie's own placements on Forge World have origin bsp index 0; Kalo's had -1.
+                    int set = 0;
+                    foreach (var it in map.Items.Where(i => i.Category is "crates" or "weapons").ToList())
+                    {
+                        await _vm.Host.SetFieldAsync(path, $"Block:{it.Category}[{it.Index}]/Struct:object data[0]/Struct:object id[0]/ShortBlockIndex:origin bsp index", "0");
+                        set++;
+                    }
+                    Say($"origin bsp index = 0 on {set} objects");
+                }
+                // Kalo's own view from the start, to compare with the game's screenshot.
+                Directory.CreateDirectory(_dir);
+                var until = DateTime.UtcNow.AddMinutes(3);
+                while ((map.Bsp == null || map.ModelVersion == 0) && DateTime.UtcNow < until) await Task.Delay(500);
+                map.Shading = ViewShading.Textured;
+                _vm.ActiveDocument = map;
+                await Task.Delay(4000);
+                map.LookFrom(new Vector3(cx, cy, cz + 0.7f), 0, 0);
+                await Pause(1500);
+                await map.CaptureViewAsync(System.IO.Path.Combine(_dir, variant + "-kalo-from-start.png"));
+                map.LookFrom(new Vector3(cx - 9, cy, cz + 6), 0, -30);
+                await Pause(1500);
+                await map.CaptureViewAsync(System.IO.Path.Combine(_dir, variant + "-kalo-overview.png"));
+                var st = map.Items.FirstOrDefault(i => i.Category == StartLocations.Category);
+                if (st != null)
+                {
+                    map.MoveLocal(st, new Vector3(cx, cy, cz + 0.1f));
+                    st.SetRotationLocal(0, 0, 0);
+                    await map.CommitMoveAsync(st);
+                }
+                await _vm.Host.SaveTagAsync(path);
+                map.IsDirty = false;
+                foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+                if (!_vm.Scenarios.Contains(path[..^".scenario".Length])) _vm.Scenarios.Insert(0, path[..^".scenario".Length]);
+                await PlayMapAsync(path, null);
+                return _failures == 0 ? 0 : 1;
+            }
+            string tag = variant == "packing" ? @"objects\gear\human\military\crate_packing\crate_packing.crate" : block;
+            var at = variant == "packing" ? new Vector3(64.64f, 139.29f, 42.92f) : new Vector3(64.23f, 138.6f, 42.92f);
+            var obj = await map.AddTagAtAsync(tag, at);
+            Check(obj != null, $"placed {System.IO.Path.GetFileName(tag)} at Charly's spot");
+            if (obj != null && variant == "q0")
+                await _vm.Host.SetFieldAsync(path, $"Block:crates[{obj.Index}]/Struct:multiplayer data[0]/CharInteger:quota maximum", "0");
+            if (variant == "nopalette")
+            {
+                // Take the block out of the map's Forge palette (map variant palettes) so the game treats it as fixed scenery.
+                var doc = await _vm.Host.OpenTagAsync(path);
+                var hits = Flatten(doc.Fields).Where(f => f.Path != null && f.Path.StartsWith("Block:map variant palettes[") && f.Path.EndsWith("/Reference:object")
+                                                         && string.Equals(f.Value, block, StringComparison.OrdinalIgnoreCase)).ToList();
+                Check(hits.Count > 0, $"found the block in {hits.Count} Forge palette entr(ies)");
+                foreach (var h in hits.OrderByDescending(h => h.Path, StringComparer.Ordinal))
+                {
+                    // ".../Block:variants[21]/Reference:object" → remove element 21 of ".../Block:variants".
+                    string elem = h.Path![..h.Path.LastIndexOf('/')];
+                    int open = elem.LastIndexOf('[');
+                    int index = int.Parse(elem[(open + 1)..^1]);
+                    await _vm.Host.BlockOpAsync(path, elem[..open], BlockOps.Remove, index);
+                    Say("removed " + elem);
+                }
+            }
+            var start = map.Items.FirstOrDefault(i => i.Category == StartLocations.Category);
+            Check(start != null, "start location found");
+            if (start != null)
+            {
+                map.MoveLocal(start, new Vector3(64.64f, 139.29f, variant == "packing" ? 45f : 43.3f));
+                await map.CommitMoveAsync(start);
+            }
+            // Saved through the host directly: not recorded in the active mod project (it is deleted afterwards).
+            await _vm.Host.SaveTagAsync(path);
+            map.IsDirty = false;
+            Check(true, "probe map saved");
+            foreach (var t in _vm.Tabs.ToList()) await _vm.CloseTabCommand.ExecuteAsync(t);
+            if (!_vm.Scenarios.Contains(path[..^".scenario".Length])) _vm.Scenarios.Insert(0, path[..^".scenario".Length]);
+            await PlayMapAsync(path, null);
+        }
+        catch (Exception ex)
+        {
+            Check(false, "unexpected error: " + ex.Message);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            await Task.Delay(3000);
+            try { if (Directory.Exists(folder)) Directory.Delete(folder, true); Say("removed the probe map"); } catch (Exception ex) { Say("could not remove the probe map: " + ex.Message); }
+        }
+        Say(_failures == 0 ? "PROBE DONE" : $"PROBE FAIL ({_failures})");
+        return _failures == 0 ? 0 : 1;
+    }
+
+    private static IEnumerable<FieldNode> Flatten(IEnumerable<FieldNode>? nodes)
+    {
+        foreach (var n in nodes ?? Enumerable.Empty<FieldNode>())
+        {
+            yield return n;
+            foreach (var c in Flatten(n.Children)) yield return c;
+        }
+    }
+
     /// <summary>--map-play-test: edit Sword Slayer in the map view, save, play it, try a live edit, stop, revert.</summary>
     public async Task<int> MapPlayAsync()
     {

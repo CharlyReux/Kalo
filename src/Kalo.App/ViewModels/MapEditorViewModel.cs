@@ -330,10 +330,20 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task ReloadAsync()
     {
-        if (_main.Host == null) { Status = "The Blam Host is not running."; return; }
+        if (_main.Host == null)
+        {
+            // Opened right after launch: wait for the host instead of showing an empty map.
+            Status = "Waiting for the Blam Host…";
+            if (await _main.WaitForHostAsync() == null)
+            {
+                Status = "The Blam Host is not running: the map could not be read. Don't edit it here; reopen it once the host runs.";
+                _main.AddProblem("error", $"{Title}: the Blam Host is not running, so the map could not be read.", Path);
+                return;
+            }
+        }
         try
         {
-            var data = await _main.Host.GetPlacementsAsync(Path);
+            var data = await _main.Host!.GetPlacementsAsync(Path);
             bool isModMap = Path.StartsWith(@"levels\mods\", StringComparison.OrdinalIgnoreCase);
             if (isModMap && await RebuildMissingBlocksAsync(data) > 0) data = await _main.Host.GetPlacementsAsync(Path);
             if (isModMap)
@@ -390,12 +400,14 @@ public partial class MapEditorViewModel : DocumentViewModel
             foreach (var item in Items) item.RefreshOutside();
             RefreshOutsideSummary();
             GeometryStatus = mesh == null ? "No level geometry (objects only)." : $"{mesh.TriangleCount:N0} triangles";
+            _main.Log($"{Title}: level geometry {GeometryStatus}");
             SceneChanged?.Invoke();
             _ = EnsureTexturesAsync();
         }
         catch (Exception ex)
         {
             GeometryStatus = "Level geometry unavailable: " + ex.Message;
+            _main.Log($"{Title}: {GeometryStatus}");
         }
     }
 
