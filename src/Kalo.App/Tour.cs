@@ -670,7 +670,22 @@ public sealed class Tour
             Check(tab.ReferenceResults.Any(r => r.Contains("dmr")), "reference search finds the DMR model");
             Shot("reference-picker");
         }
-        await _vm.CloseTabCommand.ExecuteAsync(tab); // unsaved: the file on disk is untouched
+        // Save as new: the copy gets the unsaved edit (2 magazines), the original on disk keeps 1.
+        var firstMag = tab.FindField("Block:magazines[0]");
+        if (firstMag != null) { tab.Reveal(firstMag); await firstMag.DuplicateElementCommand.ExecuteAsync(null); }
+        string copyPath = _vm.NewTagPathFor(weapon, "kalo_tour_rifle");
+        string copyFile = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, copyPath);
+        await _vm.SaveTagAsNewAsync(tab, "kalo_tour_rifle");
+        var copy = _vm.Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.Equals(copyPath, StringComparison.OrdinalIgnoreCase));
+        Check(System.IO.File.Exists(copyFile) && copy != null, "Save as new wrote and opened " + copyPath);
+        Check(copy?.FindField("Block:magazines")?.Node.ElementCount == 2, "the new tag has the unsaved edit (2 magazines)");
+        Check(!_vm.Tabs.Any(t => t.Path.Equals(weapon, StringComparison.OrdinalIgnoreCase)), "the original's tab was replaced by the new tag");
+        var original = await _vm.OpenTagAsync(weapon);
+        Check(original?.FindField("Block:magazines")?.Node.ElementCount == 1, "the original on disk is unchanged (1 magazine)");
+        if (original != null) await _vm.CloseTabCommand.ExecuteAsync(original);
+        if (copy != null) await _vm.CloseTabCommand.ExecuteAsync(copy);
+        try { System.IO.File.Delete(copyFile); System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(copyFile)!); } catch { }
+        _vm.RefreshChangesAfterEdit();
     }
 
     // ---- map ----------------------------------------------------------------------------------------

@@ -13,6 +13,8 @@
                   ToolTip.Tip="List the fields that differ from the vanilla HREK tag (unsaved edits included)" />
           <Button Classes="outline" Content="Revert to vanilla" Command="{Binding RevertToVanillaCommand}" IsEnabled="{Binding DiffersFromVanilla}"
                   ToolTip.Tip="Put the original HREK version of this tag back" />
+          <Button Classes="outline" Content="Save as new…" Click="SaveAsNew_Click"
+                  ToolTip.Tip="Save this tag, with your edits, as a new tag in your mod (e.g. a new object based on this one). This tag itself is not changed." />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S). A running game reloads it." />
         </StackPanel>
         <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">

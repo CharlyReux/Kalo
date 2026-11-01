@@ -10,6 +10,7 @@ namespace Kalo.App.ViewModels;
 public partial class TagEditorViewModel : DocumentViewModel
 {
     private readonly MainViewModel _main;
+    public MainViewModel Main => _main;
 
     public string Group => System.IO.Path.GetExtension(Path).TrimStart('.');
     public ObservableCollection<FieldViewModel> Fields { get; } = new();

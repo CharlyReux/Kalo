@@ -520,6 +520,44 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         _ = AutoCaptureAsync();
     }
 
+    /// <summary>Where "Save as new" puts a copy of a tag: objects\mods\&lt;mod&gt;\&lt;name&gt;\&lt;name&gt;.&lt;ext&gt; (same top folder as the original).</summary>
+    public string NewTagPathFor(string original, string name)
+    {
+        string top = original.Contains('\\') ? original[..original.IndexOf('\\')] : "objects";
+        string slug = Slug(name);
+        return $@"{top}\mods\{ModSlugForContent}\{slug}\{slug}{System.IO.Path.GetExtension(original)}";
+    }
+
+    /// <summary>
+    /// Saves the tab's tag (with its unsaved edits) as a new tag and opens that one instead. The original file keeps what
+    /// was last saved in it, so a new object can start as a copy of an existing one without changing the existing one.
+    /// </summary>
+    public async Task SaveTagAsNewAsync(TagEditorViewModel tab, string name)
+    {
+        if (Host == null || Paths == null || string.IsNullOrWhiteSpace(name)) return;
+        string newPath = NewTagPathFor(tab.Path, name);
+        if (File.Exists(System.IO.Path.Combine(Paths.WorkspaceTags, newPath)))
+        {
+            AddProblem("error", $"Save as new: {newPath} already exists. Pick another name.", tab.Path);
+            return;
+        }
+        try
+        {
+            string oldPath = tab.Path;
+            await Host.SaveTagAsAsync(oldPath, newPath);
+            // The Blam Host now holds the copy under its new path: the old tab is closed and the copy opened.
+            await CloseTab(tab); // the host no longer has the old path open, so this only closes the tab
+            var opened = await OpenTagAsync(newPath);
+            if (opened != null) OnTagSaved(opened);
+            Log($"Saved {oldPath} as a new tag: {newPath}. {oldPath} itself is unchanged by this.");
+            StatusMessage = "New tag " + newPath;
+        }
+        catch (HostException ex)
+        {
+            AddProblem("error", "Save as new failed: " + ex.Message, tab.Path);
+        }
+    }
+
     public async Task RevertTagAsync(TagEditorViewModel tab)
     {
         if (Baseline == null) return;
