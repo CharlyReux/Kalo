@@ -98,13 +98,13 @@ public sealed class HostClient : IAsyncDisposable
     }
 
     public Task<TagDocument> OpenTagAsync(string path, int? maxElements = null) => CallAsync<TagDocument>(Methods.OpenTag, new TagPathParams { Path = path, MaxElements = maxElements });
-    public Task<SetFieldResult> SetFieldAsync(string path, string fieldPath, string value) =>
-        CallAsync<SetFieldResult>(Methods.SetField, new SetFieldParams { Path = path, FieldPath = fieldPath, Value = value });
+    public Task<SetFieldResult> SetFieldAsync(string path, string fieldPath, string value, bool force = false) =>
+        CallAsync<SetFieldResult>(Methods.SetField, new SetFieldParams { Path = path, FieldPath = fieldPath, Value = value, Force = force });
     public Task<SaveResult> SaveTagAsync(string path) => CallAsync<SaveResult>(Methods.SaveTag, new TagPathParams { Path = path });
     public Task<SaveResult> SaveTagAsAsync(string path, string newPath) => CallAsync<SaveResult>(Methods.SaveTagAs, new SaveAsParams { Path = path, NewPath = newPath });
     public Task<bool> CloseTagAsync(string path) => CallAsync<bool>(Methods.CloseTag, new TagPathParams { Path = path });
-    public Task<BlockOpResult> BlockOpAsync(string path, string blockPath, string op, int index = 0) =>
-        CallAsync<BlockOpResult>(Methods.BlockOp, new BlockOpParams { Path = path, FieldPath = blockPath, Op = op, Index = index });
+    public Task<BlockOpResult> BlockOpAsync(string path, string blockPath, string op, int index = 0, bool force = false) =>
+        CallAsync<BlockOpResult>(Methods.BlockOp, new BlockOpParams { Path = path, FieldPath = blockPath, Op = op, Index = index, Force = force });
     public Task<ScenarioPlacements> GetPlacementsAsync(string scenario) =>
         CallAsync<ScenarioPlacements>(Methods.GetPlacements, new TagPathParams { Path = scenario }, TimeSpan.FromMinutes(3));
     public Task<Placement> SetPlacementAsync(SetPlacementParams p) => CallAsync<Placement>(Methods.SetPlacement, p);

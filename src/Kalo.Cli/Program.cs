@@ -162,6 +162,46 @@ switch (command)
         if (!Directory.EnumerateFileSystemEntries(dir).Any()) { Directory.Delete(dir); Console.WriteLine("removed empty " + dir); }
         break;
     }
+    case "register-script-object":
+    {
+        // register-script-object <name> <object tag>: lets gametype scripts create the object (create_object("name", ...)).
+        // Appends it to the global multiplayer object type list (at the end: scripts refer to these by position) and to
+        // the compiler's object_lists\objects.txt, as HREK's multiplayer-generate-global-object-type-list would.
+        string name = argsList[1], objectTag = argsList[2].Replace('/', '\\');
+        const string list = @"multiplayer\globals.multiplayer_object_type_list";
+        string txt = Path.Combine(paths.MegaloObjectLists, "objects.txt");
+        var names = File.ReadAllLines(txt).Where(l => l.Trim().Length > 0).ToList();
+        if (names.Contains(name)) { Console.WriteLine($"{name} is already in objects.txt"); break; }
+        if (!File.Exists(Path.Combine(paths.WorkspaceTags, objectTag))) throw new FileNotFoundException("No such tag: " + objectTag);
+        await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+        var doc = await host.OpenTagAsync(list, 1);
+        var add = await host.BlockOpAsync(list, "Block:object types", BlockOps.Add, force: true);
+        int i = add.SelectIndex;
+        Check($"object types has {names.Count} entries like objects.txt before the new one (new index {i})", i == names.Count);
+        if (i != names.Count) break;
+        await host.SetFieldAsync(list, $"Block:object types[{i}]/StringId:name", name, force: true);
+        await host.SetFieldAsync(list, $"Block:object types[{i}]/Reference:object", objectTag, force: true);
+        await host.SaveTagAsync(list);
+        File.AppendAllText(txt, name + "\r\n");
+        Console.WriteLine($"registered {name} = {objectTag} as object type {i}");
+        break;
+    }
+    case "palette-add":
+    {
+        // palette-add <scenario> <category> <object tag> [copy-from-template]: puts the object in the map's palette
+        // (no placement), creating the scenario from the template first when a fourth argument is given.
+        string scenario = argsList[1], category = argsList[2], objectTag = argsList[3];
+        await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+        if (argsList.Count > 4)
+        {
+            var made = await host.CreateMapAsync(new CreateMapParams { Template = argsList[4], NewPath = scenario, Empty = false, MapId = 7997 });
+            Console.WriteLine($"created {scenario} from {argsList[4]}");
+        }
+        var r = await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = category, Op = PlacementOps.AddPalette, Tag = objectTag });
+        await host.SaveTagAsync(scenario);
+        Console.WriteLine($"{objectTag} is {category} palette entry {r.SelectIndex} of {scenario}");
+        break;
+    }
     case "strings-near":
     {
         // strings-near <file> <exact string> <n>: the n strings before and after each occurrence (help texts of console commands sit next to them).

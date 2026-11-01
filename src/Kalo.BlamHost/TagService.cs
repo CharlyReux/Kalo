@@ -77,12 +77,12 @@ namespace Kalo.BlamHost
             };
         }
 
-        public SetFieldResult SetField(string path, string fieldPath, string value)
+        public SetFieldResult SetField(string path, string fieldPath, string value, bool force = false)
         {
             TagFile tag = Get(path);
             TagField field = tag.SelectField(fieldPath);
             if (field == null) throw new ArgumentException("No field " + fieldPath);
-            if (field.ReadOnly) throw new InvalidOperationException("Field is read-only: " + fieldPath);
+            if (field.ReadOnly && !force) throw new InvalidOperationException("Field is read-only: " + fieldPath);
             value = value ?? "";
             CultureInfo inv = CultureInfo.InvariantCulture;
 
@@ -128,12 +128,14 @@ namespace Kalo.BlamHost
             return new SetFieldResult { Value = ValueOf(tag.SelectField(fieldPath)) };
         }
 
-        public BlockOpResult BlockOp(string path, string fieldPath, string op, int index)
+        public BlockOpResult BlockOp(string path, string fieldPath, string op, int index, bool force = false)
         {
             TagFile tag = Get(path);
             var block = tag.SelectField(fieldPath) as TagFieldBlock;
             if (block == null) throw new ArgumentException("Not a block: " + fieldPath);
-            if (block.ReadOnly) throw new InvalidOperationException("This block is read-only.");
+            // HREK marks some blocks read-only because their elements are referred to by position (e.g. the global object
+            // type list). Kalo's own tools may append to them (force), which leaves existing positions as they are.
+            if (block.ReadOnly && !(force && op == "add")) throw new InvalidOperationException("This block is read-only.");
             int count = block.Elements.Count;
             int select = -1;
             switch (op)

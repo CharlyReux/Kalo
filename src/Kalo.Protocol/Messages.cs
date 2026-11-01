@@ -150,6 +150,8 @@ namespace Kalo.Protocol
         public string Path { get; set; }
         public string FieldPath { get; set; }
         public string Value { get; set; }
+        /// <summary>Edit a field HREK marks read-only (only for Kalo's own tools, e.g. registering a script object).</summary>
+        public bool Force { get; set; }
     }
 
     public sealed class SetFieldResult
@@ -182,6 +184,8 @@ namespace Kalo.Protocol
         public string FieldPath { get; set; }
         public string Op { get; set; }
         public int Index { get; set; }
+        /// <summary>Append to a block HREK marks read-only (only "add": existing elements keep their positions).</summary>
+        public bool Force { get; set; }
     }
 
     public sealed class BlockOpResult

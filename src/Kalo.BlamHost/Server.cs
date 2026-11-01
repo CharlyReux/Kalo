@@ -93,7 +93,7 @@ namespace Kalo.BlamHost
                     return tags.Open(open.Path, open.MaxElements ?? 64);
                 case Methods.SetField:
                     var set = Params<SetFieldParams>(r);
-                    return tags.SetField(set.Path, set.FieldPath, set.Value);
+                    return tags.SetField(set.Path, set.FieldPath, set.Value, set.Force);
                 case Methods.SaveTag:
                     return tags.Save(Params<TagPathParams>(r).Path);
                 case Methods.SaveTagAs:
@@ -104,7 +104,7 @@ namespace Kalo.BlamHost
                     return true;
                 case Methods.BlockOp:
                     var op = Params<BlockOpParams>(r);
-                    return tags.BlockOp(op.Path, op.FieldPath, op.Op, op.Index);
+                    return tags.BlockOp(op.Path, op.FieldPath, op.Op, op.Index, op.Force);
                 case Methods.MegaloCatalog:
                     return MegaloService.Catalog(Params<MegaloCatalogParams>(r).ObjectLists);
                 case Methods.MegaloCompile:
