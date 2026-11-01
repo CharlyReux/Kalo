@@ -173,7 +173,8 @@ public partial class MainViewModel
     }
 
     /// <summary>Compiles a gametype script (the open tab's text if it is open) and writes maps\megalo\kalo_&lt;name&gt;.mglo. Returns the engine name.</summary>
-    public async Task<string?> DeployGametypeAsync(string relativePath)
+    /// <param name="category">For MCC: the game menu folder to list it in (e.g. "community"), replacing the script's own.</param>
+    public async Task<string?> DeployGametypeAsync(string relativePath, string? category = null)
     {
         if (Host == null || Paths == null) return null;
         var open = Tabs.OfType<ScriptEditorViewModel>().FirstOrDefault(t => t.Path.Equals(relativePath, StringComparison.OrdinalIgnoreCase));
@@ -192,6 +193,8 @@ public partial class MainViewModel
             }
             text = kalo.Megalo;
         }
+        int added = 0;
+        if (category != null) (text, added) = Kalo.Core.Scripting.MegaloCategory.Set(text, category);
         string name = "kalo_" + System.IO.Path.GetFileNameWithoutExtension(relativePath);
         string mglo = System.IO.Path.Combine(Paths.Workspace, "maps", "megalo", name + ".mglo");
         await EnsureMegaloCatalogAsync();
@@ -209,7 +212,8 @@ public partial class MainViewModel
         if (!r.Succeeded || !File.Exists(mglo))
         {
             var first = r.Messages?.FirstOrDefault();
-            int line = first == null ? 0 : kalo?.SourceLine(first.Line) ?? first.Line;
+            int megaloLine = first == null ? 0 : Math.Max(1, first.Line - added);
+            int line = first == null ? 0 : kalo?.SourceLine(megaloLine) ?? megaloLine;
             AddProblem("error", $"The gametype {System.IO.Path.GetFileName(relativePath)} does not compile" + (first != null ? $": line {line}: {first.Message}" : "."), relativePath);
             if (open == null) await OpenScriptAsync(relativePath);
             return null;

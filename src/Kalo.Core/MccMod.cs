@@ -78,22 +78,21 @@ public sealed class MccMod
         WriteModInfo(new[] { "multiplayer/" + name + ".json" });
     }
 
-    /// <summary>Puts an MCC game type file in the mod and in the player's own game types. Returns where it went.</summary>
-    public List<string> SetGameVariant(string fileName, byte[] mccBin)
+    /// <summary>
+    /// Puts MCC game type files (name, bytes) in the mod and in the player's own game types, replacing the ones Kalo
+    /// put there before (kalo_*.bin). Returns the folders they went to.
+    /// </summary>
+    public List<string> SetGameVariants(IReadOnlyList<(string File, byte[] Data)> variants)
     {
-        var placed = new List<string>();
-        string inMod = Path.Combine(ModFolder, "haloreach", "game_variants");
-        Directory.CreateDirectory(inMod);
-        foreach (var old in Directory.GetFiles(inMod, "kalo_*.bin")) File.Delete(old);
-        File.WriteAllBytes(Path.Combine(inMod, fileName), mccBin);
-        placed.Add(Path.Combine(inMod, fileName));
-        foreach (string folder in PlayerGameTypeFolders())
+        var folders = new List<string> { Path.Combine(ModFolder, "haloreach", "game_variants") };
+        folders.AddRange(PlayerGameTypeFolders());
+        foreach (string folder in folders)
         {
-            string file = Path.Combine(folder, fileName);
-            File.WriteAllBytes(file, mccBin);
-            placed.Add(file);
+            Directory.CreateDirectory(folder);
+            foreach (var old in Directory.GetFiles(folder, "kalo_*.bin")) File.Delete(old);
+            foreach (var (file, data) in variants) File.WriteAllBytes(Path.Combine(folder, file), data);
         }
-        return placed;
+        return folders;
     }
 
     /// <summary>MCC's per-player Halo Reach game type folders (LocalLow\MCC\LocalFiles\&lt;id&gt;\HaloReach\GameType), when MCC has made them.</summary>

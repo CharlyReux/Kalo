@@ -101,7 +101,9 @@ public sealed class Tour
             Check(File.Exists(System.IO.Path.Combine(mod.ModFolder, "maps", map + ".map")), "the mod has the built map");
             Check(File.Exists(System.IO.Path.Combine(mod.ModFolder, "multiplayer", map + ".json")), "the mod has the map's description");
             Check(File.Exists(System.IO.Path.Combine(mod.ModFolder, "ModInfo.json")), "the mod has its ModInfo.json");
-            if (gametype != null) Check(Directory.GetFiles(System.IO.Path.Combine(mod.ModFolder, "haloreach", "game_variants"), "*.bin").Length == 1, "the mod has the game type");
+            int variants = Directory.GetFiles(System.IO.Path.Combine(mod.ModFolder, "haloreach", "game_variants"), "kalo_*.bin").Length;
+            int mine = _vm.GametypeChoices.Count(g => g.Path?.Contains(@"\mods\", StringComparison.OrdinalIgnoreCase) == true);
+            Check(variants == mine && !_vm.Problems.Any(p => p.Severity == "error"), $"the mod has all {mine} game type(s) of the mod, compiled in the Community folder ({variants})");
             Check(File.Exists(Kalo.Core.MccMod.ManifestFile) && File.ReadAllLines(Kalo.Core.MccMod.ManifestFile).Any(l => l.Trim().Equals(mod.Root, StringComparison.OrdinalIgnoreCase)),
                 "MCC's ModManifest.txt lists Kalo's mods folder");
             foreach (string l in _vm.OutputLines.Where(l => l.Contains("Play in MCC", StringComparison.Ordinal))) Say(l.Length > 300 ? l[..300] : l);

@@ -15,7 +15,7 @@ public partial class MainViewModel
     [ObservableProperty] private bool _isBuildingForMcc;
     private CancellationTokenSource? _mccBuild;
 
-    public string PlayInMccSummary => $"Build {System.IO.Path.GetFileName(SelectedScenario ?? "?")} into a real map and play it with {SelectedGametype?.Label ?? "its default gametype"} in MCC's Custom Games (takes a few minutes; not live like Play).";
+    public string PlayInMccSummary => $"Build {System.IO.Path.GetFileName(SelectedScenario ?? "?")} into a real map and play it in MCC's Custom Games, with all your gametypes in the Community folder (takes a few minutes; not live like Play).";
 
     [RelayCommand]
     public async Task PlayInMccAsync()
@@ -31,15 +31,19 @@ public partial class MainViewModel
         {
             foreach (var doc in Tabs.Where(t => t.IsDirty).ToList()) await doc.SaveDocumentAsync();
 
-            // The gametype first: a script error should not cost a five-minute build.
-            (string File, byte[] Data, string Title)? gametype = null;
-            if (SelectedGametype?.Path is { } script)
+            // The gametypes first: a script error should not cost a five-minute build. Every gametype of the mod goes
+            // in, listed in the game's Community folder (the menus' folders are fixed; Community is a spare one).
+            var variants = new List<(string File, byte[] Data)>();
+            var titles = new List<string>();
+            foreach (var choice in GametypeChoices.Where(g => g.Path != null && g.Path.Contains(@"\mods\", StringComparison.OrdinalIgnoreCase)).ToList())
             {
-                string? engine = await DeployGametypeAsync(script);
-                if (engine == null) { Log("Play in MCC: stopped, the gametype does not compile (see Problems)."); return; }
+                string script = choice.Path!;
+                string? engine = await DeployGametypeAsync(script, MccCategory);
+                if (engine == null) { Log($"Play in MCC: stopped, the gametype {System.IO.Path.GetFileName(script)} does not compile (see Problems)."); return; }
                 string bin = System.IO.Path.Combine(Paths.Workspace, "maps", "megalo", engine + ".bin");
                 string title = GametypeTitle(script) ?? System.IO.Path.GetFileNameWithoutExtension(script).Replace('_', ' ');
-                gametype = (engine + ".bin", Kalo.Core.Scripting.GameVariantFile.ToMcc(await File.ReadAllBytesAsync(bin), title, "Kalo playtest"), title);
+                variants.Add((engine + ".bin", Kalo.Core.Scripting.GameVariantFile.ToMcc(await File.ReadAllBytesAsync(bin), title, "Made with Kalo")));
+                titles.Add(title);
             }
 
             Log($"Play in MCC: building {scenario} into a map with tool.exe. This takes a few minutes; Stop build in the Play menu cancels it.");
@@ -54,16 +58,16 @@ public partial class MainViewModel
 
             int objectTypes = (await GetScriptObjectsAsync())?.Entries.Count ?? 256;
             mod.SetMap(scenario, mapName + " (Kalo)", objectTypes);
-            var placed = gametype is { } g ? mod.SetGameVariant(g.File, g.Data) : new List<string>();
+            var folders = mod.SetGameVariants(variants);
             bool registered = mod.RegisterWithMcc();
 
             Log($"Play in MCC: the mod \"Kalo playtest\" is ready in {mod.ModFolder}" +
                 (registered ? $" and MCC now looks for mods in {mod.Root} ({MccMod.ManifestFile})." : "."));
-            if (gametype is { } gt)
-                Log($"Play in MCC: game type \"{gt.Title}\" put in " + string.Join(" and ", placed) +
-                    (placed.Count == 1 ? ". (MCC's own game type folder, LocalFiles\\<id>\\HaloReach\\GameType, appears once MCC has saved a game type; Kalo will put it there too then.)" : "."));
-            Log("Play in MCC: start MCC from Steam with mods (anti-cheat off), then Custom Games → Halo: Reach: pick the map " +
-                $"\"{mapName} (Kalo)\"" + (gametype is { } t ? $" and the game type \"{t.Title}\"" : "") + ". If MCC is already running, restart it so it sees the new files.");
+            if (variants.Count > 0)
+                Log($"Play in MCC: your game types ({string.Join(", ", titles)}) are in the Community folder of the game type list. Put in " + string.Join(" and ", folders) +
+                    (folders.Count == 1 ? ". MCC lists game types from its own folder (LocalFiles\\<id>\\HaloReach\\GameType), which it makes the first time you save a game type in Custom Games: save any one once, then Play in MCC again." : "."));
+            Log("Play in MCC: start MCC from Steam with mods (anti-cheat off), then Custom Games → Halo: Reach: map " +
+                $"\"{mapName} (Kalo)\", game type folder Community. If MCC is already running, restart it so it sees the new files.");
         }
         catch (Exception ex)
         {
@@ -76,6 +80,9 @@ public partial class MainViewModel
             _mccBuild = null;
         }
     }
+
+    /// <summary>The game menu folder (Megalo category) Kalo lists your game types in, in MCC.</summary>
+    public const string MccCategory = "community";
 
     [RelayCommand]
     private void StopMccBuild() => _mccBuild?.Cancel();
