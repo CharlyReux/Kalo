@@ -315,6 +315,75 @@ static void HookImports(void)
     LogLine(line);
 }
 
+/* ---- Megalo labels in playtests ----------------------------------------------------------------------------
+ * Megalo label groups ("objects x with label ..." / "for each x") find objects through the runtime map variant: it
+ * holds the map's Forge objects and the label strings the map's objects look up. In a playtest the game is started
+ * from the console (game_multiplayer, game_set_variant, game_start), so its game options carry no map variant (map
+ * id -1), and the game loses the runtime map variant three ways:
+ *   1. at the multiplayer start for a new map, it builds it from the options' (empty) variant instead of the map;
+ *   2. when the map's zone set is activated, it resets it to "no map" (id -1), with nothing to rebuild it from;
+ *   3. at each tag sync (the test build reloading changed tags, which also happens right after a playtest starts),
+ *      it deletes the map variant's objects and resets it to "no map" too.
+ * Every label string and labelled Forge object is then gone, and every label group finds nothing. The patches make
+ * 1 and 2 build the runtime map variant from the map (as a real custom game on the map has it) and make tag syncs
+ * leave it alone (the game keeps its objects; a new round or a new playtest rebuilds them from the map).
+ *
+ * reach_tag_test (HREK 2023.07.17), RVAs:
+ *   0x20bd17 (game engine initialize_for_new_map), 24 bytes
+ *     was  cmp byte [rdi+2e9],0 / jne / cmp dword [rdi+2e0],0 / jne / cmp byte [rdi+2ea],0 / jne -> build from map
+ *     now  cmp dword [rdi+2b4],-1 / je build from map (0x20bd2f) / jmp build from the options' variant (0x20bd39)
+ *   0x20d89e (game engine zone set callbacks, 0x20d840), 13 bytes
+ *     was  mov edx,-1 / mov rcx,rax / call map_variant_create_default (0x215640)
+ *     now  mov rcx,rax / call map_variant_build_from_scenario (0x21bb30) / nop5
+ *   0x22429f (tag sync: call 0x4d7810, delete the map variant's objects) and 0x223e48 (after the tag sync: call
+ *   0x4d6880, reset the map variant to map -1), 5 bytes each: the call becomes nop5.
+ * The original bytes are checked first: another build of the game is left alone. */
+typedef struct { ULONG_PTR rva; int size; BYTE was[24]; BYTE now[24]; } Patch;
+static const Patch g_labelPatches[] = {
+    { 0x20bd17, 24,
+      { 0x38,0x9f,0xe9,0x02,0x00,0x00, 0x75,0x08, 0x39,0x9f,0xe0,0x02,0x00,0x00, 0x75,0x12, 0x38,0x9f,0xea,0x02,0x00,0x00, 0x75,0x0a },
+      { 0x83,0xbf,0xb4,0x02,0x00,0x00,0xff, 0x74,0x0f, 0xeb,0x17, 0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90 } },
+    { 0x20d89e, 13,
+      { 0xba,0xff,0xff,0xff,0xff, 0x48,0x8b,0xc8, 0xe8,0x95,0x7d,0x00,0x00 },
+      { 0x48,0x8b,0xc8, 0xe8,0x8a,0xe2,0x00,0x00, 0x0f,0x1f,0x44,0x00,0x00 } },
+    { 0x22429f, 5,
+      { 0xe8,0x6c,0x35,0x2b,0x00 },
+      { 0x0f,0x1f,0x44,0x00,0x00 } },
+    { 0x223e48, 5,
+      { 0xe8,0x33,0x2a,0x2b,0x00 },
+      { 0x0f,0x1f,0x44,0x00,0x00 } },
+};
+
+static void FixPlaytestMapVariant(void)
+{
+    char exe[MAX_PATH];
+    GetModuleFileNameA(NULL, exe, MAX_PATH);
+    const char *name = strrchr(exe, '\\');
+    name = name ? name + 1 : exe;
+    if (_stricmp(name, "reach_tag_test.exe") != 0) return;
+    BYTE *base = (BYTE *)GetModuleHandleA(NULL);
+    int count = sizeof g_labelPatches / sizeof g_labelPatches[0];
+    /* All or nothing: check every place before changing any. */
+    for (int i = 0; i < count; i++)
+    {
+        const Patch *p = &g_labelPatches[i];
+        if (memcmp(base + p->rva, p->was, p->size) && memcmp(base + p->rva, p->now, p->size))
+        { LogLine("kalo labels: unknown reach_tag_test build, Megalo labels are not fixed"); return; }
+    }
+    for (int i = 0; i < count; i++)
+    {
+        const Patch *p = &g_labelPatches[i];
+        BYTE *at = base + p->rva;
+        DWORD old;
+        if (!VirtualProtect(at, p->size, PAGE_EXECUTE_READWRITE, &old)) { LogLine("kalo labels: could not patch the game"); return; }
+        memcpy(at, p->now, p->size);
+        VirtualProtect(at, p->size, old, &old);
+        FlushInstructionCache(GetCurrentProcess(), at, p->size);
+    }
+    LogLine("kalo labels: playtest map variants are built from the map (Megalo labels work)");
+}
+
+
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
 {
     if (reason == DLL_PROCESS_ATTACH)
@@ -326,6 +395,7 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
         if (slash) slash[1] = 0; else g_dir[0] = 0;
         Log("kalo xinput: loaded (%d gamepad slots)%.0d", PADS, 0);
         HookImports();
+        FixPlaytestMapVariant();
     }
     return TRUE;
 }
