@@ -68,7 +68,7 @@ public static class GameVariantFile
     /// </summary>
     public static byte[] ToMcc(byte[] compilerBin, string title, string description)
     {
-        byte[] data = VariantData(compilerBin);
+        byte[] data = WithTitle(VariantData(compilerBin), title, description);
         if (data.Length + 12 + 28 > MpvrChunkSize) throw new InvalidDataException($"The variant is too big for a game type file ({data.Length:N0} bytes).");
         int total = 0x30 + ChdrChunkSize + MpvrChunkSize + 17;
         var file = new byte[total];
@@ -110,6 +110,64 @@ public static class GameVariantFile
         WriteHeader(span, at, "_eof", 17, 1, 1);
         BinaryPrimitives.WriteInt32BigEndian(span[(at + 12)..], at);
         return file;
+    }
+
+    /// <summary>
+    /// The variant data with its own name and description set. MCC's game type menus show the name stored in the
+    /// variant's bit-packed content header, not the file's chdr; the compiler leaves it empty, which MCC shows as
+    /// "$HR_GVAR_". Header layout (bits, big endian), checked against a game type MCC saved: engine type 4, encoding
+    /// version 32, -1 32, then content type 4, file length 32, 4 ids of 64, activity 3, game mode 3, engine 3,
+    /// map id 32, category 8, created and modified (time 64, xuid 64, author: bytes up to 16, 0-terminated, online 1),
+    /// then name and description: UTF-16 characters of 16 bits, 0-terminated (at most 128 each).
+    /// Returns the data unchanged if the header doesn't read that way.
+    /// </summary>
+    public static byte[] WithTitle(byte[] data, string title, string description)
+    {
+        int total = data.Length * 8;
+        int Bit(int i) => (data[i >> 3] >> (7 - (i & 7))) & 1;
+        long Read(ref int i, int n)
+        {
+            long v = 0;
+            for (int k = 0; k < n; k++) v = (v << 1) | (long)Bit(i++);
+            return v;
+        }
+        try
+        {
+            int i = 4 + 32 + 32;
+            i += 4 + 32 + 4 * 64 + 3 + 3 + 3 + 32 + 8;
+            for (int who = 0; who < 2; who++)
+            {
+                i += 64 + 64;
+                for (int c = 0; c < 16 && Read(ref i, 8) != 0; c++) { }
+                i += 1;
+            }
+            int titleAt = i;
+            for (int s = 0; s < 2; s++)
+            {
+                int c = 0;
+                while (Read(ref i, 16) != 0) if (++c >= 128) return data;
+            }
+            int end = i;
+            if (end > total) return data;
+
+            var bits = new List<bool>(total + 4096);
+            for (int k = 0; k < titleAt; k++) bits.Add(Bit(k) == 1);
+            foreach (string text in new[] { title, description })
+            {
+                string t = text.Length > 127 ? text[..127] : text;
+                foreach (char ch in t + "\0")
+                    for (int b = 15; b >= 0; b--) bits.Add(((ch >> b) & 1) == 1);
+            }
+            for (int k = end; k < total; k++) bits.Add(Bit(k) == 1);
+            var result = new byte[(bits.Count + 7) / 8];
+            for (int k = 0; k < bits.Count; k++)
+                if (bits[k]) result[k >> 3] |= (byte)(0x80 >> (k & 7));
+            return result;
+        }
+        catch (IndexOutOfRangeException)
+        {
+            return data;
+        }
     }
 
     /// <summary>The variant's unique id: 8 bytes at offset 13 of the bit-packed data (big endian there).</summary>

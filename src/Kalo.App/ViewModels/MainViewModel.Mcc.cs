@@ -15,7 +15,7 @@ public partial class MainViewModel
     [ObservableProperty] private bool _isBuildingForMcc;
     private CancellationTokenSource? _mccBuild;
 
-    public string PlayInMccSummary => $"Build {System.IO.Path.GetFileName(SelectedScenario ?? "?")} into a real map and play it in MCC's Custom Games, with all your gametypes in the Community folder (takes a few minutes; not live like Play).";
+    public string PlayInMccSummary => $"Build {System.IO.Path.GetFileName(SelectedScenario ?? "?")} into a real map and play it in MCC's Custom Games, with all your gametypes in the Action Sack folder (takes a few minutes; not live like Play).";
 
     [RelayCommand]
     public async Task PlayInMccAsync()
@@ -32,7 +32,8 @@ public partial class MainViewModel
             foreach (var doc in Tabs.Where(t => t.IsDirty).ToList()) await doc.SaveDocumentAsync();
 
             // The gametypes first: a script error should not cost a five-minute build. Every gametype of the mod goes
-            // in, listed in the game's Community folder (the menus' folders are fixed; Community is a spare one).
+            // in, listed in the game's Action Sack folder (the menus' folders are fixed, and MCC shows only the ones it knows: Community and
+            // Insane don't appear; Action Sack does, with Bungie's few party modes).
             var variants = new List<(string File, byte[] Data)>();
             var titles = new List<string>();
             foreach (var choice in GametypeChoices.Where(g => g.Path != null && g.Path.Contains(@"\mods\", StringComparison.OrdinalIgnoreCase)).ToList())
@@ -64,10 +65,10 @@ public partial class MainViewModel
             Log($"Play in MCC: the mod \"Kalo playtest\" is ready in {mod.ModFolder}" +
                 (registered ? $" and MCC now looks for mods in {mod.Root} ({MccMod.ManifestFile})." : "."));
             if (variants.Count > 0)
-                Log($"Play in MCC: your game types ({string.Join(", ", titles)}) are in the Community folder of the game type list. Put in " + string.Join(" and ", folders) +
+                Log($"Play in MCC: your game types ({string.Join(", ", titles)}) are in the Action Sack folder of the game type list. Put in " + string.Join(" and ", folders) +
                     (folders.Count == 1 ? ". MCC lists game types from its own folder (LocalFiles\\<id>\\HaloReach\\GameType), which it makes the first time you save a game type in Custom Games: save any one once, then Play in MCC again." : "."));
             Log("Play in MCC: start MCC from Steam with mods (anti-cheat off), then Custom Games → Halo: Reach: map " +
-                $"\"{mapName} (Kalo)\", game type folder Community. If MCC is already running, restart it so it sees the new files.");
+                $"\"{mapName} (Kalo)\", game type folder Action Sack. If MCC is already running, restart it so it sees the new files.");
         }
         catch (Exception ex)
         {
@@ -82,7 +83,7 @@ public partial class MainViewModel
     }
 
     /// <summary>The game menu folder (Megalo category) Kalo lists your game types in, in MCC.</summary>
-    public const string MccCategory = "community";
+    public const string MccCategory = "action_sack";
 
     [RelayCommand]
     private void StopMccBuild() => _mccBuild?.Cancel();

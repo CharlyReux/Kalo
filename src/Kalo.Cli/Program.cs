@@ -98,6 +98,29 @@ switch (command)
     case "kscript-compile":
         await KscriptCompile(argsList[1], argsList.ElementAtOrDefault(2));
         break;
+    case "mcc-gametype":
+    {
+        // mcc-gametype <script> <category> <title> <out.bin>: an MCC game type file listed in the given menu folder.
+        string file = argsList[1], category = argsList[2], title = argsList[3], output = Path.GetFullPath(argsList[4]);
+        string text = File.ReadAllText(file);
+        var kalo = file.EndsWith(".txt", StringComparison.OrdinalIgnoreCase) ? KaloScript.Transpile("megalo [[\n" + text + "\n]]") : KaloScript.Transpile(text);
+        if (!kalo.Succeeded) { foreach (var e in kalo.Errors) Console.WriteLine($"  kalo error {e}"); Check("reads as Kalo Script", false); break; }
+        var (megalo, _) = MegaloCategory.Set(kalo.Megalo, category);
+        await using var host = await HostClient.StartAsync(paths, line => Console.WriteLine("  host> " + line));
+        string bin = Path.Combine(paths.KaloData, "mcc-gametype", Path.GetFileNameWithoutExtension(output) + ".compiler.bin");
+        var r = await host.MegaloCompileAsync(new MegaloCompileParams
+        {
+            ObjectLists = paths.MegaloObjectLists, IncludeFolder = paths.MegaloSource, Text = megalo,
+            OutputFolder = Path.Combine(paths.KaloData, "mcc-gametype"), BinFile = bin,
+        });
+        foreach (var m in (r.Messages ?? new()).Where(m => m.Severity == "error")) Console.WriteLine($"  error megalo line {m.Line}: {m.Message}");
+        Check($"{Path.GetFileName(file)} compiles in category {category}", r.Succeeded && File.Exists(bin));
+        if (!r.Succeeded || !File.Exists(bin)) break;
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        File.WriteAllBytes(output, GameVariantFile.ToMcc(File.ReadAllBytes(bin), title, "Kalo test: category " + category));
+        Console.WriteLine($"wrote {output}");
+        break;
+    }
     case "kscript-check":
     {
         // Transpile Kalo Script files and list their errors (no compiler needed).
