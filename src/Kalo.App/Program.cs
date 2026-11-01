@@ -40,6 +40,8 @@ public sealed class AppArgs
     public string? OpenMap { get; private set; }
     public string? PlayMap { get; private set; }
     public string? PlayWith { get; private set; }
+    /// <summary>--play-mcc &lt;scenario&gt;: Play in MCC (build the map, update Kalo's MCC mod) with --play-with, then exit.</summary>
+    public string? PlayMcc { get; private set; }
     /// <summary>--crate-probe q1|q0|packing|nopalette: a throwaway Forge World map with one object under the start, played once.</summary>
     public string? CrateProbe { get; private set; }
     /// <summary>--playfrom-test &lt;players&gt;: Play from camera on a throwaway Forge World map with that many split-screen players.</summary>
@@ -72,6 +74,7 @@ public sealed class AppArgs
                 case "--open-map": a.OpenMap = next; i++; break;
                 case "--play-map": a.PlayMap = next; a.Tour = ".kalo\\shots\\play-map"; i++; break;
                 case "--play-with": a.PlayWith = next; i++; break;
+                case "--play-mcc": a.PlayMcc = next; a.Tour = ".kalo\\shots\\play-mcc"; i++; break;
                 case "--init-order": Kalo.Core.GameSession.InitOrder = next; i++; break;
                 case "--engine-cmd": Kalo.App.ViewModels.MainViewModel.EngineCommands = next; i++; break;
                 case "--playfrom-test": a.PlayFromTest = next; a.Tour = ".kalo\\shots\\playfrom"; i++; break;

@@ -78,6 +78,38 @@ public sealed class Tour
     /// --play-map: plays a map exactly as saved (no edits, nothing saved) with Slayer or the given gametype, holds the
     /// game so the runner can take screenshots, then stops it. For diagnosing "my object isn't in the game".
     /// </summary>
+    /// <summary>--play-mcc: Play in MCC on a map (and gametype), then checks the mod files it made.</summary>
+    public async Task<int> PlayInMccAsync(string scenario, string? gametype)
+    {
+        Say("play-mcc started: " + scenario);
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            string name = scenario.Replace('/', '\\');
+            if (name.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) name = name[..^".scenario".Length];
+            if (!Check(_vm.Scenarios.Contains(name, StringComparer.OrdinalIgnoreCase), "the map is in the Play list")) return 1;
+            _vm.SelectedScenario = _vm.Scenarios.First(s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+            _vm.SelectedGametype = gametype == null ? _vm.GametypeChoices[0]
+                : _vm.GametypeChoices.FirstOrDefault(g => g.Path?.Replace('/', '\\').EndsWith(gametype.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase) == true);
+            Check(_vm.SelectedGametype != null, "gametype " + (_vm.SelectedGametype?.Label ?? gametype));
+            var sw = Stopwatch.StartNew();
+            await _vm.PlayInMccAsync();
+            Say($"Play in MCC took {sw.Elapsed.TotalMinutes:F1} min");
+            foreach (var pr in _vm.Problems.Take(5)) Say($"problem: {pr.Severity}: {pr.Message}");
+            var mod = new Kalo.Core.MccMod(_vm.Paths!);
+            string map = System.IO.Path.GetFileName(name);
+            Check(File.Exists(System.IO.Path.Combine(mod.ModFolder, "maps", map + ".map")), "the mod has the built map");
+            Check(File.Exists(System.IO.Path.Combine(mod.ModFolder, "multiplayer", map + ".json")), "the mod has the map's description");
+            Check(File.Exists(System.IO.Path.Combine(mod.ModFolder, "ModInfo.json")), "the mod has its ModInfo.json");
+            if (gametype != null) Check(Directory.GetFiles(System.IO.Path.Combine(mod.ModFolder, "haloreach", "game_variants"), "*.bin").Length == 1, "the mod has the game type");
+            Check(File.Exists(Kalo.Core.MccMod.ManifestFile) && File.ReadAllLines(Kalo.Core.MccMod.ManifestFile).Any(l => l.Trim().Equals(mod.Root, StringComparison.OrdinalIgnoreCase)),
+                "MCC's ModManifest.txt lists Kalo's mods folder");
+            foreach (string l in _vm.OutputLines.Where(l => l.Contains("Play in MCC", StringComparison.Ordinal))) Say(l.Length > 300 ? l[..300] : l);
+        }
+        catch (Exception ex) { Check(false, "unexpected error: " + ex.Message); }
+        return 0;
+    }
+
     public async Task<int> PlayMapAsync(string scenario, string? gametype)
     {
         Say("play-map started: " + scenario);

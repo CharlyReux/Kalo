@@ -45,6 +45,9 @@
             <MenuItem Header="Play (map and gametype chosen at the top)" InputGesture="F5" Command="{Binding PlayCommand}" />
             <MenuItem Header="Play from camera (open map: start where the editor camera is)" InputGesture="Ctrl+F5" Command="{Binding PlayFromCameraCommand}" />
             <MenuItem Header="Stop" InputGesture="Shift+F5" Command="{Binding StopGameCommand}" />
+            <Separator />
+            <MenuItem Header="Play in MCC (builds a real map: a few minutes; labels and Forge objects work there)" Command="{Binding PlayInMccCommand}" />
+            <MenuItem Header="Stop the MCC build" Command="{Binding StopMccBuildCommand}" IsEnabled="{Binding IsBuildingForMcc}" />
           </MenuItem>
           <MenuItem Header="_Help">
             <MenuItem Header="Kalo Script documentation" InputGesture="F1" Click="Docs_Click" />
@@ -65,6 +68,12 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" VerticalAlignment="Center" />
               <TextBlock Text="Play" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="tool" Command="{Binding PlayInMccCommand}" ToolTip.Tip="{Binding PlayInMccSummary}" IsEnabled="{Binding !IsBuildingForMcc}">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE7FC;" VerticalAlignment="Center" />
+              <TextBlock Text="MCC" VerticalAlignment="Center" FontSize="12" />
             </StackPanel>
           </Button>
           <Button Classes="tool" Command="{Binding StopGameCommand}" ToolTip.Tip="Stop the game (Shift+F5)">

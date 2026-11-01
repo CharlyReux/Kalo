@@ -22,8 +22,8 @@ public partial class MainViewModel
     /// <summary>What Play will launch, in words, for the title bar tooltip.</summary>
     public string PlaySummary => $"Play {System.IO.Path.GetFileName(SelectedScenario ?? "?")} with {SelectedGametype?.Label ?? "its default gametype"}{(PlayerCount > 1 ? $", {PlayerCount} players split-screen" : "")} in reach_tag_test (F5). Ctrl+F5 in a map: play from the camera. Unsaved changes are saved first.";
 
-    partial void OnSelectedGametypeChanged(GametypeChoice? value) => OnPropertyChanged(nameof(PlaySummary));
-    partial void OnSelectedScenarioChanged(string? value) => OnPropertyChanged(nameof(PlaySummary));
+    partial void OnSelectedGametypeChanged(GametypeChoice? value) { OnPropertyChanged(nameof(PlaySummary)); OnPropertyChanged(nameof(PlayInMccSummary)); }
+    partial void OnSelectedScenarioChanged(string? value) { OnPropertyChanged(nameof(PlaySummary)); OnPropertyChanged(nameof(PlayInMccSummary)); }
 
     private void BuildGametypeChoices()
     {
