@@ -67,7 +67,7 @@ public static class MegaloDocs
         ["set_progress_bar"] = new("Shows a timer as a progress bar on the object's waypoint, for the chosen players."),
         ["hud_post_message"] = new("Shows a message (and plays a sound) to a team, a player, or everyone. Target: everyone, team <t>, player <p>. Sound: none or a sound from the list.",
             "hud_post_message(player killer, none, \"Killing spree!\")"),
-        ["timer_set_rate"] = new("How fast the timer runs: 1 normal, 0 paused, -1 backwards, 2 twice as fast.", "timer_set_rate(round_timer, -1)"),
+        ["timer_set_rate"] = new("How the timer runs: 1 counts down normally (to 0, where timer_expired is true), 2 twice as fast, 0 paused, -1 back up toward its starting value (where it stops).", "timer_set_rate(round_timer, 1)"),
         ["print_variable"] = new("Writes text (and values) to the game's debug log. Handy while testing."),
         ["get_player_holding_object"] = new("Stores the player carrying the object (a flag, a bomb, a ball) in a player variable, or none."),
         ["for_each"] = new("Megalo's block: runs its contents for each player, team, object, or once (general). Kalo Script writes it as 'for each player do ... end' or 'do ... end'."),

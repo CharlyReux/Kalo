@@ -264,13 +264,14 @@ flags |= 4    -- bit or; also &= ^= <<= >>=
 "),
             P("Megalo changes one value at a time, so x = a + b works but x = a - x doesn't (store it in a temp first). For the " +
               "operations without a symbol (not, abs) call set directly: set(x, abs, y)."),
-            P("Timers: declare them with a starting value, then timer_set_rate(t, -1) to count down, timer_expired(t) to test, " +
-              "timer_reset(t) to start again."),
+            P("Timers: declare them with a starting value, then timer_set_rate(t, 1) to count it down (a timer only runs once it has a " +
+              "rate), timer_expired(t) to test that it reached 0, timer_reset(t) to start again. A rate of 0 pauses it; -1 runs it back " +
+              "up toward its starting value (where it stops), as a contested capture does."),
             Prog(@"
 declare global.timer bonus_timer = 30
 
 do
-  timer_set_rate(bonus_timer, -1)
+  timer_set_rate(bonus_timer, 1)
   if timer_expired(bonus_timer) then
     timer_reset(bonus_timer)
     for each player do

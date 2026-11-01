@@ -758,7 +758,7 @@ public sealed class Tour
             // A gametype that creates it, played on Sword Slayer.
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(probeFile)!);
             System.IO.File.WriteAllText(probeFile,
-                "-- title: script object probe\r\ndeclare global.timer drop_timer = 3\r\ndo\r\n  timer_set_rate(drop_timer, -1)\r\n  if timer_expired(drop_timer) then\r\n" +
+                "-- title: script object probe\r\ndeclare global.timer drop_timer = 3\r\ndo\r\n  timer_set_rate(drop_timer, 1)\r\n  if timer_expired(drop_timer) then\r\n" +
                 "    timer_reset(drop_timer)\r\n    for each player do\r\n      create_object(\"kalo_tour_obj\", at current_player, offset 0 0 2)\r\n    end\r\n  end\r\nend\r\n");
             _vm.SelectedScenario = _vm.Scenarios.FirstOrDefault(sc => sc.EndsWith("20_sword_slayer", StringComparison.OrdinalIgnoreCase));
             _vm.SelectedGametype = new GametypeChoice("script object probe", probeRel);
