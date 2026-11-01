@@ -260,10 +260,16 @@
                         ToolTip.Tip="Groups of objects saved with your mod" />
               </StackPanel>
               <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Classes="tool" Content="Clear" Command="{Binding ClearOutputCommand}" Margin="0,0,6,0" />
+              <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,6,0" IsVisible="{Binding IsOutput}">
+                <TextBlock Text="{Binding OutputFilterSummary}" VerticalAlignment="Center" Foreground="{StaticResource KMuted}" />
+                <TextBox x:Name="OutputSearch" Width="240" Height="24" MinHeight="24" Padding="6,2" VerticalContentAlignment="Center"
+                         Text="{Binding OutputFilter}" Watermark="Search output (e.g. megalotrace)" KeyDown="OutputSearch_KeyDown"
+                         ToolTip.Tip="Shows only the lines containing every word typed (any case). Esc clears it." />
+              </StackPanel>
             </DockPanel>
           </Border>
           <Grid>
-            <ListBox x:Name="OutputList" ItemsSource="{Binding OutputLines}" IsVisible="{Binding IsOutput}" Background="Transparent">
+            <ListBox x:Name="OutputList" ItemsSource="{Binding VisibleOutput}" IsVisible="{Binding IsOutput}" Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="sys:String">
                   <TextBlock Text="{Binding}" Classes="mono" Foreground="{StaticResource KCode}" TextWrapping="NoWrap" />

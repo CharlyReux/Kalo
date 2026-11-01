@@ -1303,6 +1303,19 @@ public sealed class Tour
 
     private async Task DocsSection()
     {
+        // Output search: only lines containing every word, any case; clearing shows everything again.
+        _vm.BottomPanel = "output";
+        _vm.Log("tour search check: megalotrace Score 12");
+        _vm.Log("tour search check: something else");
+        int all = _vm.OutputLines.Count;
+        _vm.OutputFilter = "TOUR SEARCH megalotrace";
+        Check(_vm.VisibleOutput.Count == 1 && _vm.VisibleOutput[0].Contains("score 12", StringComparison.OrdinalIgnoreCase), "Output search keeps only the matching line");
+        _vm.Log("tour search check: megalotrace again");
+        Check(_vm.VisibleOutput.Count == 2 && _vm.OutputFilterSummary.StartsWith("2 of "), "a new matching line shows while searching (" + _vm.OutputFilterSummary + ")");
+        await Pause(400);
+        Shot("output-search");
+        _vm.OutputFilter = "";
+        Check(_vm.VisibleOutput.Count == _vm.OutputLines.Count && _vm.OutputLines.Count >= all + 1, "clearing the search shows every line");
         await _vm.EnsureMegaloCatalogAsync();
         var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\hover.kscript") { Text = Kalo.Core.Scripting.KaloScript.Starter };
         _vm.Tabs.Add(doc);

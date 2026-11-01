@@ -30,6 +30,10 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public ObservableCollection<SearchResult> SearchResults { get; } = new();
     public ObservableCollection<DocumentViewModel> Tabs { get; } = new();
     public ObservableCollection<string> OutputLines { get; } = new();
+    /// <summary>The Output lines shown: all of them, or those matching the search box.</summary>
+    public ObservableCollection<string> VisibleOutput { get; } = new();
+    [ObservableProperty] private string _outputFilter = "";
+    public string OutputFilterSummary => string.IsNullOrWhiteSpace(OutputFilter) ? "" : $"{VisibleOutput.Count} of {OutputLines.Count} lines";
     public ObservableCollection<ProblemItem> Problems { get; } = new();
     public ObservableCollection<ChangeItem> Changes { get; } = new();
     public ObservableCollection<string> Scenarios { get; } = new();
@@ -837,7 +841,13 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     }
     [RelayCommand] private void ShowOutput() => BottomPanel = "output";
     [RelayCommand] private void ShowProblems() => BottomPanel = "problems";
-    [RelayCommand] private void ClearOutput() => OutputLines.Clear();
+    [RelayCommand]
+    private void ClearOutput()
+    {
+        OutputLines.Clear();
+        VisibleOutput.Clear();
+        OnPropertyChanged(nameof(OutputFilterSummary));
+    }
 
     partial void OnSidePanelChanged(string value)
     {
@@ -881,6 +891,28 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         OutputLines.Add(line);
         while (OutputLines.Count > MaxOutputLines) OutputLines.RemoveAt(0);
+        if (MatchesOutputFilter(line))
+        {
+            VisibleOutput.Add(line);
+            while (VisibleOutput.Count > MaxOutputLines) VisibleOutput.RemoveAt(0);
+        }
+        if (!string.IsNullOrWhiteSpace(OutputFilter)) OnPropertyChanged(nameof(OutputFilterSummary));
+    }
+
+    /// <summary>Search in Output: every word must appear (any case), e.g. "megalotrace score".</summary>
+    private bool MatchesOutputFilter(string line)
+    {
+        if (string.IsNullOrWhiteSpace(OutputFilter)) return true;
+        foreach (string word in OutputFilter.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            if (line.IndexOf(word, StringComparison.OrdinalIgnoreCase) < 0) return false;
+        return true;
+    }
+
+    partial void OnOutputFilterChanged(string value)
+    {
+        VisibleOutput.Clear();
+        foreach (string line in OutputLines) if (MatchesOutputFilter(line)) VisibleOutput.Add(line);
+        OnPropertyChanged(nameof(OutputFilterSummary));
     }
 
     public void AddProblem(string severity, string message, string source)

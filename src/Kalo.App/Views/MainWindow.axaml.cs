@@ -24,7 +24,7 @@ public partial class MainWindow : Window
         {
             if (DataContext is MainViewModel vm)
             {
-                vm.OutputLines.CollectionChanged += OnOutputChanged;
+                vm.VisibleOutput.CollectionChanged += OnOutputChanged;
                 vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.Split)) ApplySplit(); };
                 ApplySplit();
             }
@@ -117,12 +117,17 @@ public partial class MainWindow : Window
         await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy);
     }
 
+    private void OutputSearch_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && Vm != null) { Vm.OutputFilter = ""; e.Handled = true; }
+    }
+
     private void OnOutputChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         if (e.Action != NotifyCollectionChangedAction.Add || Vm == null) return;
         Dispatcher.UIThread.Post(() =>
         {
-            if (Vm.OutputLines.Count > 0) OutputList.ScrollIntoView(Vm.OutputLines.Count - 1);
+            if (Vm.VisibleOutput.Count > 0) OutputList.ScrollIntoView(Vm.VisibleOutput.Count - 1);
         }, DispatcherPriority.Background);
     }
 
