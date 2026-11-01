@@ -13,6 +13,41 @@ public partial class TagEditorView : UserControl
             await clipboard.SetTextAsync(f.Path);
     }
 
+    private async void UseInScripts_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not Kalo.App.ViewModels.TagEditorViewModel tab || TopLevel.GetTopLevel(this) is not Window owner) return;
+        if (tab.IsDirty) { tab.Main.AddProblem("warning", "Use in scripts: save the tag first.", tab.Path); return; }
+        string label = "Name scripts will use for this object: create_object(\"name\", at ...).\n\n" +
+                       "This edits two files shared by every map and gametype of your mod: the game's object type list and objects.txt " +
+                       "(the script compiler's list). The object goes at the end, so existing gametypes are not affected. " +
+                       "It works in your mod only, not in a gametype shared on its own. A map must contain the object for a gametype to create it there " +
+                       "(Play takes care of that for playtests).";
+        string? name = Kalo.Core.ScriptObjects.SuggestName(tab.Path);
+        string? error = null;
+        while (true)
+        {
+            name = await Dialogs.PromptAsync(owner, "Use in scripts", error == null ? label : label + "\n\n" + error, name ?? "");
+            if (string.IsNullOrWhiteSpace(name)) return;
+            error = await tab.Main.RegisterScriptObjectAsync(tab.Path, name.Trim());
+            if (error == null) return;
+        }
+    }
+
+    private async void RenameScriptName_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not Kalo.App.ViewModels.TagEditorViewModel { ScriptEntry: { } entry } tab || TopLevel.GetTopLevel(this) is not Window owner) return;
+        string label = $"New name for {entry.Name}. Scripts that use the old name will need the new one.";
+        string? name = entry.Name;
+        string? error = null;
+        while (true)
+        {
+            name = await Dialogs.PromptAsync(owner, "Rename script object", error == null ? label : label + "\n\n" + error, name ?? "");
+            if (string.IsNullOrWhiteSpace(name) || name.Trim() == entry.Name) return;
+            error = await tab.Main.RenameScriptObjectAsync(entry, name.Trim());
+            if (error == null) return;
+        }
+    }
+
     private async void SaveAsNew_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (DataContext is not Kalo.App.ViewModels.TagEditorViewModel tab || TopLevel.GetTopLevel(this) is not Window owner) return;

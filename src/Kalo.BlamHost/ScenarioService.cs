@@ -340,7 +340,6 @@ namespace Kalo.BlamHost
         /// </summary>
         private PlacementOpResult MakePlayCopy(PlacementOpParams p)
         {
-            if (p.Position == null || p.Position.Length < 3) throw new ArgumentException("Play copy: position missing.");
             string dest = p.Tag;
             if (string.IsNullOrWhiteSpace(dest) || !dest.Replace('/', '\\').StartsWith(@"levels\mods\_kalo_play\", StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("Play copies go in levels\\mods\\_kalo_play.");
@@ -349,6 +348,16 @@ namespace Kalo.BlamHost
             if (!System.IO.File.Exists(src)) throw new InvalidOperationException("Save the map first: " + p.Path + " is not on disk.");
             System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(dst));
             System.IO.File.Copy(src, dst, true);
+            if (p.Position == null || p.Position.Length < 3)
+            {
+                // A plain copy (starts and spawns as they are), e.g. to add objects a gametype needs for this playtest only.
+                using (var plain = new TagFile(TagService.TagPathOf(dest)))
+                {
+                    DetachTemplateResources(plain, dest);
+                    plain.Save();
+                }
+                return new PlacementOpResult { SelectIndex = 0 };
+            }
             int players = Math.Max(1, Math.Min(4, p.Index));
             float facing = p.Position.Length > 3 ? p.Position[3] : 0f;
             double yaw = facing * Math.PI / 180.0;

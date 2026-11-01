@@ -25,6 +25,50 @@ public partial class TagEditorViewModel : DocumentViewModel
     /// <summary>Blocks were added to or removed from since the last save.</summary>
     private bool _structureChanged;
 
+    // ---- Use in scripts ------------------------------------------------------------------------------
+    /// <summary>The name scripts create this object with (create_object("name", ...)), or null.</summary>
+    [ObservableProperty] private string? _scriptName;
+    [ObservableProperty] private string? _whyNotRemovable;
+    private ScriptObjectEntry? _scriptEntry;
+    public bool IsObjectTag => ScriptObjects.IsObjectTag(Path);
+    public bool ShowUseInScripts => IsObjectTag && ScriptName == null;
+    public bool ShowScriptName => ScriptName != null;
+    public string ScriptNameText => $"In scripts as {ScriptName}";
+    public bool CanRemoveScriptName => ScriptName != null && WhyNotRemovable == null;
+    public string RemoveScriptNameTip => WhyNotRemovable ?? "Scripts can no longer create this object (the object itself stays).";
+    public ScriptObjectEntry? ScriptEntry => _scriptEntry;
+
+    partial void OnScriptNameChanged(string? value)
+    {
+        OnPropertyChanged(nameof(ShowUseInScripts));
+        OnPropertyChanged(nameof(ShowScriptName));
+        OnPropertyChanged(nameof(ScriptNameText));
+        OnPropertyChanged(nameof(CanRemoveScriptName));
+    }
+
+    partial void OnWhyNotRemovableChanged(string? value)
+    {
+        OnPropertyChanged(nameof(CanRemoveScriptName));
+        OnPropertyChanged(nameof(RemoveScriptNameTip));
+    }
+
+    public async Task RefreshScriptNameAsync()
+    {
+        if (!IsObjectTag) return;
+        var r = await _main.GetScriptObjectsAsync();
+        _scriptEntry = r?.Entries.LastOrDefault(e => e.ObjectTag.Equals(Path, StringComparison.OrdinalIgnoreCase));
+        WhyNotRemovable = _scriptEntry == null || r == null ? null : _main.WhyNotRemovable(_scriptEntry, r.Entries.Count);
+        ScriptName = _scriptEntry?.Name;
+    }
+
+    [RelayCommand]
+    private async Task RemoveScriptName()
+    {
+        if (_scriptEntry == null) return;
+        if (await _main.RemoveScriptObjectAsync(_scriptEntry) is { } why) _main.AddProblem("error", "Remove from scripts: " + why, Path);
+        else Status = "Scripts can no longer create this object";
+    }
+
     public FieldViewModel? SelectedField => SelectedItem as FieldViewModel;
     public bool ShowLabeled { get => !ShowRaw; set => ShowRaw = !value; }
 

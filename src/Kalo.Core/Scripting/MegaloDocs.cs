@@ -48,7 +48,7 @@ public static class MegaloDocs
     {
         ["set_score"] = new("Changes a team's or a player's score: add, subtract, set_to...",
             "set_score(add, 1, player killer)"),
-        ["create_object"] = new("Spawns an object of the given type at another object (e.g. a player). Optional: store it in a variable (set x), give it a label, keep it from being cleaned up (never_garbage), offset it.",
+        ["create_object"] = new("Spawns an object of the given type at another object (e.g. a player). Optional: store it in a variable (set x), give it a label, keep it from being cleaned up (never_garbage), offset it. The types are the game's object type list; to create your own object, open its tag and use Use in scripts… (the map must contain it: the map editor's Script objects button, Play does it for playtests).",
             "create_object(\"bomb\", set new_bomb, at current_player)"),
         ["delete_object"] = new("Removes the object from the game instantly (no explosion, no effects)."),
         ["navpoint_set_visible"] = new("Shows or hides the object's waypoint (the marker over it) for no_one, everyone, allies, enemies or one player.",

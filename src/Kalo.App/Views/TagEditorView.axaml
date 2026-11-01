@@ -13,6 +13,14 @@
                   ToolTip.Tip="List the fields that differ from the vanilla HREK tag (unsaved edits included)" />
           <Button Classes="outline" Content="Revert to vanilla" Command="{Binding RevertToVanillaCommand}" IsEnabled="{Binding DiffersFromVanilla}"
                   ToolTip.Tip="Put the original HREK version of this tag back" />
+          <TextBlock Text="{Binding ScriptNameText}" IsVisible="{Binding ShowScriptName}" VerticalAlignment="Center" Foreground="{StaticResource KMuted}"
+                     ToolTip.Tip="Gametype scripts create this object with create_object(&quot;name&quot;, at ...)" />
+          <Button Classes="outline" Content="Rename…" IsVisible="{Binding ShowScriptName}" Click="RenameScriptName_Click"
+                  ToolTip.Tip="Change the name scripts use for this object" />
+          <Button Classes="outline" Content="Remove from scripts" IsVisible="{Binding ShowScriptName}" IsEnabled="{Binding CanRemoveScriptName}"
+                  Command="{Binding RemoveScriptNameCommand}" ToolTip.ShowOnDisabled="True" ToolTip.Tip="{Binding RemoveScriptNameTip}" />
+          <Button Classes="outline" Content="Use in scripts…" IsVisible="{Binding ShowUseInScripts}" Click="UseInScripts_Click"
+                  ToolTip.Tip="Let gametype scripts create this object: create_object(&quot;name&quot;, at ...)" />
           <Button Classes="outline" Content="Save as new…" Click="SaveAsNew_Click"
                   ToolTip.Tip="Save this tag, with your edits, as a new tag in your mod (e.g. a new object based on this one). This tag itself is not changed." />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S). A running game reloads it." />

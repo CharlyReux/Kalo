@@ -28,6 +28,8 @@
           <Button Classes="outline" Content="Spawn view" Command="{Binding ViewFromSpawnCommand}" IsEnabled="{Binding HasSpawn}"
                   ToolTip.Tip="Camera where the player spawns, at eye height: compare with the game" />
           <Button Classes="outline" Content="Frame all" Command="{Binding FrameAllCommand}" ToolTip.Tip="Put the camera back over the play space (Home)" />
+          <Button Classes="outline" Content="Script objects" Command="{Binding AddScriptObjectsCommand}"
+                  ToolTip.Tip="Add the objects your mod lets scripts create (Use in scripts) to this map's palette, so gametypes can create them here. Nothing is placed." />
           <Button Classes="outline" Content="Fields" Command="{Binding OpenFieldsCommand}" ToolTip.Tip="Open the scenario in the tag editor" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
         </StackPanel>

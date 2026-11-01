@@ -202,6 +202,29 @@ switch (command)
         Console.WriteLine($"{objectTag} is {category} palette entry {r.SelectIndex} of {scenario}");
         break;
     }
+    case "mod-remove":
+    {
+        // mod-remove <workspace-relative path...>: like "Remove from mod (back to vanilla)": restores HREK's version and
+        // updates the active mod project.
+        var baseline = Baseline.Load(paths);
+        foreach (string rel in argsList.Skip(1)) { baseline.Revert(rel); Console.WriteLine("restored vanilla " + rel); }
+        var projects = new ModProjects(paths, baseline);
+        if (projects.Active is { } p) { var c = projects.Capture(p); Console.WriteLine($"mod {p.Name}: {c.Files} files, {c.Removed} removed from the project"); }
+        break;
+    }
+    case "delete-files":
+    {
+        // delete-files <path...>: deletes files inside the Kalo folder (test leftovers); folders left empty go too.
+        foreach (string arg in argsList.Skip(1))
+        {
+            string f = Path.GetFullPath(arg);
+            if (!f.StartsWith(paths.Repo + "\\", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("only inside the Kalo folder: " + f);
+            if (File.Exists(f)) { File.Delete(f); Console.WriteLine("deleted " + arg); }
+            string? dir = Path.GetDirectoryName(f);
+            if (dir != null && Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any()) { Directory.Delete(dir); Console.WriteLine("removed empty folder " + dir); }
+        }
+        break;
+    }
     case "strings-near":
     {
         // strings-near <file> <exact string> <n>: the n strings before and after each occurrence (help texts of console commands sit next to them).

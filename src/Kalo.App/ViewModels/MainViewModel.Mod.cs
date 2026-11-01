@@ -84,7 +84,10 @@ public partial class MainViewModel
             if (openMap?.HasOutside == true) AddProblem("warning", openMap.OutsideText, openMap.Path);
             var init = await PlayInitAsync();
             if (init == null) return;
-            StartGame(SelectedScenario, init.Value.Commands, $"Play: {SelectedScenario}{init.Value.Note}.");
+            string scenario = SelectedScenario;
+            var copy = await AddScriptObjectsForPlayAsync(scenario + ".scenario", null);
+            if (copy != null) scenario = copy[..^".scenario".Length];
+            StartGame(scenario, init.Value.Commands, $"Play: {SelectedScenario}{init.Value.Note}.");
         }
         finally
         {
@@ -114,6 +117,7 @@ public partial class MainViewModel
             });
             var init = await PlayInitAsync();
             if (init == null) return;
+            await AddScriptObjectsForPlayAsync(map.Path, copy);
             StartGame(copy[..^".scenario".Length], init.Value.Commands,
                 $"Play from camera: {map.Scenario} at {position.X:F1}, {position.Y:F1}, {position.Z:F1}{init.Value.Note}. The map's own Start location is unchanged.");
         }
@@ -149,6 +153,7 @@ public partial class MainViewModel
     {
         var commands = new List<string>();
         string note = "";
+        _gametypeCreates.Clear();
         if (PlayerCount > 1)
         {
             // Reach's test build: "sets the number of multiplayer splitscreen players for the next map".
@@ -200,6 +205,7 @@ public partial class MainViewModel
             // The whole game variant (base settings + script), as a packed BLF file.
             BinFile = System.IO.Path.ChangeExtension(mglo, ".bin")
         });
+        if (r.Succeeded) _gametypeCreates = Kalo.Core.ScriptObjects.CreatedIn(text);
         if (!r.Succeeded || !File.Exists(mglo))
         {
             var first = r.Messages?.FirstOrDefault();

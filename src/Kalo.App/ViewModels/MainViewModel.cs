@@ -287,6 +287,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             var doc = await Host.OpenTagAsync(tab.Path);
             tab.Load(doc);
+            if (tab.IsObjectTag) await tab.RefreshScriptNameAsync();
             tab.DiffersFromVanilla = Baseline?.IsChanged("tags\\" + tab.Path) ?? false;
             Log($"Opened {tab.Path} ({doc.FieldCount:N0} fields, {doc.LoadMs} ms).");
         }

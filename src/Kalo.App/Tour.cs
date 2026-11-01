@@ -44,6 +44,7 @@ public sealed class Tour
                 await Section("studio", Studio);
                 await Section("split", SplitEditors);
                 await Section("kscript", KaloScriptSection);
+                await Section("script objects", ScriptObjectsSection);
                 await Section("docs", DocsSection);
                 await Section("forge", Forge);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
@@ -686,6 +687,94 @@ public sealed class Tour
         if (copy != null) await _vm.CloseTabCommand.ExecuteAsync(copy);
         try { System.IO.File.Delete(copyFile); System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(copyFile)!); } catch { }
         _vm.RefreshChangesAfterEdit();
+    }
+
+    // ---- Use in scripts ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Use in scripts: a new object (a copy of the assault rifle) registered as kalo_tour_obj, a gametype that creates it
+    /// played on Sword Slayer (which doesn't contain it: Play adds it to the playtest's copy), then renamed and removed.
+    /// The two shared files go back to HREK's versions when nothing else of the mod's is in them.
+    /// </summary>
+    private async Task ScriptObjectsSection()
+    {
+        if (_vm.Paths == null || _vm.Baseline == null) return;
+        const string rifle = @"objects\weapons\rifle\assault_rifle\assault_rifle.weapon";
+        var ar = await _vm.OpenTagAsync(rifle);
+        if (!Check(ar is { IsLoading: false }, "opened the assault rifle")) return;
+        Check(ar!.ShowScriptName && ar.ScriptName == "assault_rifle" && !ar.CanRemoveScriptName,
+            $"the rifle shows its script name and can't be removed ({ar.ScriptName}: {ar.WhyNotRemovable})");
+        string copyPath = _vm.NewTagPathFor(rifle, "kalo_tour_script_object");
+        string copyFile = System.IO.Path.Combine(_vm.Paths.WorkspaceTags, copyPath);
+        string probeRel = @"data\multiplayer\megalo\mods\_kalo_tour\script_object_probe.kscript";
+        string probeFile = System.IO.Path.Combine(_vm.Paths.Workspace, probeRel);
+        bool listWasVanilla = !_vm.Baseline.IsChanged(@"tags\" + Kalo.Core.ScriptObjects.ListTag) && !_vm.Baseline.IsChanged(Kalo.Core.ScriptObjects.NamesFile);
+        try
+        {
+            await _vm.SaveTagAsNewAsync(ar, "kalo_tour_script_object");
+            var copy = _vm.Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.Equals(copyPath, StringComparison.OrdinalIgnoreCase));
+            if (!Check(copy != null && copy.ShowUseInScripts, "a new object offers Use in scripts")) return;
+            Check(await _vm.RegisterScriptObjectAsync(copy!.Path, "Bad Name") != null, "a name with spaces and capitals is refused");
+            Check(await _vm.RegisterScriptObjectAsync(copy.Path, "assault_rifle") != null, "a name already used is refused");
+            string? error = await _vm.RegisterScriptObjectAsync(copy.Path, "kalo_tour_obj");
+            if (!Check(error == null, "registered as kalo_tour_obj" + (error != null ? ": " + error : ""))) return;
+            Check(copy.ScriptName == "kalo_tour_obj", "the tag editor shows the script name");
+            Check(_vm.MegaloCatalog?.Lists?.TryGetValue("objectTypes", out var types) == true && types.Contains("kalo_tour_obj"), "the compiler and autocomplete know kalo_tour_obj");
+
+            // A gametype that creates it, played on Sword Slayer.
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(probeFile)!);
+            System.IO.File.WriteAllText(probeFile,
+                "-- title: script object probe\r\ndeclare global.timer drop_timer = 3\r\ndo\r\n  timer_set_rate(drop_timer, -1)\r\n  if timer_expired(drop_timer) then\r\n" +
+                "    timer_reset(drop_timer)\r\n    for each player do\r\n      create_object(\"kalo_tour_obj\", at current_player, offset 0 0 2)\r\n    end\r\n  end\r\nend\r\n");
+            _vm.SelectedScenario = _vm.Scenarios.FirstOrDefault(sc => sc.EndsWith("20_sword_slayer", StringComparison.OrdinalIgnoreCase));
+            _vm.SelectedGametype = new GametypeChoice("script object probe", probeRel);
+            var errors = new System.Collections.Concurrent.ConcurrentQueue<string>();
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnLine(string l) { if (l.Contains("main_game_start:") || l.Contains("megalogamengine:") && (l.Contains("fail") || l.Contains("not in this map"))) errors.Enqueue(l); }
+            void OnLoaded() => loaded.TrySetResult();
+            _vm.Game!.Output += OnLine;
+            _vm.Game.Loaded += OnLoaded;
+            try
+            {
+                await _vm.PlayAsync();
+                if (Check(_vm.IsGameRunning, "Play started the game"))
+                {
+                    var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+                    Check(done == loaded.Task, "the game loaded the map");
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Max(5, _hold)));
+                    Check(errors.IsEmpty, "the gametype that creates kalo_tour_obj runs on Sword Slayer" + (errors.TryPeek(out var first) ? ": " + first : ""));
+                    _vm.StopGameCommand.Execute(null);
+                    await Task.Delay(2000);
+                }
+            }
+            finally
+            {
+                _vm.Game.Output -= OnLine;
+                _vm.Game.Loaded -= OnLoaded;
+            }
+
+            if (copy.ScriptEntry is { } entry)
+            {
+                Check(await _vm.RenameScriptObjectAsync(entry, "kalo_tour_obj2") == null && copy.ScriptName == "kalo_tour_obj2", "renamed to kalo_tour_obj2");
+                Check(Kalo.Core.ScriptObjects.ReadNames(_vm.Paths).LastOrDefault() == "kalo_tour_obj2", "objects.txt follows the rename");
+            }
+            if (copy.ScriptEntry is { } renamed)
+            {
+                Check(await _vm.RemoveScriptObjectAsync(renamed) == null && copy.ShowUseInScripts, "removed from scripts");
+                if (listWasVanilla)
+                    Check(!_vm.Baseline.IsChanged(@"tags\" + Kalo.Core.ScriptObjects.ListTag) && !_vm.Baseline.IsChanged(Kalo.Core.ScriptObjects.NamesFile),
+                        "the object type list and objects.txt are HREK's again");
+            }
+            await _vm.CloseTabCommand.ExecuteAsync(copy);
+        }
+        finally
+        {
+            foreach (var t in _vm.Tabs.OfType<TagEditorViewModel>().Where(t => t.Path.Equals(copyPath, StringComparison.OrdinalIgnoreCase) || t.Path.Equals(rifle, StringComparison.OrdinalIgnoreCase)).ToList())
+                await _vm.CloseTabCommand.ExecuteAsync(t);
+            try { System.IO.File.Delete(copyFile); System.IO.Directory.Delete(System.IO.Path.GetDirectoryName(copyFile)!); } catch { }
+            try { System.IO.File.Delete(probeFile); } catch { }
+            _vm.RefreshChangesAfterEdit();
+        }
     }
 
     // ---- map ----------------------------------------------------------------------------------------

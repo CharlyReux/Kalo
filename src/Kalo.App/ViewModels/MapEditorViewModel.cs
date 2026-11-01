@@ -71,6 +71,20 @@ public partial class MapEditorViewModel : DocumentViewModel
     /// <summary>Puts the camera where a player spawns, at eye height, looking the way they face: the view you get in game.</summary>
     public void LookFrom(Vector3 eye, float yawDegrees, float pitchDegrees) => CameraRequested?.Invoke(eye, yawDegrees, pitchDegrees);
 
+    /// <summary>
+    /// Puts the objects the mod registered for scripts (Use in scripts) in this map's palettes, without placing any:
+    /// the game only lets a gametype create objects the map contains.
+    /// </summary>
+    [RelayCommand]
+    private async Task AddScriptObjects()
+    {
+        var mine = await _main.ModScriptObjectsAsync();
+        if (mine.Count == 0) { Status = "Your mod has no script objects yet (open an object and use Use in scripts…)."; return; }
+        int n = await _main.AddScriptObjectsToMapAsync(this);
+        if (n > 0) IsDirty = true;
+        Status = $"{n} script object(s) are in this map's palette: {string.Join(", ", mine.Select(e => e.Name))}. Save the map to keep it.";
+    }
+
     [RelayCommand]
     private void ViewFromSpawn()
     {

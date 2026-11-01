@@ -51,6 +51,7 @@ namespace Kalo.Protocol
         public const string Restore = "restore";
         public const string MegaloCompile = "megaloCompile";
         public const string Shutdown = "shutdown";
+        public const string ScriptObjects = "scriptObjects";
     }
 
     public static class Wire
@@ -633,5 +634,41 @@ namespace Kalo.Protocol
     public static class TextureNames
     {
         public static string FileName(string bitmap) => bitmap.Replace('\\', '_').Replace('/', '_') + ".ktex";
+    }
+
+    /// <summary>
+    /// The global multiplayer object type list (multiplayer\globals.multiplayer_object_type_list): the objects gametype
+    /// scripts can create. Ops: list, add (at the end), rename, removeLast. Entries are referred to by position, so
+    /// nothing is inserted or removed in the middle.
+    /// </summary>
+    public static class ScriptObjectOps
+    {
+        public const string List = "list";
+        public const string Add = "add";
+        public const string Rename = "rename";
+        public const string RemoveLast = "removeLast";
+    }
+
+    public sealed class ScriptObjectsParams
+    {
+        public string Op { get; set; }
+        public string Name { get; set; }
+        /// <summary>Object tag path with extension (add).</summary>
+        public string ObjectTag { get; set; }
+        /// <summary>Entry to rename or remove.</summary>
+        public int Index { get; set; }
+    }
+
+    public sealed class ScriptObjectEntry
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        public string ObjectTag { get; set; }
+    }
+
+    public sealed class ScriptObjectsResult
+    {
+        public List<ScriptObjectEntry> Entries { get; set; }
+        public int MaximumCount { get; set; }
     }
 }

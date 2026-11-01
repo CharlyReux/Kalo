@@ -16,6 +16,7 @@ namespace Kalo.BlamHost
     internal static class MegaloService
     {
         private static string _objectLists;
+        private static DateTime _objectListsStamp;
 
         private static void Ensure(string objectLists)
         {
@@ -27,10 +28,13 @@ namespace Kalo.BlamHost
                 M.ManagedMegaloSystem.Initialize();
                 Server.Log("ManagedMegalo started in " + sw.ElapsedMilliseconds + " ms (" + M.ManagedMegaloSystem.BuildString + ")");
             }
-            if (!string.Equals(_objectLists, objectLists, StringComparison.OrdinalIgnoreCase))
+            // Re-read the lists when they change (e.g. an object registered for scripts adds a line to objects.txt).
+            DateTime stamp = Directory.GetFiles(objectLists).Select(File.GetLastWriteTimeUtc).DefaultIfEmpty().Max();
+            if (!string.Equals(_objectLists, objectLists, StringComparison.OrdinalIgnoreCase) || stamp != _objectListsStamp)
             {
                 M.MegaloCompiler.Initialize(objectLists.TrimEnd('\\') + "\\", "Kalo");
                 _objectLists = objectLists;
+                _objectListsStamp = stamp;
             }
         }
 
