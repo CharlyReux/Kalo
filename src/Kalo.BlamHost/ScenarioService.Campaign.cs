@@ -89,6 +89,7 @@ namespace Kalo.BlamHost
             }
             result.ZoneSets = ZoneSets(tag, result.Bsps.Count);
             result.Scripts = MissionScripts(tag);
+            AddSquads(tag, result);
             result.Cinematics = new List<string>();
             var cin = tag.SelectField("Block:cinematics") as TagFieldBlock;
             for (int i = 0; cin != null && i < cin.Elements.Count; i++)

@@ -150,6 +150,13 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   the inspector, and every other field of the selected marker is listed there too. Mission scripts (HaloScript) open
   in an editor with colors, a "Go to script" list and a bracket/string check; the game compiles them when the mission
   loads. Play on a mission: difficulty and insertion point instead of a gametype; the mission's scripts run.
+  AI squads: the object list has an "AI squads" tree (squad groups › squads › spawn points); selecting a squad or one
+  of its spawn points shows a Squad section in the inspector: each cell's characters and weapons (picked by name from
+  the mission's palettes, with chances) and count, and the selected spawn point's own character and weapon ("From its
+  cell" unless set). Squads made from a squad template (most of Reach's) spawn what the template says: their cells
+  are shown read-only, and the spawn point's own character is how to change them (an Elite instead of a Skirmisher
+  was checked in game). "All squad fields…"
+  opens that squad alone in a tag editor tab (a mission scenario is too big to browse whole).
   Play here (Ctrl+F5): walk around from the camera without the mission scripts, in the zone set picked in the bar.
   Play in MCC builds the mission and lists it as the mod's campaign (not yet checked in MCC itself).
   Saving a map detaches the split resource tags (scenario_*_resource) holding what Kalo edits, so the game reads the

@@ -61,6 +61,7 @@ namespace Kalo.Protocol
         public const string ScenarioType = "scenarioType";
         /// <summary>Each structure bsp's world bounds (to find which zone sets hold a point).</summary>
         public const string BspBounds = "bspBounds";
+        public const string Squad = "squad";
     }
 
     public static class Wire
@@ -339,7 +340,91 @@ namespace Kalo.Protocol
         public List<string> Scripts { get; set; }
         /// <summary>Campaign: the cutscenes (cinematic tags) the scenario plays.</summary>
         public List<string> Cinematics { get; set; }
+        /// <summary>Campaign: the AI squads (their spawn points are the "ai spawn points" category) and squad groups.</summary>
+        public List<SquadSummary> Squads { get; set; }
+        public List<SquadGroupInfo> SquadGroups { get; set; }
         public long Ms { get; set; }
+    }
+
+    public sealed class SquadSummary
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        /// <summary>Index in SquadGroups, -1 for none.</summary>
+        public int Group { get; set; }
+    }
+
+    public sealed class SquadGroupInfo
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        public int Parent { get; set; }
+    }
+
+    // ---- one squad: what spawns (characters, weapons) per cell and per spawn point -------------------------
+
+    public sealed class SquadParams
+    {
+        public string Path { get; set; }
+        /// <summary>Index in the scenario's squads block.</summary>
+        public int Index { get; set; }
+    }
+
+    /// <summary>
+    /// A squad as the squad editor shows it. Its cells say what spawns (characters with chances, weapons) and how many;
+    /// a spawn point can override the character and weapon. Squads made from a squad template keep the template's cells
+    /// in "templated" (designer cells stay empty). Field paths are for setField.
+    /// </summary>
+    public sealed class SquadDetail
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        public string Team { get; set; }
+        /// <summary>Squad groups it belongs to, innermost first.</summary>
+        public List<string> Groups { get; set; }
+        /// <summary>The squad template (string id) or "".</summary>
+        public string Template { get; set; }
+        /// <summary>"designer" or "templated": the cells block in use.</summary>
+        public string CellsKind { get; set; }
+        public List<SquadCell> Cells { get; set; }
+        public List<SquadPoint> SpawnPoints { get; set; }
+        /// <summary>The scenario's character palette (character tag paths) and weapon palette (weapon tag paths).</summary>
+        public List<string> Characters { get; set; }
+        public List<string> Weapons { get; set; }
+        public long Ms { get; set; }
+    }
+
+    public sealed class SquadCell
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        /// <summary>How many spawn (normal difficulty count).</summary>
+        public int Count { get; set; }
+        public string CountPath { get; set; }
+        public List<SquadChoice> Characters { get; set; }
+        public List<SquadChoice> Weapons { get; set; }
+    }
+
+    /// <summary>One entry of a cell's character or weapon list: a palette index and its chance.</summary>
+    public sealed class SquadChoice
+    {
+        public int Palette { get; set; }
+        public string Path { get; set; }
+        public int Chance { get; set; }
+        public string ChancePath { get; set; }
+    }
+
+    public sealed class SquadPoint
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        /// <summary>Its cell (-1: the squad's first).</summary>
+        public int Cell { get; set; }
+        /// <summary>Overrides: palette index, -1 = from the cell.</summary>
+        public int Character { get; set; }
+        public string CharacterPath { get; set; }
+        public int Weapon { get; set; }
+        public string WeaponPath { get; set; }
     }
 
     public sealed class ZoneSetInfo

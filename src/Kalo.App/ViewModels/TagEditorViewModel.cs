@@ -78,6 +78,24 @@ public partial class TagEditorViewModel : DocumentViewModel
         Status = "Loading…";
     }
 
+    /// <summary>
+    /// A tab showing one element of a big tag's block (e.g. one squad of a campaign scenario) instead of the whole tag.
+    /// Edits and saves go to the tag itself.
+    /// </summary>
+    public TagEditorViewModel(MainViewModel main, string path, string block, int index, string label) : this(main, path)
+    {
+        ScopeBlock = block;
+        ScopeIndex = index;
+        ScopeLabel = label;
+    }
+
+    public string? ScopeBlock { get; }
+    public int ScopeIndex { get; }
+    public string? ScopeLabel { get; }
+    public bool IsScoped => ScopeBlock != null;
+    public override string Title => IsScoped ? $"{System.IO.Path.GetFileNameWithoutExtension(Path)} · {ScopeLabel}" : base.Title;
+    public override string Breadcrumb => IsScoped ? base.Breadcrumb + $" › {ScopeBlock}[{ScopeIndex}]" : base.Breadcrumb;
+
     public override Task SaveDocumentAsync() => SaveCommand.ExecuteAsync(null);
 
     public override async Task CloseAsync()
@@ -94,7 +112,7 @@ public partial class TagEditorViewModel : DocumentViewModel
         // Open the first level of structs so the important fields are visible.
         foreach (var f in Fields.Where(f => f.Kind == ValueKinds.Struct)) f.IsExpanded = true;
         IsLoading = false;
-        Status = $"{doc.FieldCount:N0} fields · loaded in {doc.LoadMs} ms";
+        Status = $"{doc.FieldCount:N0} fields · loaded in {doc.LoadMs} ms" + (IsScoped ? $" · only {ScopeLabel} ({ScopeBlock}[{ScopeIndex}])" : "");
         ApplyFilter();
     }
 
@@ -179,7 +197,17 @@ public partial class TagEditorViewModel : DocumentViewModel
         foreach (var f in AllFields()) f.RefreshMode();
         ApplyFilter();
     }
-    partial void OnFilterChanged(string value) => ApplyFilter();
+    private int _filterGeneration;
+
+    /// <summary>Filters shortly after typing stops: a big tag has tens of thousands of fields.</summary>
+    partial void OnFilterChanged(string value)
+    {
+        int generation = ++_filterGeneration;
+        _ = Task.Delay(250).ContinueWith(_ => Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (generation == _filterGeneration) ApplyFilter();
+        }));
+    }
     partial void OnChangedOnlyChanged(bool value) => ApplyFilter();
 
     public async Task CommitAsync(FieldViewModel field, string value)
@@ -251,8 +279,26 @@ public partial class TagEditorViewModel : DocumentViewModel
     private void ApplyFilter()
     {
         string q = Filter.Trim();
+        _matches = 0;
+        // Opening thousands of rows freezes the view: with too many matches, only the first level shows them.
+        _expandMatches = true;
+        if (q.Length > 0 || ChangedOnly)
+        {
+            int n = 0;
+            foreach (var f in AllFields())
+                if (!f.IsContainer && (ShowRaw || !f.IsInternal) && (!ChangedOnly || f.IsDirty)
+                    && (q.Length == 0 || f.Label.Contains(q, StringComparison.OrdinalIgnoreCase) || f.RawName.Contains(q, StringComparison.OrdinalIgnoreCase)))
+                    if (++n > MaxExpandedMatches) break;
+            _expandMatches = n <= MaxExpandedMatches;
+        }
         foreach (var f in Fields) Apply(f, q);
+        if (q.Length > 0)
+            Status = _expandMatches ? $"{_matches:N0} matching fields" : $"More than {MaxExpandedMatches} fields match \"{q}\": type more to narrow it (blocks with matches are not opened).";
     }
+
+    private const int MaxExpandedMatches = 300;
+    private int _matches;
+    private bool _expandMatches = true;
 
     private bool Apply(FieldViewModel f, string q)
     {
@@ -267,7 +313,8 @@ public partial class TagEditorViewModel : DocumentViewModel
 
         bool visible = modeOk && ((matches && changedOk && !f.IsContainer) || anyChild || (f.IsContainer && q.Length == 0 && !ChangedOnly));
         f.IsVisible = visible;
-        if ((q.Length > 0 || ChangedOnly) && anyChild) f.IsExpanded = true;
+        if (visible && !f.IsContainer && (q.Length > 0 || ChangedOnly)) _matches++;
+        if ((q.Length > 0 || ChangedOnly) && anyChild && _expandMatches) f.IsExpanded = true;
         return visible;
     }
 }

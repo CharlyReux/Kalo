@@ -49,6 +49,7 @@ public sealed class Tour
                 await Section("forge", Forge);
                 // Opens a whole campaign mission (minutes the first time): only when asked (--tour-sections campaign).
                 if (AppArgs.Current.TourSections?.Contains("campaign", StringComparer.OrdinalIgnoreCase) == true) await Section("campaign", Campaign);
+                if (AppArgs.Current.TourSections?.Contains("squads", StringComparer.OrdinalIgnoreCase) == true) await Section("squads", Squads);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -1927,6 +1928,177 @@ public sealed class Tour
             _vm.StopGameCommand.Execute(null);
             await Pause(3000);
         }
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+    }
+
+    /// <summary>
+    /// Campaign squads on the m10 copy (cprobe): the object list's AI squads tree, the squad editor in the inspector
+    /// (a templated squad: barn_skirm_init, a Skirmisher), a spawn point's own character set to an Elite and read back,
+    /// "All squad fields" in a tab showing that squad only, the tag editor search on the whole scenario. With
+    /// the section squads-play, the Elite override is played (Play here next to the point, ai_place barn_skirm_init) and then reset.
+    /// </summary>
+    private async Task Squads()
+    {
+        const string probe = @"levels\mods\_kalo_tour\cprobe\cprobe.scenario";
+        if (!Check(File.Exists(System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, probe)), "the campaign probe map exists (kalo-cli campaign-probe)")) return;
+        var map = await _vm.OpenMapAsync(probe);
+        var root = map.OutlinerRoots.FirstOrDefault(n => n.Key == "c:squads");
+        if (!Check(root != null, $"AI squads in the object list ({map.Squads.Count} squads, {map.SquadGroups.Count} groups)")) return;
+        IEnumerable<OutlinerNode> All(OutlinerNode n) => new[] { n }.Concat(n.Children.SelectMany(All));
+        var squadNode = All(root!).FirstOrDefault(n => n.Key.StartsWith("s:") && n.Name == "barn_skirm_init");
+        if (!Check(squadNode != null && squadNode.Children.Count > 0, "squad barn_skirm_init with its spawn points")) return;
+        var chain = new List<string>();
+        bool Find(OutlinerNode n)
+        {
+            if (n == squadNode) return true;
+            foreach (var c in n.Children) if (Find(c)) { chain.Insert(0, n.Name); return true; }
+            return false;
+        }
+        Find(root!);
+        Check(chain.Count >= 2, "under its squad groups: " + string.Join(" › ", chain));
+        Check(!map.OutlinerRoots.Any(n => n.Key == "c:" + CampaignCategories.AiSpawnPoints), "no flat list of spawn points any more");
+
+        // The squad (its node selects its spawn points).
+        map.SelectFromOutliner(new[] { squadNode! });
+        async Task<SquadEditorViewModel?> WaitSquad(Func<SquadEditorViewModel, bool> ok)
+        {
+            var until = DateTime.UtcNow.AddSeconds(20);
+            while (DateTime.UtcNow < until) { if (map.SquadEditor is { } e && ok(e)) return e; await Task.Delay(200); }
+            return map.SquadEditor;
+        }
+        var sq = await WaitSquad(e => e.Name == "barn_skirm_init");
+        if (!Check(sq is { Name: "barn_skirm_init" }, "the inspector shows the squad: " + sq?.About)) return;
+        Check(sq!.IsTemplated && sq.HasTemplateNote, "templated squad noted: " + sq.TemplateNote);
+        var cell = sq.Cells.FirstOrDefault();
+        string Pick(SquadChoiceRow r) => r.SelectedIndex >= 0 && r.SelectedIndex < r.Options.Count ? r.Options[r.SelectedIndex] : "?";
+        Check(cell != null && cell.Characters.Count > 0 && Pick(cell.Characters[0]) == "skirmisher",
+            $"cell {cell?.Name}: {string.Join(", ", cell?.Characters.Select(Pick) ?? Enumerable.Empty<string>())} with {string.Join(", ", cell?.Weapons.Select(Pick) ?? Enumerable.Empty<string>())}, count {cell?.Count}");
+        await Pause(800);
+        Shot("squads-squad");
+
+        // One spawn point: its own character.
+        var pt = squadNode!.Children[0].Item!;
+        map.SetSelection(new[] { pt });
+        map.RevealInOutliner(pt);
+        sq = await WaitSquad(e => e.HasPoint);
+        if (!Check(sq?.Point != null, "the selected spawn point's own character and weapon")) return;
+        Check(sq!.Point!.CharacterIndex == 0 && sq.Point.CharacterOptions[0] == "From its cell", "character: " + sq.Point.CharacterOptions[sq.Point.CharacterIndex]);
+        await Pause(1500);
+        Check(!map.Properties.Any(p => p.Label.Contains("haracter type", StringComparison.OrdinalIgnoreCase)), "the raw character type number is no longer in Properties");
+        int elite = sq.Characters.ToList().IndexOf("elite");
+        Check(elite >= 0, $"the palette has an Elite (#{elite}) among {sq.Characters.Count} characters");
+        var clock = Stopwatch.StartNew();
+        bool viaCell = AppArgs.Current.TourSections?.Contains("squads-cell", StringComparer.OrdinalIgnoreCase) == true;
+        if (viaCell)
+        {
+            // Variant: the templated cell's character instead of the spawn point's own.
+            sq.Cells[0].Characters[0].SelectedIndex = elite;
+            await Pause(2500);
+            var c = await _vm.Host!.SquadAsync(map.Path, sq.Index);
+            Check(c.Cells[0].Characters[0].Palette == elite, "cell character set to the Elite");
+            map.SetSelection(new[] { pt });
+            sq = await WaitSquad(e => e.HasPoint && e.Cells.Count > 0 && e.Cells[0].Characters[0].SelectedIndex == elite);
+        }
+        else sq.Point.CharacterIndex = elite + 1;
+        int squadIndex = sq.Index;
+        SquadDetail? back = null;
+        while (clock.Elapsed.TotalSeconds < 30)
+        {
+            await Pause(300);
+            back = await _vm.Host!.SquadAsync(map.Path, squadIndex);
+            if (viaCell || back.SpawnPoints[pt.BlockIndex].Character == elite) break;
+        }
+        Say($"set took {clock.ElapsedMilliseconds} ms");
+        if (!viaCell) Check(back?.SpawnPoints[pt.BlockIndex].Character == elite && map.IsDirty, "spawn point character set to the Elite (read back from the scenario)");
+        Check(sq.Error == null, "no error: " + sq.Error);
+        await Pause(800);
+        Shot("squads-point");
+
+        // All squad fields: a tab with that squad only.
+        clock.Restart();
+        await map.OpenSquadFieldsCommand.ExecuteAsync(null);
+        var tab = _vm.ActiveDocument as TagEditorViewModel;
+        Say($"squad fields opened in {clock.ElapsedMilliseconds} ms");
+        if (Check(tab is { IsScoped: true } && tab.Fields.Count > 0, $"squad fields tab: {tab?.Title} · {tab?.Status}"))
+        {
+            Check(tab!.AllFields().Any(f => f.RawName == "template" && f.Value == "sq_camp_skirmisher_nr_1"), "it shows the squad's own fields (template sq_camp_skirmisher_nr_1)");
+            Check(tab.AllFields().Count() < 3000, $"{tab.AllFields().Count()} rows, not the whole scenario");
+            await Pause(1200);
+            Say($"root rows visible {tab.Fields.Count(f => f.IsVisible)}/{tab.Fields.Count}: {string.Join(", ", tab.Fields.Take(12).Select(f => f.Label))}");
+            Shot("squads-fields");
+            tab.Filter = "character";
+            await Pause(2000);
+            Say("filter: " + tab.Status + $"; root rows visible {tab.Fields.Count(f => f.IsVisible)}: {string.Join(", ", tab.Fields.Where(f => f.IsVisible).Select(f => f.Label + (f.IsExpanded ? "+" : "")))}");
+            Check(tab.Fields.Any(f => f.IsVisible && f.RawName == "templated"), "the templated cells show (character matches under them)");
+            Shot("squads-fields-filter");
+            await _vm.CloseTabCommand.ExecuteAsync(tab);
+        }
+        // Search in the whole scenario's tag editor.
+        var full = await _vm.OpenTagAsync(probe);
+        if (full != null)
+        {
+            clock.Restart();
+            full.Filter = "a";
+            await Pause(1500);
+            Say($"whole scenario, filter a: {full.Status} ({clock.ElapsedMilliseconds} ms incl. 1.5 s pause)");
+            Check(full.Status.Contains("More than"), "a search matching thousands of fields does not open them all");
+            full.Filter = "chapter title";
+            await Pause(2000);
+            Say("filter chapter title: " + full.Status);
+            Shot("squads-search");
+            full.IsDirty = false;
+            await _vm.CloseTabCommand.ExecuteAsync(full);
+        }
+
+        bool play = AppArgs.Current.TourSections?.Contains("squads-play", StringComparer.OrdinalIgnoreCase) == true;
+        if (play)
+        {
+            // In game: the squad placed next to the player, as an Elite.
+            await _vm.SaveActiveCommand.ExecuteAsync(null);
+            foreach (var t in _vm.Tabs.Where(t => t.IsDirty).ToList()) await t.SaveDocumentAsync();
+            double yaw = pt.Yaw * Math.PI / 180;
+            // Two units behind the point (it may be on a roof: in front of it the player could fall), looking the same way.
+            var at = pt.Position - new Vector3((float)Math.Cos(yaw) * 2, (float)Math.Sin(yaw) * 2, -0.3f);
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            await _vm.PlayFromAsync(map, at, pt.Yaw);
+            Check(_vm.IsGameRunning, "Play here started the game");
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(5)));
+            Check(done == loaded.Task, "the mission loaded");
+            await Task.Delay(8000);
+            // The squad, placed by hand (mission scripts are off in Play here); the AI ignores the player.
+            bool ran = await _vm.Game.RunConsoleAsync(new[] { "ai_place barn_skirm_init", "ai_disregard (players) true" }, TimeSpan.FromSeconds(20));
+            Check(ran, "console: ai_place barn_skirm_init");
+            await Task.Delay(2000);
+            // Elites have energy shields, Skirmishers none.
+            await _vm.Game.RunConsoleAsync(new[]
+            {
+                "(if (> (ai_living_count barn_skirm_init) 0) (print \"kalo probe: squad alive\") (print \"kalo probe: squad not alive\"))",
+                "(if (> (object_get_shield (ai_get_object barn_skirm_init)) 0) (print \"kalo probe: shielded (elite)\") (print \"kalo probe: no shield\"))",
+            }, TimeSpan.FromSeconds(20));
+            await Task.Delay(3000);
+            foreach (string l in _vm.OutputLines.Where(l => l.Contains("kalo probe", StringComparison.Ordinal)).TakeLast(4)) Say("game: " + l);
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Pause(3000);
+        }
+        // Back to the cell's character (the test map stays as it was).
+        map.SetSelection(new[] { pt });
+        sq = await WaitSquad(e => e.HasPoint);
+        if (sq?.Point != null) sq.Point.CharacterIndex = 0;
+        await Pause(2500);
+        if (viaCell)
+        {
+            sq = await WaitSquad(e => e.HasPoint);
+            if (sq is { Cells.Count: > 0 }) sq.Cells[0].Characters[0].SelectedIndex = 10;
+            await Pause(2500);
+            var c = await _vm.Host!.SquadAsync(map.Path, squadIndex);
+            Check(c.Cells[0].Characters[0].Palette == 10, "cell character back to the Skirmisher");
+        }
+        back = await _vm.Host!.SquadAsync(map.Path, squadIndex);
+        Check(back.SpawnPoints[pt.BlockIndex].Character == -1, "reset to From its cell");
+        if (play) await _vm.SaveActiveCommand.ExecuteAsync(null);
         foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
     }
 

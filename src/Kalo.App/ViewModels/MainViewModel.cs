@@ -266,13 +266,31 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task<TagEditorViewModel?> OpenTagAsync(string tagPath)
     {
         tagPath = tagPath.Replace('/', '\\').TrimStart('\\');
-        var existing = Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.Equals(tagPath, StringComparison.OrdinalIgnoreCase));
+        var existing = Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => !t.IsScoped && t.Path.Equals(tagPath, StringComparison.OrdinalIgnoreCase));
         if (existing != null)
         {
             ActiveDocument = existing;
             return existing;
         }
         var tab = new TagEditorViewModel(this, tagPath);
+        Tabs.Add(tab);
+        ActiveDocument = tab;
+        await ReloadTabAsync(tab);
+        return tab;
+    }
+
+    /// <summary>One element of a tag's block in its own tag editor tab (e.g. one squad of a campaign scenario).</summary>
+    public async Task<TagEditorViewModel?> OpenTagElementAsync(string tagPath, string block, int index, string label)
+    {
+        tagPath = tagPath.Replace('/', '\\').TrimStart('\\');
+        var existing = Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.IsScoped && t.ScopeBlock == block && t.ScopeIndex == index && t.Path.Equals(tagPath, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            ActiveDocument = existing;
+            await ReloadTabAsync(existing);
+            return existing;
+        }
+        var tab = new TagEditorViewModel(this, tagPath, block, index, label);
         Tabs.Add(tab);
         ActiveDocument = tab;
         await ReloadTabAsync(tab);
@@ -289,7 +307,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
         try
         {
-            var doc = await Host.OpenTagAsync(tab.Path);
+            var doc = tab.IsScoped ? await Host.ReadElementAsync(tab.Path, tab.ScopeBlock!, tab.ScopeIndex) : await Host.OpenTagAsync(tab.Path);
             tab.Load(doc);
             if (tab.IsObjectTag) await tab.RefreshScriptNameAsync();
             tab.DiffersFromVanilla = Baseline?.IsChanged("tags\\" + tab.Path) ?? false;

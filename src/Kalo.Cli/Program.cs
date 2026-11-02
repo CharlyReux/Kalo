@@ -280,8 +280,12 @@ switch (command)
         // campaign-report <scenario>: what the map view reads of a campaign mission.
         await CampaignReport(argsList[1]);
         break;
+    case "elements":
+        // elements <tag> <block> [name part]: the elements of one block (e.g. squads) whose name contains the part, in full.
+        await Elements(argsList[1], argsList[2], argsList.ElementAtOrDefault(3));
+        break;
     case "dump":
-        await Dump(argsList.ElementAtOrDefault(1) ?? Weapon, int.Parse(argsList.ElementAtOrDefault(2) ?? "2"));
+        await Dump(argsList.ElementAtOrDefault(1) ?? Weapon, int.Parse(argsList.ElementAtOrDefault(2) ?? "2"), argsList.ElementAtOrDefault(3));
         break;
     default:
         Console.WriteLine("usage: kalo-cli host-test | changes | play-test [scenario] | dump <tag> [elements]");
@@ -636,7 +640,32 @@ async Task CampaignProbe(string template, string scenario)
     Check("the saved copy has kalo_probe_wh", re.Categories!.First(c => c.Name == "vehicles").Items!.Any(p => p.Name == "kalo_probe_wh"));
 }
 
-async Task Dump(string tag, int elements)
+async Task Elements(string tag, string block, string? part)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.Error.WriteLine("  host> " + line));
+    for (int i = 0; ; i++)
+    {
+        TagDocument el;
+        try { el = await host.ReadElementAsync(tag, block, i); }
+        catch (HostException) { Console.WriteLine($"# {i} elements in {block}"); break; }
+        string name = el.Fields.FirstOrDefault(f => f.Name.Equals("name", StringComparison.OrdinalIgnoreCase) || f.Name == "reference")?.Value ?? "";
+        if (part != null && !name.Contains(part, StringComparison.OrdinalIgnoreCase)) continue;
+        Console.WriteLine($"[{i}] {name}");
+        void Walk(List<FieldNode>? nodes, int depth)
+        {
+            if (nodes == null) return;
+            foreach (var n in nodes)
+            {
+                if (n.Kind == ValueKinds.Explanation) continue;
+                Console.WriteLine($"{new string(' ', depth * 2)}{n.Name} = {n.Value}");
+                Walk(n.Children, depth + 1);
+            }
+        }
+        if (part != null) Walk(el.Fields, 1);
+    }
+}
+
+async Task Dump(string tag, int elements, string? only = null)
 {
     await using var host = await HostClient.StartAsync(paths, line => Console.Error.WriteLine("  host> " + line));
     TagDocument doc = await host.OpenTagAsync(tag, elements);
@@ -653,7 +682,8 @@ async Task Dump(string tag, int elements)
             else Walk(n.Children, depth + 1);
         }
     }
-    Walk(doc.Fields, 0);
+    // only: the top-level fields with that name (e.g. squads), to read one block of a big tag.
+    Walk(only == null ? doc.Fields : doc.Fields.Where(f => f.Name.Equals(only, StringComparison.OrdinalIgnoreCase)).ToList(), 0);
 }
 
 void Changes()

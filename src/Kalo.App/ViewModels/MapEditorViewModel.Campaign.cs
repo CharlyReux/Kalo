@@ -40,6 +40,8 @@ public partial class MapEditorViewModel
     {
         IsCampaign = data.Type == "solo";
         _bsps = data.Bsps ?? new();
+        _squads = data.Squads ?? new();
+        _squadGroups = data.SquadGroups ?? new();
         _main.RememberScenarioType(Scenario, data.Type);
         MissionScripts.Clear();
         foreach (var s in data.Scripts ?? new()) MissionScripts.Add(new MissionFile(s, IsOwnScript(s)));
@@ -116,21 +118,78 @@ public partial class MapEditorViewModel
         await RunOpAsync(new PlacementOpParams { Path = Path, Category = category, Op = PlacementOps.Add, Position = ToArray(at) }, category);
     }
 
+    // ---- squads ---------------------------------------------------------------------------------------
+
+    private List<SquadSummary> _squads = new();
+    private List<SquadGroupInfo> _squadGroups = new();
+    public IReadOnlyList<SquadSummary> Squads => _squads;
+    public IReadOnlyList<SquadGroupInfo> SquadGroups => _squadGroups;
+
+    /// <summary>The squad (index in the scenario's squads block) of an ai spawn point, or -1.</summary>
+    public static int SquadOf(PlacementItem? item)
+    {
+        if (item?.Block == null || item.Category != CampaignCategories.AiSpawnPoints || !item.Block.StartsWith("squads[", StringComparison.Ordinal)) return -1;
+        int end = item.Block.IndexOf(']');
+        return end > 7 && int.TryParse(item.Block[7..end], out int s) ? s : -1;
+    }
+
+    /// <summary>The squad editor in the inspector: the squad of the selected spawn points (all of one squad).</summary>
+    [ObservableProperty] private SquadEditorViewModel? _squadEditor;
+    public bool HasSquadEditor => SquadEditor != null;
+    partial void OnSquadEditorChanged(SquadEditorViewModel? value) => OnPropertyChanged(nameof(HasSquadEditor));
+    private int _squadGeneration;
+
+    private async Task LoadSquadAsync()
+    {
+        int generation = ++_squadGeneration;
+        var squads = _selection.Select(SquadOf).Distinct().ToList();
+        if (_main.Host == null || squads.Count != 1 || squads[0] < 0) { SquadEditor = null; return; }
+        try
+        {
+            var d = await _main.Host.SquadAsync(Path, squads[0]);
+            if (generation != _squadGeneration) return;
+            int? point = _selection.Count == 1 ? _selection[0].BlockIndex : null;
+            SquadEditor = new SquadEditorViewModel(this, d, point);
+        }
+        catch (HostException ex)
+        {
+            if (generation == _squadGeneration) SquadEditor = null;
+            _main.Log("Squad unavailable: " + ex.Message);
+        }
+    }
+
+    /// <summary>Sets one squad field (a cell's character, weapon, count or chance, a spawn point's override). Null = done.</summary>
+    public async Task<string?> SetSquadFieldAsync(string fieldPath, string value, string what)
+    {
+        if (_main.Host == null) return "The Blam Host is not running.";
+        using var edit = await EditAsync(what);
+        try
+        {
+            await _main.Host.SetFieldAsync(Path, fieldPath, value);
+            IsDirty = true;
+            Status = $"{SquadEditor?.Name}: {what} set.";
+            QueueStatusRefresh();
+            // Read it again: a squad read still running from the selection would show the old value.
+            _ = LoadSquadAsync();
+            return null;
+        }
+        catch (HostException ex)
+        {
+            return ex.Message;
+        }
+    }
+
     /// <summary>
-    /// The squad of the selected spawn point in the tag editor (its characters, weapons, team, cells...): what spawns is
-    /// set per squad, not per point.
+    /// Every field of the selected spawn point's squad in a tag editor tab that shows only that squad (the whole scenario
+    /// is too big to browse): its team, cells, initial zone and objective, spawn points...
     /// </summary>
     [RelayCommand]
     private async Task OpenSquadFields()
     {
-        var item = Selected;
-        if (item?.Block == null || item.Category != CampaignCategories.AiSpawnPoints) return;
-        int cut = item.Block.IndexOf("/Block:", StringComparison.Ordinal);
-        string squad = "Block:" + (cut > 0 ? item.Block[..cut] : item.Block);
-        var tab = await _main.OpenTagAsync(Path);
-        var field = tab?.FindField(squad);
-        if (tab != null && field != null) tab.Reveal(field);
-        else _main.Log($"{Title}: {squad} is not in the field list (the tag editor lists the first elements of big blocks); find it under squads.");
+        int squad = SquadOf(Selected);
+        if (squad < 0) return;
+        string name = _squads.FirstOrDefault(s => s.Index == squad)?.Name ?? "squad " + squad;
+        await _main.OpenTagElementAsync(Path, "squads", squad, "squad " + name);
     }
 
     /// <summary>Resizes a box trigger volume from the inspector's width / length / height (its middle stays put).</summary>

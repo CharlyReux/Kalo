@@ -441,9 +441,6 @@
                   <!-- Campaign markers: what they are, and a box volume's size -->
                   <StackPanel Spacing="6" IsVisible="{Binding ActiveMap.Selected.IsCampaignMarker, FallbackValue=False}">
                     <TextBlock Text="{Binding ActiveMap.Selected.MarkerHelp, FallbackValue=''}" TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource KMuted}" />
-                    <Button Classes="outline" Content="Squad fields…" HorizontalAlignment="Left" IsVisible="{Binding ActiveMap.Selected.IsAiSpawnPoint, FallbackValue=False}"
-                            Command="{Binding ActiveMap.OpenSquadFieldsCommand, FallbackValue={x:Null}}"
-                            ToolTip.Tip="Open this squad in the tag editor: its team, characters and weapons (cells), initial zone and objective" />
                     <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" IsVisible="{Binding ActiveMap.Selected.IsBoxVolume, FallbackValue=False}">
                       <TextBlock Text="W" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip.Tip="Width (along its forward direction)" />
                       <TextBox Grid.Column="1" Classes="compact mono" Margin="0,0,6,0" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0.05"
@@ -456,6 +453,91 @@
                                Text="{Binding ActiveMap.Selected.VolumeHeight, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
                     </Grid>
                   </StackPanel>
+                  <!-- Campaign AI: the squad of the selected spawn point(s): what spawns -->
+                  <ContentControl Content="{Binding ActiveMap.SquadEditor, FallbackValue={x:Null}}" IsVisible="{Binding ActiveMap.HasSquadEditor, FallbackValue=False}">
+                   <ContentControl.ContentTemplate>
+                    <DataTemplate DataType="vm:SquadEditorViewModel">
+                  <StackPanel Spacing="6">
+                    <TextBlock Text="{Binding Title, FallbackValue=''}" Classes="header" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding About, FallbackValue=''}" FontSize="11.5" Foreground="{StaticResource KMuted}" TextWrapping="Wrap" />
+                    <!-- The selected point's own character and weapon -->
+                    <ContentControl Content="{Binding Point}" IsVisible="{Binding HasPoint}">
+                     <ContentControl.ContentTemplate>
+                      <DataTemplate DataType="vm:SquadPointRow">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="{Binding Title, FallbackValue=''}" Classes="header" Margin="0,4,0,0" />
+                      <Grid ColumnDefinitions="70,*" RowDefinitions="Auto,Auto">
+                        <TextBlock Text="Character" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding CharacterOptions, FallbackValue={x:Null}}" SelectedIndex="{Binding CharacterIndex, FallbackValue=-1}"
+                                  HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" Margin="0,0,0,4"
+                                  ToolTip.Tip="What spawns at this point. From its cell: the character of the squad's cell below." />
+                        <TextBlock Grid.Row="1" Text="Weapon" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding WeaponOptions, FallbackValue={x:Null}}" SelectedIndex="{Binding WeaponIndex, FallbackValue=-1}"
+                                  HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24"
+                                  ToolTip.Tip="The weapon it spawns with. From its cell: the cell's weapon below." />
+                      </Grid>
+                      <TextBlock Text="{Binding CellText, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KFaint}" />
+                    </StackPanel>
+                      </DataTemplate>
+                     </ContentControl.ContentTemplate>
+                    </ContentControl>
+                    <!-- The squad's cells -->
+                    <TextBlock Text="CELLS (WHAT THE SQUAD SPAWNS)" Classes="header" Margin="0,4,0,0" IsVisible="{Binding HasCells, FallbackValue=False}" />
+                    <TextBlock Text="{Binding TemplateNote, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KWarning}" TextWrapping="Wrap"
+                               IsVisible="{Binding HasTemplateNote, FallbackValue=False}" />
+                    <ItemsControl ItemsSource="{Binding Cells, FallbackValue={x:Null}}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="vm:SquadCellRow">
+                          <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,0,6">
+                            <StackPanel Spacing="4">
+                              <DockPanel>
+                                <TextBox DockPanel.Dock="Right" Classes="compact mono" Width="52" views:NumberDrag.Step="1" views:NumberDrag.Minimum="0" IsEnabled="{Binding CanEdit}"
+                                         Text="{Binding Count, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" ToolTip.Tip="How many spawn from this cell (normal difficulty count)" />
+                                <TextBlock DockPanel.Dock="Right" Text="count" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                              </DockPanel>
+                              <ItemsControl ItemsSource="{Binding Characters}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate DataType="vm:SquadChoiceRow">
+                                    <Grid ColumnDefinitions="70,*,Auto" Margin="0,0,0,3">
+                                      <TextBlock Text="Character" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
+                                      <ComboBox Grid.Column="1" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" IsEnabled="{Binding CanEdit}" />
+                                      <TextBox Grid.Column="2" Classes="compact mono" Width="40" Margin="4,0,0,0" Text="{Binding Chance, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding CanEdit}"
+                                               IsVisible="{Binding $parent[ItemsControl].((vm:SquadCellRow)DataContext).ShowChances, FallbackValue=False}" ToolTip.Tip="Chance (weight) of this entry" />
+                                    </Grid>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                              <TextBlock Text="No character in this cell." FontSize="11" Foreground="{StaticResource KFaint}" IsVisible="{Binding HasNoCharacter}" />
+                              <ItemsControl ItemsSource="{Binding Weapons}">
+                                <ItemsControl.ItemTemplate>
+                                  <DataTemplate DataType="vm:SquadChoiceRow">
+                                    <Grid ColumnDefinitions="70,*,Auto" Margin="0,0,0,3">
+                                      <TextBlock Text="Weapon" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
+                                      <ComboBox Grid.Column="1" ItemsSource="{Binding Options}" SelectedIndex="{Binding SelectedIndex}" HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" IsEnabled="{Binding CanEdit}" />
+                                      <TextBox Grid.Column="2" Classes="compact mono" Width="40" Margin="4,0,0,0" Text="{Binding Chance, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" IsEnabled="{Binding CanEdit}"
+                                               IsVisible="{Binding $parent[ItemsControl].((vm:SquadCellRow)DataContext).ShowChances, FallbackValue=False}" ToolTip.Tip="Chance (weight) of this entry" />
+                                    </Grid>
+                                  </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                              </ItemsControl>
+                              <TextBlock Text="No weapon set: the character's default." FontSize="11" Foreground="{StaticResource KFaint}" IsVisible="{Binding HasNoWeapon}" />
+                            </StackPanel>
+                          </Border>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <DockPanel>
+                      <Button DockPanel.Dock="Left" Classes="outline" Content="All squad fields…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.OpenSquadFieldsCommand, FallbackValue={x:Null}}"
+                              ToolTip.Tip="This squad alone in a tag editor tab: team, initial zone and objective, spawn points, everything" />
+                      <TextBlock Text="{Binding PointsText, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KFaint}" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding Error, FallbackValue=''}" Foreground="{StaticResource KError}" FontSize="11" TextWrapping="Wrap"
+                               IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}, FallbackValue=False}" />
+                  </StackPanel>
+                    </DataTemplate>
+                   </ContentControl.ContentTemplate>
+                  </ContentControl>
                   <StackPanel Spacing="8" IsVisible="{Binding ActiveMap.Selected.IsObject, FallbackValue=False}">
                   <DockPanel>
                     <TextBlock Text="Scale" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Width="46" />

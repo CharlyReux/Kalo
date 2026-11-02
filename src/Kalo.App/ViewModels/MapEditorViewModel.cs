@@ -238,6 +238,7 @@ public partial class MapEditorViewModel : DocumentViewModel
         OnPropertyChanged(nameof(SelectionText));
         SceneChanged?.Invoke();
         _ = LoadPropertiesAsync();
+        _ = LoadSquadAsync();
         if (!_syncingFromOutliner) OutlinerChanged?.Invoke();
     }
 
@@ -755,7 +756,7 @@ public partial class PlacementItem : ObservableObject
         CampaignCategories.TriggerVolumes => IsSectorVolume
             ? "Trigger volume (sector: a floor shape with a height). Mission scripts test who is inside it by its name, e.g. (volume_test_players " + (PlacedName ?? "name") + "). Names starting with zone_set: or begin_zone_set: switch zone sets; kill and safe_zone volumes kill or protect. A sector can be moved; reshape it in Sapien."
             : "Trigger volume (box). Mission scripts test who is inside it by its name, e.g. (volume_test_players " + (PlacedName ?? "name") + "). Names starting with zone_set: or begin_zone_set: switch zone sets; kill and safe_zone volumes kill or protect.",
-        CampaignCategories.AiSpawnPoints => "Where one AI of " + (Label ?? "its squad") + " appears when the squad is placed (ai_place). What spawns (character, weapons) is set in the squad's fields; open the scenario's Fields › squads to edit them.",
+        CampaignCategories.AiSpawnPoints => "Where one AI of " + (Label ?? "its squad") + " appears when a script places the squad (ai_place). What spawns (characters, weapons, how many) is in the Squad section below; this point can also have its own character and weapon.",
         CampaignCategories.CutsceneFlags => "A named point for mission scripts and cutscenes (e.g. object_teleport, cinematics), found by name.",
         CampaignCategories.CutsceneCameras => "A named camera position for mission scripts (camera_set). Its rotation is where the camera looks.",
         CampaignCategories.ScriptPoints => "A named point of " + (Label ?? "a point set") + " that mission scripts use to move AI or aim (e.g. cs_go_to ps_set/point).",

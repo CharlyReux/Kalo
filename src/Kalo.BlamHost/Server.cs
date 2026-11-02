@@ -101,6 +101,9 @@ namespace Kalo.BlamHost
                     if (savePath.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) scenarios.BeforeSave(savePath);
                     return tags.Save(savePath);
                 }
+                case Methods.Squad:
+                    var sq = Params<SquadParams>(r);
+                    return scenarios.Squad(sq.Path, sq.Index);
                 case Methods.BspBounds:
                     return scenarios.BspBounds(Params<TagPathParams>(r).Path);
                 case Methods.ScenarioType:

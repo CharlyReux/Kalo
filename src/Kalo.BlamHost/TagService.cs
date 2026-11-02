@@ -32,13 +32,20 @@ namespace Kalo.BlamHost
             Root = _tagRoot;
         }
 
+        /// <summary>
+        /// The fields of a tag. A tag already open here (e.g. the scenario of an open map) is shared as it is, unsaved
+        /// edits included: reloading it from disk would silently drop the map's edits. Close it first to read the file again.
+        /// </summary>
         public TagDocument Open(string path, int maxElements = MaxElementsPerBlock)
         {
             path = Normalize(path);
-            Close(path);
             var sw = Stopwatch.StartNew();
-            var tag = new TagFile(ToTagPath(path));
-            _open[path] = tag;
+            TagFile tag;
+            if (!_open.TryGetValue(path, out tag))
+            {
+                tag = new TagFile(ToTagPath(path));
+                _open[path] = tag;
+            }
             long ms = sw.ElapsedMilliseconds;
             int count = 0;
             return new TagDocument

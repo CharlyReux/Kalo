@@ -55,8 +55,11 @@ public partial class FieldViewModel : ObservableObject
     public bool IsEnum => IsEditable && Kind == ValueKinds.Enum && Options.Count > 0;
     public bool IsTextEditor => IsEditable && !IsEnum;
     public bool IsReadOnlyValue => !IsEditable && !IsExplanation;
-    /// <summary>Engine-computed or hidden fields, not shown in the labeled view.</summary>
-    public bool IsInternal => !Node.Visible || RawName.StartsWith("runtime", StringComparison.OrdinalIgnoreCase) || Kind == ValueKinds.Other;
+    /// <summary>
+    /// Engine-computed or hidden fields, not shown in the labeled view. A struct, block or element marked hidden still
+    /// shows when something inside it is shown (e.g. a squad's "templated" struct holds its cells: characters, weapons).
+    /// </summary>
+    public bool IsInternal { get; }
     public string SavedValue { get; private set; }
     /// <summary>Label in the labeled view, engine name in the raw view.</summary>
     public string DisplayText => _owner.ShowRaw && Kind != ValueKinds.Element && RawName.Length > 0 ? RawName : Label;
@@ -93,6 +96,8 @@ public partial class FieldViewModel : ObservableObject
         _suppress = false;
         if (node.Children != null)
             foreach (var child in node.Children) Children.Add(new FieldViewModel(owner, child, this));
+        IsInternal = RawName.StartsWith("runtime", StringComparison.OrdinalIgnoreCase) || Kind == ValueKinds.Other
+            || !Node.Visible && (!IsContainer || Children.All(c => c.IsInternal));
     }
 
     partial void OnValueChanged(string? value)

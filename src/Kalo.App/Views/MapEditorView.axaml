@@ -136,7 +136,7 @@
           </Button>
           <TextBox Classes="compact" Watermark="Filter objects" Text="{Binding Filter}" Margin="0,0,4,0" />
         </DockPanel>
-        <TreeView x:Name="Outliner" ItemsSource="{Binding OutlinerRoots}" SelectionMode="Multiple" Background="Transparent"
+        <TreeView x:Name="Outliner" ItemsSource="{Binding OutlinerRoots}" SelectionMode="Multiple" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                   SelectionChanged="Outliner_SelectionChanged" DoubleTapped="Outliner_DoubleTapped" KeyDown="Outliner_KeyDown">
           <TreeView.ItemTemplate>
             <TreeDataTemplate DataType="vm:OutlinerNode" ItemsSource="{Binding Children}">
@@ -152,6 +152,7 @@
                              Foreground="{Binding StateBrush, TargetNullValue={StaticResource KText}, FallbackValue={StaticResource KText}}" />
                   <TextBlock Text="{Binding Detail}" FontSize="10.5" Foreground="{StaticResource KFaint}" FontFamily="{StaticResource KMono}"
                              TextTrimming="CharacterEllipsis" IsVisible="{Binding IsItem}" />
+                  <TextBlock Text="{Binding Kind}" FontSize="10.5" Foreground="{StaticResource KFaint}" IsVisible="{Binding HasKind}" />
                 </StackPanel>
               </DockPanel>
             </TreeDataTemplate>

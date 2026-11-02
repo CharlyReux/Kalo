@@ -59,8 +59,10 @@ public partial class MapEditorViewModel
         }
         foreach (var f in Folders) FolderChoices.Add(new FolderChoice(f.Index, FolderPath(f)));
         var loose = new List<PlacementItem>();
+        var squadItems = new List<PlacementItem>();
         foreach (var item in OutlinerItems)
         {
+            if (item.IsAiSpawnPoint && SquadOf(item) >= 0) { squadItems.Add(item); continue; }
             if (item.Folder >= 0 && folderNodes.TryGetValue(item.Folder, out var folder)) folder.Children.Add(ItemNode(item));
             else loose.Add(item);
         }
@@ -72,8 +74,37 @@ public partial class MapEditorViewModel
             foreach (var i in items) group.Children.Add(ItemNode(i));
             OutlinerRoots.Add(group);
         }
+        if (squadItems.Count > 0) OutlinerRoots.Add(SquadTree(squadItems));
         foreach (var n in EnumerateNodes(OutlinerRoots).Where(n => !n.IsItem)) n.RefreshSummary();
         OutlinerChanged?.Invoke();
+    }
+
+    /// <summary>
+    /// Campaign AI: squad groups → squads → spawn points (scripts place squads or whole groups with ai_place). Clicking a
+    /// squad selects its spawn points and shows the squad in the inspector.
+    /// </summary>
+    private OutlinerNode SquadTree(List<PlacementItem> items)
+    {
+        var root = new OutlinerNode("c:squads", "AI squads", null, -1) { IsGroup = true, IsExpanded = _expanded.Contains("c:squads") };
+        var groupNodes = new Dictionary<int, OutlinerNode>();
+        OutlinerNode GroupNode(int g, HashSet<int> seen)
+        {
+            if (g < 0 || g >= SquadGroups.Count || !seen.Add(g)) return root;
+            if (groupNodes.TryGetValue(g, out var node)) return node;
+            var info = SquadGroups[g];
+            node = new OutlinerNode("g:" + g, info.Name ?? "group " + g, null, -1) { IsGroup = true, IsExpanded = _expanded.Contains("g:" + g), Kind = "squad group" };
+            groupNodes[g] = node;
+            GroupNode(info.Parent, seen).Children.Add(node);
+            return node;
+        }
+        foreach (var bySquad in items.GroupBy(SquadOf).OrderBy(g => g.Key))
+        {
+            var info = Squads.FirstOrDefault(s => s.Index == bySquad.Key);
+            var squad = new OutlinerNode("s:" + bySquad.Key, info?.Name ?? "squad " + bySquad.Key, null, -1) { IsGroup = true, IsExpanded = _expanded.Contains("s:" + bySquad.Key), Kind = "squad" };
+            foreach (var i in bySquad) squad.Children.Add(ItemNode(i));
+            GroupNode(info?.Group ?? -1, new HashSet<int>()).Children.Add(squad);
+        }
+        return root;
     }
 
     private OutlinerNode ItemNode(PlacementItem item)
@@ -422,6 +453,8 @@ public partial class MapEditorViewModel
                 {
                     string name = n.Name ?? "";
                     if (HiddenProperties.Contains(name) || n.Visible == false && n.Kind != ValueKinds.Struct) continue;
+                    // A spawn point's character and weapon: picked by name in the Squad section.
+                    if (item.IsAiSpawnPoint && name is "character type" or "initial weapon") continue;
                     if (n.Kind == ValueKinds.Struct || n.Kind == ValueKinds.Element)
                     {
                         string title = n.Kind == ValueKinds.Struct ? FieldLabels.For(n.Name, n.DisplayName) : section;
@@ -565,6 +598,9 @@ public partial class OutlinerNode : ObservableObject
     public bool IsItem => Item != null;
     public bool IsFolder => Item == null && !IsGroup;
     public bool IsGroup { get; init; }
+    /// <summary>Shown after the name: "squad", "squad group" (campaign AI rows), else nothing.</summary>
+    public string Kind { get; init; } = "";
+    public bool HasKind => Kind.Length > 0;
     public ObservableCollection<OutlinerNode> Children { get; } = new();
     [ObservableProperty] private bool _isExpanded;
     [ObservableProperty] private string _summary = "";
