@@ -1161,6 +1161,28 @@ public sealed class Tour
                 while (_vm.PreviewMesh == null && DateTime.UtcNow < pv) await Task.Delay(300);
                 Check(_vm.PreviewMesh != null, "the DMR preview model loaded: " + _vm.PreviewStatus);
             }
+            // Forge menu and script names (read in the background, the first time from every multiplayer map).
+            _vm.ObjectFilter = "flag stand";
+            var namesBy = DateTime.UtcNow.AddMinutes(3);
+            ObjectEntry? stand = null;
+            while (DateTime.UtcNow < namesBy)
+            {
+                stand = _vm.ObjectResults.FirstOrDefault(o => o.Tag.EndsWith(@"mp_flag_base\mp_flag_base.crate", StringComparison.OrdinalIgnoreCase));
+                if (stand?.ScriptName != null) break;
+                await Task.Delay(500);
+                _vm.ObjectFilter = "flag stand ";
+                _vm.ObjectFilter = "flag stand";
+            }
+            Check(stand?.ForgeName == "Flag Stand" && stand.ScriptName == "stand",
+                $"search by Forge name finds mp_flag_base: Forge {stand?.ForgeName ?? "none"}, script {stand?.ScriptName ?? "none"}");
+            _vm.ObjectFilter = "destination";
+            await Pause(300);
+            var plate = _vm.ObjectResults.FirstOrDefault(o => o.Tag.EndsWith(@"mp_circle\mp_circle.crate", StringComparison.OrdinalIgnoreCase));
+            Check(plate?.ForgeName == "Capture Plate", $"search by script name finds mp_circle: Forge {plate?.ForgeName ?? "none"}, script {plate?.ScriptName ?? "none"}");
+            _vm.ObjectFilter = "hill marker";
+            await Pause(300);
+            var hill = _vm.ObjectResults.FirstOrDefault(o => o.Tag.EndsWith(@"mp_hill_beacon\mp_hill_beacon.crate", StringComparison.OrdinalIgnoreCase));
+            Check(hill?.ScriptName == "area", $"mp_hill_beacon: Forge {hill?.ForgeName ?? "none"}, script {hill?.ScriptName ?? "none"}");
             _vm.ObjectFilter = "";
             await Pause(1500);
             Shot("studio-objects");

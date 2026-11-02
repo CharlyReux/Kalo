@@ -52,6 +52,7 @@ namespace Kalo.Protocol
         public const string MegaloCompile = "megaloCompile";
         public const string Shutdown = "shutdown";
         public const string ScriptObjects = "scriptObjects";
+        public const string ForgeNames = "forgeNames";
     }
 
     public static class Wire
@@ -686,5 +687,20 @@ namespace Kalo.Protocol
     {
         public List<ScriptObjectEntry> Entries { get; set; }
         public int MaximumCount { get; set; }
+    }
+
+    /// <summary>An object's name in Forge's menu (e.g. objects\multi\models\mp_flag_base\mp_flag_base.crate → Flag Stand).</summary>
+    public sealed class ForgeName
+    {
+        public string ObjectTag { get; set; }
+        public string Name { get; set; }
+    }
+
+    public sealed class ForgeNamesResult
+    {
+        public List<ForgeName> Names { get; set; }
+        /// <summary>Multiplayer maps whose Forge menus were read.</summary>
+        public int Maps { get; set; }
+        public long Ms { get; set; }
     }
 }

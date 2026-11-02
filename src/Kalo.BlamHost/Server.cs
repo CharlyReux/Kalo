@@ -143,6 +143,8 @@ namespace Kalo.BlamHost
                     return scenarios.CreateMap(Params<CreateMapParams>(r));
                 case Methods.ScriptObjects:
                     return new ScriptObjectService(tags).Run(Params<ScriptObjectsParams>(r));
+                case Methods.ForgeNames:
+                    return ForgeNameService.Run(tags);
                 case Methods.ExportTextures:
                     var tex = Params<ExportTexturesParams>(r);
                     return TextureService.Export(tex.Bitmaps, tex.OutputFolder, tex.MaxSize <= 0 ? 256 : tex.MaxSize);

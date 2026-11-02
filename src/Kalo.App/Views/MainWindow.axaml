@@ -295,7 +295,7 @@
             <!-- Object browser: categories | objects | preview -->
             <Grid ColumnDefinitions="190,*,300" IsVisible="{Binding IsObjects}">
               <DockPanel Grid.Column="0" Background="{StaticResource KPanelAlt}">
-                <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Search all objects" Text="{Binding ObjectFilter}" />
+                <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Search any name" Text="{Binding ObjectFilter}" ToolTip.Tip="Finds objects by file name, Forge menu name (Flag Stand) or script name (stand)" />
                 <ListBox ItemsSource="{Binding ObjectCategories}" SelectedItem="{Binding SelectedObjectCategory}" Background="Transparent">
                   <ListBox.ItemTemplate>
                     <DataTemplate DataType="vm:ObjectCategory">
@@ -311,10 +311,16 @@
                        DoubleTapped="ObjectList_DoubleTapped">
                 <ListBox.ItemTemplate>
                   <DataTemplate DataType="vm:ObjectEntry">
-                    <DockPanel>
-                      <TextBlock DockPanel.Dock="Right" Text="{Binding Kind}" Foreground="{StaticResource KFaint}" FontSize="11" Margin="8,0,0,0" />
+                    <DockPanel Background="Transparent" ToolTip.Tip="{Binding Tip}">
+                      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Top">
+                        <TextBlock Text="{Binding ScriptLabel}" IsVisible="{Binding HasScriptName}" Classes="mono" Foreground="{StaticResource KCode}" FontSize="11" Margin="0,0,10,0" />
+                        <TextBlock Text="{Binding Kind}" Foreground="{StaticResource KFaint}" FontSize="11" />
+                      </StackPanel>
                       <StackPanel>
-                        <TextBlock Text="{Binding Name}" FontSize="12.5" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <TextBlock Text="{Binding Name}" FontSize="12.5" />
+                          <TextBlock Text="{Binding ForgeName}" IsVisible="{Binding HasForgeName}" FontSize="12" Foreground="{StaticResource KMuted}" />
+                        </StackPanel>
                         <TextBlock Text="{Binding Folder}" FontSize="10.5" Foreground="{StaticResource KFaint}" Classes="mono" TextTrimming="CharacterEllipsis" />
                       </StackPanel>
                     </DockPanel>

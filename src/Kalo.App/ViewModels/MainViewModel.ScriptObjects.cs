@@ -116,6 +116,9 @@ public partial class MainViewModel
         await EnsureMegaloCatalogAsync();
         foreach (var s in Tabs.OfType<ScriptEditorViewModel>()) s.UpdateCatalog();
         foreach (var t in Tabs.OfType<TagEditorViewModel>()) await t.RefreshScriptNameAsync();
+        // The object browser shows script names: read them again if it was opened.
+        _scriptNames = null;
+        if (_catalog != null) _ = LoadObjectNamesAsync();
         await RefreshChangesAsync();
         _ = AutoCaptureAsync();
     }

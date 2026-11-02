@@ -126,6 +126,7 @@ public sealed class HostClient : IAsyncDisposable
         CallAsync<DiffTagResult>(Methods.DiffTag, new DiffTagParams { Path = path, VanillaFile = vanillaFile }, TimeSpan.FromMinutes(3));
     public Task<CreateMapResult> CreateMapAsync(CreateMapParams p) => CallAsync<CreateMapResult>(Methods.CreateMap, p, TimeSpan.FromMinutes(3));
     public Task<ScriptObjectsResult> ScriptObjectsAsync(ScriptObjectsParams p) => CallAsync<ScriptObjectsResult>(Methods.ScriptObjects, p);
+    public Task<ForgeNamesResult> ForgeNamesAsync() => CallAsync<ForgeNamesResult>(Methods.ForgeNames, new { }, TimeSpan.FromMinutes(5));
     public Task<MegaloCatalog> MegaloCatalogAsync(string objectLists) =>
         CallAsync<MegaloCatalog>(Methods.MegaloCatalog, new MegaloCatalogParams { ObjectLists = objectLists }, TimeSpan.FromMinutes(2));
     public Task<MegaloCompileResult> MegaloCompileAsync(MegaloCompileParams p) =>

@@ -75,7 +75,9 @@ public partial class MainViewModel
             if (tag.StartsWith("_kalo", StringComparison.OrdinalIgnoreCase)) continue;
             var rule = CategoryRules.FirstOrDefault(r => r.Match(tag.ToLowerInvariant()));
             if (rule.Key == null) continue;
-            catalog[rule.Key].Add(new ObjectEntry(tag));
+            catalog[rule.Key].Add(new ObjectEntry(tag,
+                _forgeNames != null && _forgeNames.TryGetValue(tag, out var forge) ? forge : null,
+                _scriptNames != null && _scriptNames.TryGetValue(tag, out var script) ? script : null));
         }
         _catalog = catalog;
         ObjectCategories.Clear();
@@ -83,6 +85,72 @@ public partial class MainViewModel
             if (catalog[r.Key].Count > 0) ObjectCategories.Add(new ObjectCategory(r.Key, r.Title, catalog[r.Key].Count));
         SelectedObjectCategory ??= ObjectCategories.FirstOrDefault();
         FilterObjects();
+        if (_forgeNames == null || _scriptNames == null) _ = LoadObjectNamesAsync();
+    }
+
+    // Forge menu names and script names, by object tag (case-insensitive).
+    private Dictionary<string, string>? _forgeNames;
+    private Dictionary<string, string>? _scriptNames;
+    private bool _loadingObjectNames;
+    private const string ForgeNamesCache = "forge-names-v1.json";
+
+    /// <summary>
+    /// Reads the Forge names (Blam Host, from the multiplayer maps' Forge menus; cached in .kalo\cache since they only
+    /// change with the game) and the script names (the object type list, read each time: a mod can add to it), then
+    /// rebuilds the browser with them.
+    /// </summary>
+    private async Task LoadObjectNamesAsync()
+    {
+        if (_loadingObjectNames || Paths == null) return;
+        _loadingObjectNames = true;
+        try
+        {
+            if (await WaitForHostAsync() == null) return;
+            string cache = Path.Combine(Paths.KaloData, "cache", ForgeNamesCache);
+            if (_forgeNames == null)
+            {
+                Dictionary<string, string>? names = null;
+                try
+                {
+                    if (File.Exists(cache))
+                        names = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(await File.ReadAllTextAsync(cache));
+                }
+                catch (Exception ex) when (ex is IOException or System.Text.Json.JsonException) { names = null; }
+                if (names == null || names.Count == 0)
+                {
+                    var r = await Host!.ForgeNamesAsync();
+                    names = new Dictionary<string, string>();
+                    foreach (var n in r.Names ?? new List<ForgeName>()) names[n.ObjectTag] = n.Name;
+                    if (names.Count > 0)
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(cache)!);
+                        await File.WriteAllTextAsync(cache, System.Text.Json.JsonSerializer.Serialize(names, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+                    }
+                    Log($"Objects: read the Forge menu names of {names.Count} objects from {r.Maps} multiplayer maps ({r.Ms / 1000.0:0.#} s).");
+                }
+                _forgeNames = new Dictionary<string, string>(names, StringComparer.OrdinalIgnoreCase);
+            }
+            var list = await Host!.ScriptObjectsAsync(new ScriptObjectsParams { Op = ScriptObjectOps.List });
+            var scripts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in list.Entries ?? new List<ScriptObjectEntry>())
+                if (!string.IsNullOrEmpty(e.ObjectTag) && !string.IsNullOrEmpty(e.Name)) scripts[e.ObjectTag] = e.Name;
+            _scriptNames = scripts;
+            RebuildObjectCatalog();
+        }
+        catch (HostException ex) { Log("Objects: couldn't read the Forge and script names: " + ex.Message); }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or TimeoutException) { Log("Objects: couldn't read the Forge and script names: " + ex.Message); }
+        finally { _loadingObjectNames = false; }
+    }
+
+    /// <summary>Rebuilds the browser's entries (e.g. with new names), keeping the category, search and selection.</summary>
+    private void RebuildObjectCatalog()
+    {
+        string? category = SelectedObjectCategory?.Key, selected = SelectedObject?.Tag;
+        _catalog = null;
+        EnsureObjectCatalog();
+        SelectedObjectCategory = ObjectCategories.FirstOrDefault(c => c.Key == category) ?? SelectedObjectCategory;
+        FilterObjects();
+        if (selected != null) SelectedObject = ObjectResults.FirstOrDefault(o => o.Tag.Equals(selected, StringComparison.OrdinalIgnoreCase)) ?? SelectedObject;
     }
 
     partial void OnSelectedObjectCategoryChanged(ObjectCategory? value) => FilterObjects();
@@ -96,7 +164,7 @@ public partial class MainViewModel
         IEnumerable<ObjectEntry> source = words.Length > 0
             ? _catalog.Values.SelectMany(v => v)
             : SelectedObjectCategory != null ? _catalog[SelectedObjectCategory.Key] : Enumerable.Empty<ObjectEntry>();
-        foreach (var e in source.Where(e => words.All(w => e.Tag.Contains(w, StringComparison.OrdinalIgnoreCase))).OrderBy(e => e.Name).Take(600))
+        foreach (var e in source.Where(e => e.Matches(words)).OrderBy(e => e.Name).Take(600))
             ObjectResults.Add(e);
     }
 
@@ -232,12 +300,32 @@ public sealed record ObjectCategory(string Key, string Title, int Count)
     public string Display => $"{Title}  {Count}";
 }
 
-public sealed class ObjectEntry(string tag)
+/// <summary>
+/// An object of the browser. Objects have up to three names: the file (what Kalo's map shows), the name in Forge's
+/// menu (e.g. Flag Stand) and the name gametype scripts use with create_object (e.g. stand).
+/// </summary>
+public sealed class ObjectEntry(string tag, string? forgeName = null, string? scriptName = null)
 {
     public string Tag { get; } = tag;
     public string Name { get; } = Path.GetFileNameWithoutExtension(tag);
     public string Kind { get; } = Path.GetExtension(tag).TrimStart('.');
     public string Folder { get; } = Path.GetDirectoryName(tag) ?? "";
+    /// <summary>The name in Forge's menu, or null when no Forge menu has the object.</summary>
+    public string? ForgeName { get; } = forgeName;
+    /// <summary>The name for create_object in gametype scripts, or null when scripts can't create it.</summary>
+    public string? ScriptName { get; } = scriptName;
+    public bool HasForgeName => ForgeName != null;
+    public bool HasScriptName => ScriptName != null;
+    public string ScriptLabel => ScriptName == null ? "" : "script: " + ScriptName;
+    public string Tip => Tag
+        + (ForgeName != null ? "\nForge menu: " + ForgeName : "\nNot in any Forge menu")
+        + (ScriptName != null ? $"\nIn scripts: create_object(\"{ScriptName}\", ...)" : "\nScripts can't create it");
+
+    /// <summary>True when every word is in the file path, the Forge name or the script name.</summary>
+    public bool Matches(IEnumerable<string> words) => words.All(w =>
+        Tag.Contains(w, StringComparison.OrdinalIgnoreCase)
+        || (ForgeName?.Contains(w, StringComparison.OrdinalIgnoreCase) ?? false)
+        || (ScriptName?.Contains(w, StringComparison.OrdinalIgnoreCase) ?? false));
 }
 
 /// <summary>A material the block tools can paint with: a shader and its color map (as a small swatch).</summary>
