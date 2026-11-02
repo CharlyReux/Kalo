@@ -121,7 +121,7 @@ public static class GameVariantFile
     /// then name and description: UTF-16 characters of 16 bits, 0-terminated (at most 128 each).
     /// Returns the data unchanged if the header doesn't read that way.
     /// </summary>
-    public static byte[] WithTitle(byte[] data, string title, string description)
+    public static byte[] WithTitle(byte[] data, string title, string description, int headerBit = 4 + 32 + 32)
     {
         int total = data.Length * 8;
         int Bit(int i) => (data[i >> 3] >> (7 - (i & 7))) & 1;
@@ -133,7 +133,7 @@ public static class GameVariantFile
         }
         try
         {
-            int i = 4 + 32 + 32;
+            int i = headerBit;  // game variants: engine type 4, encoding version 32, -1 32; map variants: 0
             i += 4 + 32 + 4 * 64 + 3 + 3 + 3 + 32 + 8;
             for (int who = 0; who < 2; who++)
             {
@@ -173,7 +173,7 @@ public static class GameVariantFile
     /// <summary>The variant's unique id: 8 bytes at offset 13 of the bit-packed data (big endian there).</summary>
     private static ulong UniqueIds(byte[] data) => data.Length >= 21 ? BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(13)) : 0;
 
-    private static void WriteHeader(Span<byte> s, int at, string tag, int size, ushort major, ushort minor)
+    internal static void WriteHeader(Span<byte> s, int at, string tag, int size, ushort major, ushort minor)
     {
         Encoding.ASCII.GetBytes(tag).CopyTo(s[at..]);
         BinaryPrimitives.WriteInt32BigEndian(s[(at + 4)..], size);
@@ -181,7 +181,7 @@ public static class GameVariantFile
         BinaryPrimitives.WriteUInt16BigEndian(s[(at + 10)..], minor);
     }
 
-    private static void WriteUtf16(Span<byte> into, string text)
+    internal static void WriteUtf16(Span<byte> into, string text)
     {
         into.Clear();
         byte[] b = Encoding.Unicode.GetBytes(text.Length > TitleChars - 1 ? text[..(TitleChars - 1)] : text);

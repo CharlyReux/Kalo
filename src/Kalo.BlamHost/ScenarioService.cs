@@ -128,6 +128,7 @@ namespace Kalo.BlamHost
         public PlacementOpResult Op(PlacementOpParams p)
         {
             if (p.Op == PlacementOps.MakePlayCopy) return MakePlayCopy(p);
+            if (p.Op == PlacementOps.MakeForgeCopy) return MakeForgeCopy(p);
             TagFile tag = _tags.GetOrOpen(p.Path);
             if (p.Category == StartLocations.Category) return StartOp(tag, p);
             switch (p.Op)
@@ -338,6 +339,109 @@ namespace Kalo.BlamHost
         /// A copy of the saved map whose player starting locations are at one point (the editor camera), for "Play from
         /// camera". With several players (split-screen) they stand side by side, 1.2 units apart, facing the same way.
         /// </summary>
+        /// <summary>
+        /// The stock map a scenario was made from: the scenario next to its first structure bsp (Kalo's new maps keep the
+        /// template's level geometry), e.g. levels\multi\forge_halo\forge_halo.scenario. Null when that is a mod map.
+        /// </summary>
+        private string BaseScenarioOf(TagFile tag)
+        {
+            string bsp = TagService.ValueOf(tag.SelectField("Block:structure bsps[0]/Reference:structure bsp")) ?? "";
+            string dir = System.IO.Path.GetDirectoryName(bsp.Replace('/', '\\')) ?? "";
+            if (dir.Length == 0 || dir.StartsWith(@"levels\mods\", StringComparison.OrdinalIgnoreCase)) return null;
+            string candidate = dir + "\\" + System.IO.Path.GetFileName(dir) + ".scenario";
+            if (System.IO.File.Exists(_tags.FullPath(candidate))) return candidate;
+            foreach (string file in System.IO.Directory.GetFiles(System.IO.Path.GetDirectoryName(_tags.FullPath(candidate)), "*.scenario"))
+                return dir + "\\" + System.IO.Path.GetFileName(file);
+            return null;
+        }
+
+        private PlacementOpResult MakeForgeCopy(PlacementOpParams p)
+        {
+            string dest = p.Tag;
+            if (string.IsNullOrWhiteSpace(dest) || !dest.Replace('/', '\\').StartsWith(@"levels\mods\_kalo_play\", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("Forge copies go in levels\\mods\\_kalo_play.");
+            if (_tags.IsOpen(dest)) _tags.Close(dest);
+            string src = _tags.FullPath(p.Path), dst = _tags.FullPath(dest);
+            if (!System.IO.File.Exists(src)) throw new InvalidOperationException("Save the map first: " + p.Path + " is not on disk.");
+            System.IO.Directory.CreateDirectory(System.IO.Path.GetDirectoryName(dst));
+            System.IO.File.Copy(src, dst, true);
+            var result = new PlacementOpResult { Replaced = new List<string>(), Removed = new List<string>() };
+            using (var tag = new TagFile(TagService.TagPathOf(dest)))
+            {
+                DetachTemplateResources(tag, dest);
+                string baseScenario = BaseScenarioOf(tag);
+                if (baseScenario == null)
+                    throw new InvalidOperationException("This map isn't built on one of Reach's own maps (its level comes from a mod), so it can't become a Forge variant.");
+                int mapId;
+                using (var stock = new TagFile(TagService.TagPathOf(baseScenario)))
+                    mapId = Int(stock.SelectField("LongInteger:map id"));
+                ((TagFieldElementInteger)tag.SelectField("LongInteger:map id")).Data = mapId;
+                result.MapId = mapId;
+                result.BaseScenario = baseScenario;
+
+                // Every object Forge can place on this map: the objects of the map variant palettes.
+                var forge = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var palettes = tag.SelectField("Block:map variant palettes") as TagFieldBlock;
+                for (int a = 0; palettes != null && a < palettes.Elements.Count; a++)
+                {
+                    var entries = tag.SelectField("Block:map variant palettes[" + a + "]/Block:entries") as TagFieldBlock;
+                    for (int b = 0; entries != null && b < entries.Elements.Count; b++)
+                    {
+                        var variants = tag.SelectField("Block:map variant palettes[" + a + "]/Block:entries[" + b + "]/Block:variants") as TagFieldBlock;
+                        for (int c = 0; variants != null && c < variants.Elements.Count; c++)
+                        {
+                            string o = TagService.ValueOf(tag.SelectField("Block:map variant palettes[" + a + "]/Block:entries[" + b + "]/Block:variants[" + c + "]/Reference:object"));
+                            if (!string.IsNullOrEmpty(o)) forge.Add(o);
+                        }
+                    }
+                }
+                string marker = (p.Data ?? "").Replace('/', '\\').Trim();
+                foreach (string[] k in Kinds)
+                {
+                    var block = tag.SelectField("Block:" + k[0]) as TagFieldBlock;
+                    if (block == null) continue;
+                    var palette = new List<string>();
+                    var pal = tag.SelectField("Block:" + k[1]) as TagFieldBlock;
+                    for (int i = 0; pal != null && i < pal.Elements.Count; i++)
+                        palette.Add(TagService.ValueOf(tag.SelectField("Block:" + k[1] + "[" + i + "]/Reference:name")) ?? "");
+                    for (int i = block.Elements.Count - 1; i >= 0; i--)
+                    {
+                        int type = Int(tag.SelectField("Block:" + k[0] + "[" + i + "]/ShortBlockIndex:type"));
+                        string objectTag = type >= 0 && type < palette.Count ? palette[type] : "";
+                        if (forge.Contains(objectTag))
+                        {
+                            result.Kept++;
+                            // A map variant stores boundaries up to 200 (larger ones are clamped by MCC, and assert in the test build).
+                            bool clamped = false;
+                            foreach (string f in new[] { "boundary width or radius", "boundary box length", "boundary positive height", "boundary negative height" })
+                                if (tag.SelectField("Block:" + k[0] + "[" + i + "]/Struct:multiplayer data[0]/Real:" + f) is TagFieldElementSingle r && r.Data > 200f)
+                                {
+                                    r.Data = 200f;
+                                    clamped = true;
+                                }
+                            if (clamped) result.Clamped++;
+                            continue;
+                        }
+                        string label = TagService.ValueOf(tag.SelectField("Block:" + k[0] + "[" + i + "]/Struct:multiplayer data[0]/String:megalo label")) ?? "";
+                        string what = objectTag + "|" + label;
+                        bool sameKind = marker.EndsWith("." + k[2], StringComparison.OrdinalIgnoreCase);
+                        if (marker.Length > 0 && sameKind && forge.Contains(marker) && objectTag.IndexOf("invisible_marker", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            ((TagFieldBlockIndex)tag.SelectField("Block:" + k[0] + "[" + i + "]/ShortBlockIndex:type")).Value = PaletteIndex(tag, k, marker);
+                            result.Replaced.Add(what);
+                        }
+                        else
+                        {
+                            block.RemoveElement(i);
+                            result.Removed.Add(what);
+                        }
+                    }
+                }
+                tag.Save();
+            }
+            return result;
+        }
+
         private PlacementOpResult MakePlayCopy(PlacementOpParams p)
         {
             string dest = p.Tag;

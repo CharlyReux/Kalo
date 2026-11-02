@@ -360,6 +360,13 @@ namespace Kalo.Protocol
         /// no name. Folder -2 keeps the copied editor folder and parent (same map); otherwise they are cleared.
         /// </summary>
         public const string PasteElement = "pasteElement";
+        /// <summary>
+        /// Forge variant export: copies the saved scenario Path to Tag (in levels\mods\_kalo_play) as the stock map it was made
+        /// from (that map's map id), keeping only objects of the map's Forge palette. Objects outside it whose tag contains
+        /// "invisible_marker" become Data (a Forge object tag, e.g. the hill marker), keeping position and label; the others are
+        /// removed. Fills MapId, BaseScenario, Kept, Replaced and Removed.
+        /// </summary>
+        public const string MakeForgeCopy = "makeForgeCopy";
     }
 
     public sealed class PlacementOpParams
@@ -389,6 +396,15 @@ namespace Kalo.Protocol
         public List<EditorFolder> Folders { get; set; }
         /// <summary>Set by folder operations that move objects: every category after the change.</summary>
         public List<PlacementCategory> Categories { get; set; }
+        /// <summary>makeForgeCopy: the stock map's id and scenario, and what happened to the objects.</summary>
+        public int MapId { get; set; }
+        public string BaseScenario { get; set; }
+        public int Kept { get; set; }
+        /// <summary>makeForgeCopy: "object tag|label" of the objects replaced by the Forge object, or removed.</summary>
+        public List<string> Replaced { get; set; }
+        public List<string> Removed { get; set; }
+        /// <summary>makeForgeCopy: objects whose boundary was larger than a map variant can hold (200), now 200.</summary>
+        public int Clamped { get; set; }
     }
 
     // ---- object library and materials -------------------------------------------------------------

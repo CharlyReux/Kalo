@@ -112,6 +112,38 @@ public sealed class Tour
         return 0;
     }
 
+    /// <summary>--export-forge: Export as Forge variant on a map, checks the file, and copies it to .kalo\inspect for diagnosis.</summary>
+    public async Task<int> ExportForgeAsync(string scenario)
+    {
+        Say("export-forge started: " + scenario);
+        try
+        {
+            await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
+            string name = scenario.Replace('/', '\\');
+            if (name.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) name = name[..^".scenario".Length];
+            if (!Check(_vm.Scenarios.Contains(name, StringComparer.OrdinalIgnoreCase), "the map is in the Play list")) return 1;
+            _vm.SelectedScenario = _vm.Scenarios.First(s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var sw = Stopwatch.StartNew();
+            await _vm.ExportForgeVariantAsync();
+            Say($"Export took {sw.Elapsed.TotalSeconds:F0} s");
+            foreach (var pr in _vm.Problems.Take(8)) Say($"problem: {pr.Severity}: {pr.Message}");
+            foreach (string l in _vm.OutputLines.Where(l => l.Contains("Forge", StringComparison.Ordinal) || l.Contains("map_variant", StringComparison.Ordinal))) Say(l.Length > 400 ? l[..400] : l);
+            string? file = _vm.LastForgeVariant;
+            if (Check(file != null && File.Exists(file), "the variant file was written: " + file))
+            {
+                Say($"variant size {new FileInfo(file!).Length} bytes");
+                string inspect = System.IO.Path.Combine(_vm.Paths!.KaloData, "inspect");
+                Directory.CreateDirectory(inspect);
+                File.Copy(file!, System.IO.Path.Combine(inspect, System.IO.Path.GetFileName(file!)), true);
+            }
+            await _vm.RefreshChangesAsync();
+            Check(!string.IsNullOrEmpty(_vm.VanillaSummary), "vanilla check: " + _vm.VanillaSummary);
+            foreach (var item in _vm.Vanilla?.Items ?? Array.Empty<Kalo.Core.VanillaItem>()) Say($"vanilla: {item.Status} {item.Path}: {item.Reason}");
+        }
+        catch (Exception ex) { Check(false, "unexpected error: " + ex.Message); }
+        return _failures == 0 ? 0 : 1;
+    }
+
     public async Task<int> PlayMapAsync(string scenario, string? gametype)
     {
         Say("play-map started: " + scenario);

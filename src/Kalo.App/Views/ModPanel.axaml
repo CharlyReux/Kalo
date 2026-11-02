@@ -16,6 +16,15 @@
 
       <StackPanel Spacing="6" IsVisible="{Binding HasActiveMod}">
         <TextBlock Text="{Binding ActiveModName}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis" />
+        <!-- Vanilla check: can this mod be played in MCC without mods? -->
+        <Button Classes="tool" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="4,2"
+                Command="{Binding ShowVanillaReportCommand}" IsVisible="{Binding VanillaSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                ToolTip.Tip="Vanilla MCC (mods off) can play game type files and Forge map variants of Reach's maps. Click for the check, file by file, in Output.">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <Ellipse Width="8" Height="8" Fill="{Binding VanillaBrush}" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding VanillaSummary}" FontSize="11.5" TextWrapping="Wrap" />
+          </StackPanel>
+        </Button>
 
         <!-- New map form -->
         <Border IsVisible="{Binding IsNewMapOpen}" Background="{StaticResource KBg}" BorderBrush="{StaticResource KAccent}" BorderThickness="1" CornerRadius="4" Padding="8">

@@ -16,6 +16,8 @@
  */
 #include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <intrin.h>
 
 typedef struct { WORD wButtons; BYTE bLeftTrigger, bRightTrigger; SHORT sThumbLX, sThumbLY, sThumbRX, sThumbRY; } XGAMEPAD;
 typedef struct { DWORD dwPacketNumber; XGAMEPAD Gamepad; } XSTATE;
@@ -130,10 +132,104 @@ static BOOL OurWindowFocused(void)
     return pid == GetCurrentProcessId();
 }
 
+/* ---- Live console commands (reach_tag_test only) -------------------------------------------------------------
+ * Kalo writes console commands, one per line, to kalo_command.txt next to the game. The game polls its controllers
+ * every frame from its main thread; on that thread, at most every 200 ms, the file is read, deleted, and each line
+ * is run by the game's own console (the function that runs bonobo_init.txt lines, RVA 0x164ff0, checked by its
+ * first bytes), except Kalo's own commands (kalo_write_map_variant). Results go to kalo_command.log: "ok <command>" or
+ * "failed <command>". */
+typedef char (*ConsoleFn)(const char *, char);
+static ConsoleFn g_console;
+static int g_consoleChecked;
+static ULONGLONG g_lastCommandCheck;
+
+/* "kalo_write_map_variant <file>": the game builds its map variant from the objects in play and encodes it (RVA
+ * 0x21f010, what net_build_map_variant calls; its own file writer is broken in this build: it reads the big-endian size
+ * as little-endian and asserts). The encoded 'mvar' chunk (0x7028 bytes: header, SHA-1, big-endian size, data) is
+ * written to the file; Kalo makes the MCC file from it. */
+typedef char (*BuildMapVariantFn)(char, void *);
+static int WriteMapVariant(const char *file)
+{
+    static const BYTE start[15] = { 0x40,0x55,0x57,0x41,0x54,0x41,0x55,0x48,0x8d,0xac,0x24,0x38,0x6e,0xfd,0xff };
+    BYTE *fn = (BYTE *)GetModuleHandleA(NULL) + 0x21f010;
+    if (memcmp(fn, start, sizeof start) != 0) return 0;
+    BYTE *buffer = (BYTE *)calloc(1, 0x8000);
+    if (!buffer) return 0;
+    int ok = 0;
+    if (((BuildMapVariantFn)fn)(0, buffer))
+    {
+        FILE *f = fopen(file, "wb");
+        if (f) { ok = fwrite(buffer + 0x30, 1, 0x7028, f) == 0x7028; fclose(f); }
+    }
+    free(buffer);
+    return ok;
+}
+
+static BOOL OnGameThread(void)
+{
+    ULONG_PTR base = (ULONG_PTR)GetModuleHandleA(NULL);
+    DWORD idx = *(DWORD *)(base + 0x5b8e298);
+    ULONG_PTR *tls = (ULONG_PTR *)__readgsqword(0x58);
+    if (!tls) return FALSE;
+    ULONG_PTR block = tls[idx];
+    return block && *(ULONG_PTR *)(block + 0x570);
+}
+
+static void RunCommands(void)
+{
+    if (!g_consoleChecked)
+    {
+        g_consoleChecked = 1;
+        static const BYTE start[15] = { 0x48,0x89,0x5c,0x24,0x08, 0x48,0x89,0x74,0x24,0x10, 0x57, 0x48,0x83,0xec,0x20 };
+        char exe[MAX_PATH];
+        GetModuleFileNameA(NULL, exe, MAX_PATH);
+        const char *name = strrchr(exe, '\\');
+        name = name ? name + 1 : exe;
+        BYTE *at = (BYTE *)GetModuleHandleA(NULL) + 0x164ff0;
+        if (_stricmp(name, "reach_tag_test.exe") == 0 && memcmp(at, start, sizeof start) == 0) g_console = (ConsoleFn)at;
+    }
+    if (!g_console) return;
+    ULONGLONG now = GetTickCount64();
+    if (now - g_lastCommandCheck < 200) return;
+    g_lastCommandCheck = now;
+    char path[MAX_PATH + 32];
+    snprintf(path, sizeof path, "%skalo_command.txt", g_dir);
+    if (GetFileAttributesA(path) == INVALID_FILE_ATTRIBUTES) return;
+    if (!OnGameThread()) return;
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    char text[4096];
+    size_t n = fread(text, 1, sizeof text - 1, f);
+    fclose(f);
+    text[n] = 0;
+    DeleteFileA(path);
+    char logPath[MAX_PATH + 32];
+    snprintf(logPath, sizeof logPath, "%skalo_command.log", g_dir);
+    for (char *line = strtok(text, "\r\n"); line; line = strtok(NULL, "\r\n"))
+    {
+        while (*line == ' ' || *line == '\t') line++;
+        if (!*line) continue;
+        char ok;
+        if (_strnicmp(line, "kalo_write_map_variant ", 23) == 0)
+        {
+            char file[MAX_PATH];
+            const char *arg = line + 23;
+            while (*arg == ' ' || *arg == '"') arg++;
+            snprintf(file, sizeof file, "%s", arg);
+            for (char *q = file + strlen(file); q > file && (q[-1] == '"' || q[-1] == ' '); ) *--q = 0;
+            ok = (char)WriteMapVariant(file);
+        }
+        else ok = g_console(line, 0);
+        FILE *log = fopen(logPath, "a");
+        if (log) { fprintf(log, "%s %s\n", ok ? "ok" : "failed", line); fclose(log); }
+    }
+}
+
 /* Called once per controller-slot query: refresh settings, hotkeys, then answer for 'slot'. */
 static DWORD Query(DWORD slot, XSTATE *state, GetStateFn fn)
 {
     LoadReal();
+    RunCommands();
     if (!fn) return ERROR_DEVICE_NOT_CONNECTED;
     EnterCriticalSection(&g_lock);
     if (slot < PADS) g_polls[slot]++;

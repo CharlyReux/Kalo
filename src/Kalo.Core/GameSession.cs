@@ -213,6 +213,31 @@ public sealed class GameSession : IDisposable
         }
     }
 
+    /// <summary>
+    /// Runs console commands in the running game. Kalo's xinput1_4.dll (next to the game) reads kalo_command.txt on the
+    /// game's thread and appends "ok &lt;command&gt;" or "failed &lt;command&gt;" to kalo_command.log. Returns true when every
+    /// command was run (whatever its result) within the timeout.
+    /// </summary>
+    public async Task<bool> RunConsoleAsync(IReadOnlyList<string> commands, TimeSpan timeout, CancellationToken cancel = default)
+    {
+        if (!IsRunning) return false;
+        string file = Path.Combine(_paths.Workspace, "kalo_command.txt");
+        string log = Path.Combine(_paths.Workspace, "kalo_command.log");
+        int before = File.Exists(log) ? File.ReadAllLines(log).Length : 0;
+        File.WriteAllText(file, string.Join("\r\n", commands) + "\r\n");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < timeout && IsRunning)
+        {
+            await Task.Delay(200, cancel);
+            if (File.Exists(file)) continue;
+            int lines = 0;
+            try { lines = File.Exists(log) ? File.ReadAllLines(log).Length : 0; } catch (IOException) { continue; }
+            if (lines - before >= commands.Count) return true;
+        }
+        try { if (File.Exists(file)) File.Delete(file); } catch (IOException) { }
+        return false;
+    }
+
     public void Stop()
     {
         if (!IsRunning) return;

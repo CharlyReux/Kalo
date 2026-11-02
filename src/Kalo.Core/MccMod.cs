@@ -95,6 +95,27 @@ public sealed class MccMod
         return folders;
     }
 
+    /// <summary>
+    /// Puts a map variant file (.mvar) in the player's own map variants (LocalFiles\&lt;id&gt;\HaloReach\Map, made when
+    /// missing), where Custom Games lists it under its map. Returns the folders it went to.
+    /// </summary>
+    public static List<string> SetMapVariant(string file, byte[] data)
+    {
+        var folders = new List<string>();
+        string local = Path.Combine(MccLocalLow, "LocalFiles");
+        if (!Directory.Exists(local)) return folders;
+        foreach (string player in Directory.GetDirectories(local))
+        {
+            string reach = Path.Combine(player, "HaloReach");
+            if (!Directory.Exists(reach)) continue;
+            string maps = Path.Combine(reach, "Map");
+            Directory.CreateDirectory(maps);
+            File.WriteAllBytes(Path.Combine(maps, file), data);
+            folders.Add(maps);
+        }
+        return folders;
+    }
+
     /// <summary>MCC's per-player Halo Reach game type folders (LocalLow\MCC\LocalFiles\&lt;id&gt;\HaloReach\GameType), when MCC has made them.</summary>
     public static IEnumerable<string> PlayerGameTypeFolders()
     {

@@ -608,6 +608,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         ChangesSummary = list.Count == 0 ? "No changes from vanilla" : $"{list.Count} changed file{(list.Count == 1 ? "" : "s")}";
         foreach (var root in ExplorerRoots) root.RefreshChanged();
         BuildModTree(list);
+        UpdateVanilla(list);
     }
 
     private bool IsChangedSafe(string relative)

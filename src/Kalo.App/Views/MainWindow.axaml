@@ -46,8 +46,9 @@
             <MenuItem Header="Play from camera (open map: start where the editor camera is)" InputGesture="Ctrl+F5" Command="{Binding PlayFromCameraCommand}" />
             <MenuItem Header="Stop" InputGesture="Shift+F5" Command="{Binding StopGameCommand}" />
             <Separator />
-            <MenuItem Header="Play in MCC (builds a real map: a few minutes; labels and Forge objects work there)" Command="{Binding PlayInMccCommand}" />
+            <MenuItem Header="Play in MCC (builds a real map: a few minutes; MCC with mods)" Command="{Binding PlayInMccCommand}" />
             <MenuItem Header="Stop the MCC build" Command="{Binding StopMccBuildCommand}" IsEnabled="{Binding IsBuildingForMcc}" />
+            <MenuItem Header="Export the map as a Forge variant (vanilla MCC, no mods)" Command="{Binding ExportForgeVariantCommand}" />
           </MenuItem>
           <MenuItem Header="_Help">
             <MenuItem Header="Kalo Script documentation" InputGesture="F1" Click="Docs_Click" />
