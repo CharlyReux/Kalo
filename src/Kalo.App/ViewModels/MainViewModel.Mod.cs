@@ -20,10 +20,13 @@ public partial class MainViewModel
     [ObservableProperty] private bool _isPreparingPlay;
 
     /// <summary>What Play will launch, in words, for the title bar tooltip.</summary>
-    public string PlaySummary => $"Play {System.IO.Path.GetFileName(SelectedScenario ?? "?")} with {SelectedGametype?.Label ?? "its default gametype"}{(PlayerCount > 1 ? $", {PlayerCount} players split-screen" : "")} in reach_tag_test (F5). Ctrl+F5 in a map: play from the camera. Unsaved changes are saved first.";
+    public string PlaySummary => PlayIsCampaign
+        ? $"Play the campaign mission {System.IO.Path.GetFileName(SelectedScenario ?? "?")} on {SelectedDifficulty?.Label ?? "Normal"}{(PlayerCount > 1 ? $", {PlayerCount} players split-screen" : "")} in reach_tag_test (F5), with its mission scripts. Ctrl+F5 in a map: walk around from the camera without the mission scripts. Unsaved changes are saved first."
+        : $"Play {System.IO.Path.GetFileName(SelectedScenario ?? "?")} with {SelectedGametype?.Label ?? "its default gametype"}{(PlayerCount > 1 ? $", {PlayerCount} players split-screen" : "")} in reach_tag_test (F5). Ctrl+F5 in a map: play from the camera. Unsaved changes are saved first.";
+    partial void OnSelectedDifficultyChanged(CampaignDifficulty? value) => OnPropertyChanged(nameof(PlaySummary));
 
     partial void OnSelectedGametypeChanged(GametypeChoice? value) { OnPropertyChanged(nameof(PlaySummary)); OnPropertyChanged(nameof(PlayInMccSummary)); }
-    partial void OnSelectedScenarioChanged(string? value) { OnPropertyChanged(nameof(PlaySummary)); OnPropertyChanged(nameof(PlayInMccSummary)); }
+    partial void OnSelectedScenarioChanged(string? value) { RefreshCampaignPlay(); OnPropertyChanged(nameof(PlaySummary)); OnPropertyChanged(nameof(PlayInMccSummary)); }
 
     private void BuildGametypeChoices()
     {
@@ -82,6 +85,13 @@ public partial class MainViewModel
             // Warn (without blocking) about objects the game will delete because they are off the level.
             var openMap = Tabs.OfType<MapEditorViewModel>().FirstOrDefault(m => m.Scenario.Equals(SelectedScenario, StringComparison.OrdinalIgnoreCase));
             if (openMap?.HasOutside == true) AddProblem("warning", openMap.OutsideText, openMap.Path);
+            if (await IsCampaignScenarioAsync(SelectedScenario))
+            {
+                // A campaign mission: no gametype; the mission's own scripts run (cutscenes, AI, objectives).
+                var commands = CampaignPlayCommands(out string campaignNote);
+                StartGame(SelectedScenario, commands, $"Play: {SelectedScenario}{campaignNote}. A mission takes a minute or two to load; its scripts' messages and errors show in Output (hs: …).", null, true);
+                return;
+            }
             var init = await PlayInitAsync();
             if (init == null) return;
             string scenario = SelectedScenario;
@@ -115,6 +125,21 @@ public partial class MainViewModel
                 Path = map.Path, Op = PlacementOps.MakePlayCopy, Tag = copy, Index = PlayerCount,
                 Position = new[] { position.X, position.Y, position.Z, facing },
             });
+            if (map.IsCampaign)
+            {
+                // A campaign mission from the camera: its scripts would play the intro and move the player, so they are off
+                // (placed objects only, no AI); the zone set picked in the map view is loaded.
+                RememberScenarioType(copy[..^".scenario".Length], "solo");
+                var commands = CampaignPlayCommands(out _);
+                var after = new List<string>();
+                // "debug map launching: sets the initial bsp for the next map" (takes the zone set's name).
+                var zs = await ZoneSetForAsync(map, position);
+                if (zs != null) commands.Add("game_initial_zone_set " + zs.Name);
+                StartGame(copy[..^".scenario".Length], commands,
+                    $"Play from camera: {map.Scenario} at {position.X:F1}, {position.Y:F1}, {position.Z:F1}, without the mission scripts (no cutscenes, no AI){(zs != null ? ", zone set " + zs.Name : "")}. Press Play (F5) for the mission with its scripts.",
+                    after, scripts: false);
+                return;
+            }
             var init = await PlayInitAsync();
             if (init == null) return;
             await AddScriptObjectsForPlayAsync(map.Path, copy);
@@ -248,6 +273,7 @@ public partial class MainViewModel
     {
         ("Maps", "\uE909", "New map…"),
         ("Gametypes", "\uE943", "New gametype…"),
+        ("Mission scripts", "\uE8A5", "New campaign map…"),
         ("Painted blocks", "\uE771", "Paint blocks in a map…"),
         ("Weapons & objects", "\uE7FC", "Tweak a weapon or object…"),
         ("Sounds", "\uE767", "Change a sound…"),
@@ -262,6 +288,7 @@ public partial class MainViewModel
         string p = workspacePath.ToLowerInvariant();
         string ext = System.IO.Path.GetExtension(p).TrimStart('.');
         if (ext == "scenario") return "Maps";
+        if (ext == "scenario_hs_source_file") return "Mission scripts";
         // A painted block is three tags (object, model, render model); the group shows the object only.
         if (p.StartsWith(@"tags\levels\mods\") && p.Contains(@"\blocks\")) return ext is "model" or "render_model" ? "" : "Painted blocks";
         if (p.StartsWith(@"data\multiplayer\megalo\")) return "Gametypes";
@@ -285,7 +312,7 @@ public partial class MainViewModel
                 .Where(c => name != "Other files" || !changes.Any(s => s.Path.EndsWith(".scenario") && System.IO.Path.GetDirectoryName(s.Path) == System.IO.Path.GetDirectoryName(c.Path)))
                 .Select(c => new ModEntry(this, c.Path, c.Kind.ToString()))
                 .ToList();
-            if (name == "Other files" && entries.Count == 0) continue;
+            if ((name == "Other files" || name == "Mission scripts") && entries.Count == 0) continue;
             var group = new ModGroup(name, glyph, hint) { IsExpanded = first || expanded.Contains(name) || entries.Count > 0 };
             foreach (var e in entries) group.Items.Add(e);
             ModGroups.Add(group);
@@ -345,6 +372,11 @@ public partial class MainViewModel
         {
             case "Maps": OpenNewMapForm(); break;
             case "Gametypes": OpenNewGametypeForm(); break;
+            case "Mission scripts":
+                // A campaign map comes with its own copy of the mission scripts (open them from the map's Campaign bar).
+                OpenNewMapForm();
+                NewMapKind = "campaign";
+                break;
             default:
                 ShowAllFilesTab();
                 SearchText = group?.Name switch
@@ -367,15 +399,25 @@ public partial class MainViewModel
     [ObservableProperty] private string? _newMapBase;
     /// <summary>New map starting point: "barebone" (a platform and spawns), "empty" (a Reach level, spawns only) or "full".</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(NewMapEmpty), nameof(NewMapFull), nameof(NewMapBarebone), nameof(NeedsBaseLevel))]
+    [NotifyPropertyChangedFor(nameof(NewMapEmpty), nameof(NewMapFull), nameof(NewMapBarebone), nameof(NewMapCampaign), nameof(NeedsBaseLevel), nameof(BaseLevels), nameof(NewMapLevelLabel))]
     private string _newMapKind = "barebone";
+    public bool NewMapCampaign { get => NewMapKind == "campaign"; set { if (value) NewMapKind = "campaign"; } }
+    public string NewMapLevelLabel => NewMapCampaign ? "Mission to copy (m05 Noble Actual … m70 The Pillar of Autumn)" : "Level to build on";
+    partial void OnNewMapKindChanged(string value)
+    {
+        // The level list follows the kind (campaign missions or multiplayer levels).
+        var levels = BaseLevels.ToList();
+        if (NewMapBase == null || !levels.Contains(NewMapBase))
+            NewMapBase = value == "campaign" ? levels.FirstOrDefault(s => s.EndsWith(@"\m10")) ?? levels.FirstOrDefault()
+                                             : levels.FirstOrDefault(s => s.EndsWith("20_sword_slayer")) ?? levels.FirstOrDefault();
+    }
     public bool NewMapBarebone { get => NewMapKind == "barebone"; set { if (value) NewMapKind = "barebone"; } }
     public bool NewMapEmpty { get => NewMapKind == "empty"; set { if (value) NewMapKind = "empty"; } }
     public bool NewMapFull { get => NewMapKind == "full"; set { if (value) NewMapKind = "full"; } }
     public bool NeedsBaseLevel => NewMapKind != "barebone";
 
-    /// <summary>Reach multiplayer levels a new map can start from.</summary>
-    public IEnumerable<string> BaseLevels => Scenarios.Where(s => s.StartsWith(@"levels\multi\", StringComparison.OrdinalIgnoreCase));
+    /// <summary>Reach levels a new map can start from: multiplayer levels, or campaign missions for a campaign map.</summary>
+    public IEnumerable<string> BaseLevels => Scenarios.Where(s => s.StartsWith(NewMapCampaign ? @"levels\solo\" : @"levels\multi\", StringComparison.OrdinalIgnoreCase));
 
     [RelayCommand]
     private void OpenNewMapForm()
@@ -394,7 +436,7 @@ public partial class MainViewModel
     {
         var map = NewMapBarebone
             ? await CreateMapAsync(NewMapName, BareboneMap.Template[..^".scenario".Length], empty: true, barebone: true)
-            : await CreateMapAsync(NewMapName, NewMapBase, NewMapEmpty);
+            : await CreateMapAsync(NewMapName, NewMapBase, NewMapEmpty && !NewMapCampaign);
         if (map != null) { IsNewMapOpen = false; NewMapName = ""; }
     }
 
@@ -427,7 +469,11 @@ public partial class MainViewModel
             int mapId = 7000 + (int)((uint)path.GetHashCode() % 2000);
             var r = await Host.CreateMapAsync(new CreateMapParams { Template = baseScenario + ".scenario", NewPath = path, Empty = empty, MapId = mapId, Barebone = barebone });
             ModProjects.UpdateActive(m => m.MapTemplates[path] = baseScenario + ".scenario");
-            Log(barebone
+            RememberScenarioType(path[..^".scenario".Length], r.Type);
+            if (r.Type == "solo")
+                Log($"New campaign map {path}: a full copy of the {System.IO.Path.GetFileName(baseScenario)} mission, with its own copy of {r.Scripts?.Count ?? 0} mission script(s): "
+                    + string.Join(", ", (r.Scripts ?? new()).Select(System.IO.Path.GetFileNameWithoutExtension)) + ".");
+            else Log(barebone
                 ? $"New map {path}: a platform with {r.Kept} spawn points under an open sky."
                 : empty
                 ? $"New map {path} on the {System.IO.Path.GetFileName(baseScenario)} level: {r.Removed} objects removed, {r.Kept} spawn points kept."

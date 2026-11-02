@@ -335,7 +335,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     private void RefreshPalette()
     {
         PaletteChoices.Clear();
-        foreach (var c in _categories.Values)
+        foreach (var c in _categories.Values.Where(c => c.Name is not (CampaignCategories.AiSpawnPoints or CampaignCategories.ScriptPoints)))
             for (int i = 0; i < (c.Palette?.Count ?? 0); i++)
                 if (!string.IsNullOrEmpty(c.Palette![i].Tag)) PaletteChoices.Add(new PaletteChoice(c.Name!, i, c.Palette[i].Tag!));
     }
@@ -393,15 +393,17 @@ public partial class MapEditorViewModel : DocumentViewModel
             {
                 _categories[c.Name!] = c;
                 foreach (var p in c.Items ?? new()) Items.Add(new PlacementItem(this, c, p));
-                for (int i = 0; i < (c.Palette?.Count ?? 0); i++)
-                    if (!string.IsNullOrEmpty(c.Palette![i].Tag)) PaletteChoices.Add(new PaletteChoice(c.Name!, i, c.Palette[i].Tag!));
             }
+            RefreshPalette();
+            ApplyCampaign(data);
             _ = keepCategory;
             Folders = data.Folders ?? new();
             Selected = Items.FirstOrDefault(i => i.Category == selCat && i.Index == selIndex);
-            Status = $"{Items.Count:N0} objects · {data.Bsps?.Count ?? 0} bsp · loaded in {data.Ms} ms";
+            Status = IsCampaign
+                ? $"Campaign mission · {Items.Count(i => i.IsObject):N0} objects, {Items.Count(i => i.IsCampaignMarker):N0} markers · {data.Bsps?.Count ?? 0} bsp · loaded in {data.Ms} ms"
+                : $"{Items.Count:N0} objects · {data.Bsps?.Count ?? 0} bsp · loaded in {data.Ms} ms";
             ApplyFilter();
-            _ = LoadGeometryAsync(data.Bsps ?? new());
+            _ = LoadGeometryAsync(data.Bsps ?? new(), SelectedZoneSet?.Bsps);
             _ = LoadModelsAsync(data);
             _ = RefreshStatesAsync();
         }
@@ -412,13 +414,13 @@ public partial class MapEditorViewModel : DocumentViewModel
         }
     }
 
-    private async Task LoadGeometryAsync(List<string> bsps)
+    private async Task LoadGeometryAsync(List<string> bsps, IReadOnlyList<int>? only = null, bool reload = false)
     {
-        if (Bsp != null) return;
+        if (Bsp != null && !reload) return;
         GeometryStatus = "Loading level geometry…";
         try
         {
-            var mesh = await _main.Geometry.LoadLevelAsync(Path, bsps, s => Avalonia.Threading.Dispatcher.UIThread.Post(() => GeometryStatus = s));
+            var mesh = await _main.Geometry.LoadLevelAsync(Path, bsps, s => Avalonia.Threading.Dispatcher.UIThread.Post(() => GeometryStatus = s), only);
             Bsp = mesh;
             GeometryVersion++;
             foreach (var item in Items) item.RefreshOutside();
@@ -445,6 +447,8 @@ public partial class MapEditorViewModel : DocumentViewModel
     {
         var bsp = Bsp;
         if (bsp == null || bsp.TriangleCount == 0) return false;
+        // Showing one zone set: the rest of the mission is not loaded here, so its objects are not "outside".
+        if (SelectedZoneSet?.Bsps != null) return false;
         const float slack = 1f;
         return p.X < bsp.Min.X - slack || p.X > bsp.Max.X + slack || p.Y < bsp.Min.Y - slack || p.Y > bsp.Max.Y + slack || p.Z < bsp.Min.Z - 2f;
     }
@@ -510,6 +514,10 @@ public partial class MapEditorViewModel : DocumentViewModel
     private bool LayerVisible(string category) => category switch
     {
         StartLocations.Category => true,
+        CampaignCategories.TriggerVolumes => ShowVolumes,
+        CampaignCategories.AiSpawnPoints => ShowAi,
+        CampaignCategories.CutsceneFlags or CampaignCategories.CutsceneCameras => ShowCutscene,
+        CampaignCategories.ScriptPoints => ShowScriptPoints,
         "scenery" or "crates" => ShowScenery,
         "weapons" or "equipment" => ShowItems,
         "vehicles" or "bipeds" or "giants" => ShowVehicles,
@@ -731,6 +739,36 @@ public partial class PlacementItem : ObservableObject
     public float Roll { get; private set; }
     public int Folder { get; private set; } = -1;
     public int UniqueId { get; private set; }
+    /// <summary>Campaign markers that are not objects (volumes, squad spawn points...): the block holding the element.</summary>
+    public string? Block { get; private set; }
+    public int BlockIndex { get; private set; }
+    public bool IsCampaignMarker => CampaignCategories.Contains(Category);
+    /// <summary>A placed object (not a start location or a campaign marker): scale and objective zones apply.</summary>
+    public bool IsObject => !IsCampaignMarker && Category != StartLocations.Category;
+    public bool IsVolume => Category == CampaignCategories.TriggerVolumes;
+    public bool IsAiSpawnPoint => Category == CampaignCategories.AiSpawnPoints;
+    public bool IsSectorVolume { get; private set; }
+    public bool IsBoxVolume => IsVolume && !IsSectorVolume;
+    /// <summary>What this campaign marker is for, for the inspector.</summary>
+    public string MarkerHelp => Category switch
+    {
+        CampaignCategories.TriggerVolumes => IsSectorVolume
+            ? "Trigger volume (sector: a floor shape with a height). Mission scripts test who is inside it by its name, e.g. (volume_test_players " + (PlacedName ?? "name") + "). Names starting with zone_set: or begin_zone_set: switch zone sets; kill and safe_zone volumes kill or protect. A sector can be moved; reshape it in Sapien."
+            : "Trigger volume (box). Mission scripts test who is inside it by its name, e.g. (volume_test_players " + (PlacedName ?? "name") + "). Names starting with zone_set: or begin_zone_set: switch zone sets; kill and safe_zone volumes kill or protect.",
+        CampaignCategories.AiSpawnPoints => "Where one AI of " + (Label ?? "its squad") + " appears when the squad is placed (ai_place). What spawns (character, weapons) is set in the squad's fields; open the scenario's Fields › squads to edit them.",
+        CampaignCategories.CutsceneFlags => "A named point for mission scripts and cutscenes (e.g. object_teleport, cinematics), found by name.",
+        CampaignCategories.CutsceneCameras => "A named camera position for mission scripts (camera_set). Its rotation is where the camera looks.",
+        CampaignCategories.ScriptPoints => "A named point of " + (Label ?? "a point set") + " that mission scripts use to move AI or aim (e.g. cs_go_to ps_set/point).",
+        _ => "",
+    };
+    [ObservableProperty] private string _volumeWidth = "";
+    [ObservableProperty] private string _volumeLength = "";
+    [ObservableProperty] private string _volumeHeight = "";
+    partial void OnVolumeWidthChanged(string value) { if (!_suppress) _ = _map.SetVolumeSizeAsync(this); }
+    partial void OnVolumeLengthChanged(string value) { if (!_suppress) _ = _map.SetVolumeSizeAsync(this); }
+    partial void OnVolumeHeightChanged(string value) { if (!_suppress) _ = _map.SetVolumeSizeAsync(this); }
+    internal float[]? VolumeSizeFromText() =>
+        TryF(VolumeWidth, out float w) && TryF(VolumeLength, out float l) && TryF(VolumeHeight, out float h) && w > 0 && l > 0 && h > 0 ? new[] { w, l, h } : null;
 
     public static readonly IBrush NewBrush = new SolidColorBrush(Avalonia.Media.Color.Parse("#5FB865"));
     public static readonly IBrush ChangedBrush = new SolidColorBrush(Avalonia.Media.Color.Parse("#E5A50A"));
@@ -787,11 +825,16 @@ public partial class PlacementItem : ObservableObject
         PlacedScale = p.Scale > 0.001f ? p.Scale : 1f;
         Folder = p.Folder;
         UniqueId = p.UniqueId;
+        Block = p.Block;
+        BlockIndex = p.BlockIndex;
+        IsSectorVolume = p.IsSector;
         ZoneShape = Math.Clamp(p.Shape, 0, 3);
         var zs = p.ShapeSize is { Length: >= 4 } ? p.ShapeSize : new float[4];
         ZoneSize = new Vector4(zs[0], zs[1], zs[2], zs[3]);
         ZoneShapeIndex = ZoneShape;
         ZoneWidth = Fmt(zs[0]); ZoneLength = Fmt(zs[1]); ZoneTop = Fmt(zs[2]); ZoneBottom = Fmt(zs[3]);
+        VolumeWidth = Fmt(zs[0]); VolumeLength = Fmt(zs[1]); VolumeHeight = Fmt(zs[2] + zs[3]);
+        OnPropertyChanged(nameof(IsSectorVolume)); OnPropertyChanged(nameof(IsBoxVolume)); OnPropertyChanged(nameof(MarkerHelp));
         OnPropertyChanged(nameof(HasZone)); OnPropertyChanged(nameof(IsBoxZone)); OnPropertyChanged(nameof(IsSphereZone)); OnPropertyChanged(nameof(ZoneWidthLabel));
         X = Fmt(pos.X); Y = Fmt(pos.Y); Z = Fmt(pos.Z);
         YawText = Fmt(Yaw); PitchText = Fmt(Pitch); RollText = Fmt(Roll);
@@ -802,8 +845,10 @@ public partial class PlacementItem : ObservableObject
         RefreshOutside();
     }
 
-    public string Display => PlacedName is { Length: > 0 } ? $"{PlacedName} ({Name})" : Name;
-    public string Detail => $"{Category} [{Index}]" + (string.IsNullOrEmpty(Label) ? "" : " · " + Label);
+    public string Display => IsCampaignMarker ? (PlacedName is { Length: > 0 } ? PlacedName : Name)
+        : PlacedName is { Length: > 0 } ? $"{PlacedName} ({Name})" : Name;
+    public string Detail => IsCampaignMarker ? $"{Name} [{Index}]" + (string.IsNullOrEmpty(Label) ? "" : " · " + Label)
+        : $"{Category} [{Index}]" + (string.IsNullOrEmpty(Label) ? "" : " · " + Label);
     public string SearchText => $"{Display} {Category} {Tag} {Label}";
     /// <summary>Middle of the object: its model's bounds when loaded, else the tag's bounding sphere.</summary>
     public Vector3 Center => Model != null ? Vector3.Transform(Model.Center, ModelMatrix) : Position + Vector3.Transform(Offset, RotationMatrix);
@@ -923,6 +968,14 @@ public partial class PlacementItem : ObservableObject
     private static Vector3 ColorFor(string category, string tag)
     {
         if (category == StartLocations.Category) return new(0.4f, 0.95f, 1f);
+        switch (category)
+        {
+            case CampaignCategories.TriggerVolumes: return new(0.3f, 0.85f, 1f);
+            case CampaignCategories.AiSpawnPoints: return new(0.95f, 0.35f, 0.35f);
+            case CampaignCategories.CutsceneFlags: return new(1f, 0.8f, 0.25f);
+            case CampaignCategories.CutsceneCameras: return new(0.85f, 0.5f, 1f);
+            case CampaignCategories.ScriptPoints: return new(0.55f, 0.95f, 0.45f);
+        }
         if (tag.Contains("respawn_point", StringComparison.OrdinalIgnoreCase)) return new(0.35f, 0.85f, 0.55f);
         return category switch
         {

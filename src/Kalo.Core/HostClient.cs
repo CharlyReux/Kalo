@@ -120,12 +120,18 @@ public sealed class HostClient : IAsyncDisposable
     public Task<SnapshotResult> SnapshotAsync(string path) => CallAsync<SnapshotResult>(Methods.Snapshot, new SnapshotParams { Path = path });
     public Task<SnapshotResult> RestoreAsync(string path, int id) => CallAsync<SnapshotResult>(Methods.Restore, new SnapshotParams { Path = path, Id = id });
     public Task<MakeVariantResult> MakeVariantAsync(MakeVariantParams p) => CallAsync<MakeVariantResult>(Methods.MakeVariant, p, TimeSpan.FromMinutes(2));
-    public Task<ExportLevelMeshResult> ExportLevelMeshAsync(string scenario, string outputFile) =>
-        CallAsync<ExportLevelMeshResult>(Methods.ExportLevelMesh, new ExportLevelMeshParams { Scenario = scenario, OutputFile = outputFile }, TimeSpan.FromMinutes(10));
+    public Task<ExportLevelMeshResult> ExportLevelMeshAsync(string scenario, string outputFile, IReadOnlyList<int>? bsps = null) =>
+        CallAsync<ExportLevelMeshResult>(Methods.ExportLevelMesh, new ExportLevelMeshParams { Scenario = scenario, OutputFile = outputFile, Bsps = bsps?.ToList() }, TimeSpan.FromMinutes(10));
     public Task<DiffTagResult> DiffTagAsync(string path, string vanillaFile) =>
         CallAsync<DiffTagResult>(Methods.DiffTag, new DiffTagParams { Path = path, VanillaFile = vanillaFile }, TimeSpan.FromMinutes(3));
     public Task<CreateMapResult> CreateMapAsync(CreateMapParams p) => CallAsync<CreateMapResult>(Methods.CreateMap, p, TimeSpan.FromMinutes(3));
     public Task<ScriptObjectsResult> ScriptObjectsAsync(ScriptObjectsParams p) => CallAsync<ScriptObjectsResult>(Methods.ScriptObjects, p);
+    public Task<BspBoundsResult> BspBoundsAsync(string path) => CallAsync<BspBoundsResult>(Methods.BspBounds, new TagPathParams { Path = path }, TimeSpan.FromMinutes(5));
+    public Task<string> ScenarioTypeAsync(string path) => CallAsync<string>(Methods.ScenarioType, new TagPathParams { Path = path }, TimeSpan.FromMinutes(2));
+    public Task<MissionScriptResult> ReadMissionScriptAsync(string path) =>
+        CallAsync<MissionScriptResult>(Methods.ReadMissionScript, new MissionScriptParams { Path = path });
+    public Task<MissionScriptResult> WriteMissionScriptAsync(string path, string text) =>
+        CallAsync<MissionScriptResult>(Methods.WriteMissionScript, new MissionScriptParams { Path = path, Text = text });
     public Task<ForgeNamesResult> ForgeNamesAsync() => CallAsync<ForgeNamesResult>(Methods.ForgeNames, new { }, TimeSpan.FromMinutes(5));
     public Task<MegaloCatalog> MegaloCatalogAsync(string objectLists) =>
         CallAsync<MegaloCatalog>(Methods.MegaloCatalog, new MegaloCatalogParams { ObjectLists = objectLists }, TimeSpan.FromMinutes(2));

@@ -26,7 +26,10 @@ public partial class MapEditorViewModel
 
     private static readonly (string Category, string Title)[] Groups =
     {
-        (StartLocations.Category, "Start locations (first spawn)"), ("weapons", "Weapons"), ("equipment", "Equipment"), ("vehicles", "Vehicles"), ("crates", "Crates and blocks"),
+        (StartLocations.Category, "Start locations (first spawn)"),
+        (CampaignCategories.TriggerVolumes, "Trigger volumes"), (CampaignCategories.AiSpawnPoints, "Squad spawn points"),
+        (CampaignCategories.CutsceneFlags, "Cutscene flags"), (CampaignCategories.CutsceneCameras, "Cutscene cameras"),
+        (CampaignCategories.ScriptPoints, "Script points"), ("weapons", "Weapons"), ("equipment", "Equipment"), ("vehicles", "Vehicles"), ("crates", "Crates and blocks"),
         ("scenery", "Scenery"), ("machines", "Machines"), ("controls", "Controls"), ("terminals", "Terminals"),
         ("bipeds", "Bipeds"), ("giants", "Giants"), ("effect scenery", "Effects"), ("sound scenery", "Sounds"),
     };
@@ -266,6 +269,7 @@ public partial class MapEditorViewModel
         var list = new List<PrefabObject>();
         foreach (var i in _selection.ToList())
         {
+            if (i.IsCampaignMarker) continue; // volumes, squad points...: duplicate them instead
             var o = new PrefabObject
             {
                 Tag = i.Tag,
@@ -273,7 +277,7 @@ public partial class MapEditorViewModel
                 Rotation = new[] { i.Yaw, i.Pitch, i.Roll },
                 SourceMap = Path,
             };
-            if (_main.Host != null && i.Category != StartLocations.Category)
+            if (_main.Host != null && i.IsObject)
             {
                 try
                 {
@@ -406,7 +410,9 @@ public partial class MapEditorViewModel
         if (item == null || _main.Host == null) { Properties.Clear(); HasProperties = false; return; }
         try
         {
-            var doc = await _main.Host.ReadElementAsync(Path, item.Category == StartLocations.Category ? StartLocations.Block : item.Category, item.Index);
+            var doc = item.Block != null
+                ? await _main.Host.ReadElementAsync(Path, item.Block, item.BlockIndex)
+                : await _main.Host.ReadElementAsync(Path, item.Category == StartLocations.Category ? StartLocations.Block : item.Category, item.Index);
             if (generation != _propertiesGeneration) return;
             Properties.Clear();
             void Walk(List<FieldNode>? nodes, string section)
@@ -472,7 +478,7 @@ public partial class MapEditorViewModel
     /// <summary>Changes one field of an object's objective zone (shape or a size), then reloads the object.</summary>
     public async Task SetZoneAsync(PlacementItem item, string field, string value)
     {
-        if (_main.Host == null || item.Category == Kalo.Protocol.StartLocations.Category) return;
+        if (_main.Host == null || !item.IsObject) return;
         using var edit = await EditAsync("change zone");
         string mp = $"Block:{item.Category}[{item.Index}]/Struct:multiplayer data[0]/";
         try

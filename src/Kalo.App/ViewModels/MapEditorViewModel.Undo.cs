@@ -31,6 +31,7 @@ public partial class MapEditorViewModel
             try
             {
                 var snap = await _main.Host.SnapshotAsync(Path);
+                if (snap.Ms > 300) _main.Log($"{Title}: undo step for {what} took {snap.Ms} ms ({snap.Bytes / 1024:N0} KB).");
                 _undo.Add((snap.Id, what));
                 if (_undo.Count > 60) _undo.RemoveAt(0);
                 _redo.Clear();

@@ -124,11 +124,11 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Geometry = new Kalo.Core.Geometry.LevelGeometry(Paths);
         Models = new Kalo.Core.Geometry.ModelLibrary(Paths);
         Textures = new Kalo.Core.Geometry.TextureLibrary(Paths);
-        Geometry.TagSource = async (scenario, bsps) =>
+        Geometry.TagSource = async (scenario, bsps, only) =>
         {
             if (Host == null) return null;
             string file = Geometry.CacheFile(scenario) + ".host";
-            var r = await Host.ExportLevelMeshAsync(scenario, file);
+            var r = await Host.ExportLevelMeshAsync(scenario, file, only);
             Post(() => Log($"Level geometry for {scenario}: {r.Triangles:N0} triangles ({r.Clusters} clusters, {r.Instances} instances) in {r.Ms} ms" + (string.IsNullOrEmpty(r.Notes) ? "" : " — " + r.Notes)));
             var mesh = Kalo.Core.Geometry.Mesh.TryLoad(file);
             try { File.Delete(file); } catch { }
@@ -342,6 +342,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public async Task OpenAnyAsync(string tagPath)
     {
         if (tagPath.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) await OpenMapAsync(tagPath);
+        else if (tagPath.EndsWith(MissionScriptViewModel.Extension, StringComparison.OrdinalIgnoreCase)) await OpenMissionScriptAsync(tagPath);
         else await OpenTagAsync(tagPath);
     }
 
@@ -653,8 +654,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     private void FindScenarios(string tagsRoot)
     {
-        // Maps made in Kalo (levels\mods) first, then Reach's multiplayer maps.
-        foreach (string folder in new[] { "mods", "multi" })
+        // Maps made in Kalo (levels\mods) first, then Reach's multiplayer maps, then the campaign missions.
+        foreach (string folder in new[] { "mods", "multi", "solo" })
         {
             string dir = System.IO.Path.Combine(tagsRoot, "levels", folder);
             if (!Directory.Exists(dir)) continue;
@@ -675,14 +676,20 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         if (SelectedScenario != null) StartGame(SelectedScenario, initCommands, note);
     }
 
-    public void StartGame(string scenario, IReadOnlyList<string> initCommands, string? note)
+    public void StartGame(string scenario, IReadOnlyList<string> initCommands, string? note) => StartGame(scenario, initCommands, note, null, true);
+
+    /// <param name="after">Console commands once the map has started (campaign: switch_zone_set).</param>
+    /// <param name="scripts">False: the map's scripts don't run (a campaign mission without its cutscenes and AI).</param>
+    public void StartGame(string scenario, IReadOnlyList<string> initCommands, string? note, IReadOnlyList<string>? after, bool scripts)
     {
         if (Game == null) return;
         if (IsGameRunning) Game.Stop();
         try
         {
             ApplyPlaytestInput(PlayerCount);
-            Game.Start(scenario, initCommands);
+            Game.Campaign = IsCampaignScenario(scenario);
+            Game.RunScripts = scripts;
+            Game.Start(scenario, initCommands, after);
             if (note != null) Log(note);
             IsGameRunning = true;
             GameStatus = "Game loading " + System.IO.Path.GetFileName(scenario) + "…";

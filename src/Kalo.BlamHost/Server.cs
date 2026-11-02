@@ -95,7 +95,20 @@ namespace Kalo.BlamHost
                     var set = Params<SetFieldParams>(r);
                     return tags.SetField(set.Path, set.FieldPath, set.Value, set.Force);
                 case Methods.SaveTag:
-                    return tags.Save(Params<TagPathParams>(r).Path);
+                {
+                    string savePath = Params<TagPathParams>(r).Path;
+                    // Kalo writes only the .scenario: the game must not keep loading older copies from split resource tags.
+                    if (savePath.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) scenarios.BeforeSave(savePath);
+                    return tags.Save(savePath);
+                }
+                case Methods.BspBounds:
+                    return scenarios.BspBounds(Params<TagPathParams>(r).Path);
+                case Methods.ScenarioType:
+                    return scenarios.TypeOf(Params<TagPathParams>(r).Path);
+                case Methods.ReadMissionScript:
+                    return scenarios.ReadMissionScript(Params<MissionScriptParams>(r));
+                case Methods.WriteMissionScript:
+                    return scenarios.WriteMissionScript(Params<MissionScriptParams>(r));
                 case Methods.SaveTagAs:
                     var saveAs = Params<SaveAsParams>(r);
                     return tags.SaveAs(saveAs.Path, saveAs.NewPath);
@@ -132,7 +145,7 @@ namespace Kalo.BlamHost
                     return tags.ReadElement(el.Path, el.Block, el.Index);
                 case Methods.ExportLevelMesh:
                     var mesh = Params<ExportLevelMeshParams>(r);
-                    return LevelMeshService.Export(tags, mesh.Scenario, mesh.OutputFile);
+                    return LevelMeshService.Export(tags, mesh.Scenario, mesh.OutputFile, mesh.Bsps);
                 case Methods.ExportModelMeshes:
                     var models = Params<ExportModelMeshesParams>(r);
                     return LevelMeshService.ExportModels(models.RenderModels, models.OutputFolder);

@@ -27,6 +27,13 @@ public sealed class GameSession : IDisposable
     public event Action<int>? Exited;
 
     public bool IsRunning => _process is { HasExited: false };
+    /// <summary>
+    /// Set before Start for a campaign mission: it has no "new round", so the map counts as loaded once game time runs
+    /// (log lines carry a game tick, e.g. "g000000") or its mission scripts start.
+    /// </summary>
+    public bool Campaign { get; set; }
+    private bool _campaign;
+    private static readonly Regex GameTick = new(@"\sg\d{6}\s", RegexOptions.Compiled);
     public string? Scenario { get; private set; }
 
     public GameSession(KaloPaths paths) => _paths = paths;
@@ -38,7 +45,16 @@ public sealed class GameSession : IDisposable
     public void Start(string scenario) => Start(scenario, Array.Empty<string>());
 
     /// <param name="initCommands">Console commands run before the map starts (e.g. load_binary_game_engine).</param>
-    public void Start(string scenario, IReadOnlyList<string> initCommands)
+    public void Start(string scenario, IReadOnlyList<string> initCommands) => Start(scenario, initCommands, null);
+
+    /// <summary>
+    /// False: the map's scripts do not run (run_game_scripts 0), e.g. to walk around a campaign mission without its
+    /// cutscenes and AI. Reset to true by each Start that does not set it.
+    /// </summary>
+    public bool RunScripts { get; set; } = true;
+
+    /// <param name="afterCommands">Console commands run once the map has started (e.g. switch_zone_set).</param>
+    public void Start(string scenario, IReadOnlyList<string> initCommands, IReadOnlyList<string>? afterCommands)
     {
         if (IsRunning) throw new InvalidOperationException("The game is already running.");
         string exe = Path.Combine(_paths.Workspace, "reach_tag_test.exe");
@@ -47,9 +63,15 @@ public sealed class GameSession : IDisposable
             throw new FileNotFoundException("Scenario not found: " + scenario);
 
         string commands = string.Concat(initCommands.Select(c => c + "\r\n"));
+        string after = string.Concat((afterCommands ?? Array.Empty<string>()).Select(c => c + "\r\n"));
+        string scripts = $"run_game_scripts {(RunScripts ? 1 : 0)}\r\n";
+        // Both apply to this start only.
+        _campaign = Campaign;
+        Campaign = false;
+        RunScripts = true;
         string init = InitOrder == "after"
-            ? $"run_game_scripts 1\r\ngame_start {scenario}\r\n" + commands
-            : "run_game_scripts 1\r\n" + commands + $"game_start {scenario}\r\n";
+            ? scripts + $"game_start {scenario}\r\n" + commands + after
+            : scripts + commands + $"game_start {scenario}\r\n" + after;
         File.WriteAllText(Path.Combine(_paths.Workspace, "bonobo_init.txt"), init);
         Scenario = scenario;
 
@@ -112,7 +134,7 @@ public sealed class GameSession : IDisposable
             }
             if (raise) TagReloaded?.Invoke(tag);
         }
-        if (line.Contains("END initialize for new round", StringComparison.Ordinal))
+        if (line.Contains("END initialize for new round", StringComparison.Ordinal) || (_campaign && (GameTick.IsMatch(line) || line.Contains(" hs: ", StringComparison.Ordinal))))
         {
             bool raise;
             lock (_gate) { raise = !_loadedRaised; _loadedRaised = true; }

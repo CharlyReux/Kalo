@@ -35,8 +35,8 @@ public partial class EditorGroup : ObservableObject
     public ObservableCollection<DocumentViewModel> Tabs { get; } = new();
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CurrentTag), nameof(CurrentMap), nameof(CurrentScript), nameof(CurrentDiff),
-        nameof(HasTag), nameof(HasMap), nameof(HasScript), nameof(HasDiff), nameof(ShowStart), nameof(ShowEmpty))]
+    [NotifyPropertyChangedFor(nameof(CurrentTag), nameof(CurrentMap), nameof(CurrentScript), nameof(CurrentDiff), nameof(CurrentMission),
+        nameof(HasTag), nameof(HasMap), nameof(HasScript), nameof(HasDiff), nameof(HasMission), nameof(ShowStart), nameof(ShowEmpty))]
     private DocumentViewModel? _current;
 
     /// <summary>The group the keyboard and the inspector follow.</summary>
@@ -56,6 +56,8 @@ public partial class EditorGroup : ObservableObject
     public MapEditorViewModel? CurrentMap => Current as MapEditorViewModel;
     public ScriptEditorViewModel? CurrentScript => Current as ScriptEditorViewModel;
     public DiffViewModel? CurrentDiff => Current as DiffViewModel;
+    public MissionScriptViewModel? CurrentMission => Current as MissionScriptViewModel;
+    public bool HasMission => CurrentMission != null;
     public bool HasTag => CurrentTag != null;
     public bool HasMap => CurrentMap != null;
     public bool HasScript => CurrentScript != null;

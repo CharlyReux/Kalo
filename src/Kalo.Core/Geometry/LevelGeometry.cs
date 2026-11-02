@@ -10,16 +10,17 @@ public sealed class LevelGeometry
 {
     private readonly KaloPaths _paths;
     /// <summary>Optional faster source (e.g. geometry read from the tags by the Blam Host). Null result = not available.</summary>
-    public Func<string, IReadOnlyList<string>, Task<Mesh?>>? TagSource { get; set; }
+    public Func<string, IReadOnlyList<string>, IReadOnlyList<int>?, Task<Mesh?>>? TagSource { get; set; }
 
     public LevelGeometry(KaloPaths paths) => _paths = paths;
 
     public string CacheFile(string scenarioPath) =>
         Path.Combine(_paths.KaloData, "cache", "geometry", scenarioPath.Replace('\\', '_').Replace('/', '_') + ".v10.kmesh"); // v10: shader tiling (constant functions); v9: animated tiling read by index; v8: default tiling from shader options; v7: + texcoords, materials (tiling, blend mode, terrain layers)
 
-    public async Task<Mesh?> LoadLevelAsync(string scenarioPath, IReadOnlyList<string> bsps, Action<string>? progress = null)
+    /// <param name="only">Campaign zone sets: only these bsps (indices into the scenario's structure bsps); null = all.</param>
+    public async Task<Mesh?> LoadLevelAsync(string scenarioPath, IReadOnlyList<string> bsps, Action<string>? progress = null, IReadOnlyList<int>? only = null)
     {
-        string cache = CacheFile(scenarioPath);
+        string cache = only == null ? CacheFile(scenarioPath) : CacheFile(scenarioPath + "#bsp" + string.Join("-", only));
         DateTime newestSource = bsps
             .Select(b => Path.Combine(_paths.WorkspaceTags, b))
             .Where(File.Exists)
@@ -36,9 +37,9 @@ public sealed class LevelGeometry
         if (TagSource != null)
         {
             progress?.Invoke("Reading level geometry from the tags…");
-            try { mesh = await TagSource(scenarioPath, bsps); } catch (Exception ex) { progress?.Invoke("Tag geometry failed: " + ex.Message); }
+            try { mesh = await TagSource(scenarioPath, bsps, only); } catch (Exception ex) { progress?.Invoke("Tag geometry failed: " + ex.Message); }
         }
-        if (mesh == null || mesh.TriangleCount == 0)
+        if ((mesh == null || mesh.TriangleCount == 0) && only == null)
             mesh = await ExportWithToolAsync(scenarioPath, progress);
         if (mesh != null && mesh.TriangleCount > 0) await Task.Run(() => mesh.Save(cache));
         return mesh;

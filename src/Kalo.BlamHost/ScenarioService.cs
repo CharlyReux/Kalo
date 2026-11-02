@@ -13,7 +13,7 @@ namespace Kalo.BlamHost
     /// Object placements of a scenario, for Kalo's map view: read them all in one call, move one, add, duplicate
     /// or delete. Works on the same open TagFile as the tag editor; nothing is written until the tag is saved.
     /// </summary>
-    internal sealed class ScenarioService
+    internal sealed partial class ScenarioService
     {
         /// <summary>Placement block, its palette block, and the object type name used in object ids.</summary>
         private static readonly string[][] Kinds =
@@ -79,6 +79,8 @@ namespace Kalo.BlamHost
             var startCategory = StartCategory(tag);
             if (startCategory != null) result.Categories.Add(startCategory);
             result.Folders = Folders(tag);
+            result.Type = ScenarioType(tag);
+            if (result.Type == "solo") AddCampaign(tag, result);
             result.Ms = sw.ElapsedMilliseconds;
             return result;
         }
@@ -100,6 +102,7 @@ namespace Kalo.BlamHost
         public Placement Set(SetPlacementParams p)
         {
             TagFile tag = _tags.GetOrOpen(p.Path);
+            if (CampaignCategories.Contains(p.Category)) return CampaignSet(tag, p);
             if (p.Category == StartLocations.Category)
             {
                 string sb = "Block:" + StartLocations.Block + "[" + p.Index + "]/";
@@ -131,6 +134,7 @@ namespace Kalo.BlamHost
             if (p.Op == PlacementOps.MakeForgeCopy) return MakeForgeCopy(p);
             TagFile tag = _tags.GetOrOpen(p.Path);
             if (p.Category == StartLocations.Category) return StartOp(tag, p);
+            if (CampaignCategories.Contains(p.Category)) return CampaignOp(tag, p);
             switch (p.Op)
             {
                 case PlacementOps.AddFolder: return AddFolder(tag, p);
@@ -151,7 +155,8 @@ namespace Kalo.BlamHost
                 }
                 case PlacementOps.RepairMultiplayer:
                 {
-                    int repaired = RepairMultiplayer(tag) + (EnsureStartingProfile(tag) ? 1 : 0);
+                    // Campaign missions have no multiplayer settings to repair (their objects are placed by the mission).
+                    int repaired = ScenarioType(tag) == "solo" ? 0 : RepairMultiplayer(tag) + (EnsureStartingProfile(tag) ? 1 : 0);
                     int detached = DetachTemplateResources(tag, p.Path);
                     var all = new List<PlacementCategory>();
                     var allNames = ObjectNames(tag);
@@ -306,6 +311,8 @@ namespace Kalo.BlamHost
             TagFile tag = _tags.GetOrOpen(p.NewPath);
             var result = new CreateMapResult { Path = p.NewPath };
             TrySet(() => ((TagFieldElementInteger)tag.SelectField("LongInteger:map id")).Data = p.MapId);
+            if (p.Empty && ScenarioType(tag) == "solo")
+                throw new InvalidOperationException("Campaign missions are copied whole: their scripts refer to the mission's objects, squads and volumes by name.");
             if (p.Empty)
             {
                 foreach (string[] k in Kinds)
@@ -329,6 +336,8 @@ namespace Kalo.BlamHost
                 }
             }
             if (p.Barebone) MakeBarebone(tag, result);
+            result.Type = ScenarioType(tag);
+            if (result.Type == "solo") result.Scripts = CopyMissionScripts(tag, p.Template, p.NewPath);
             DetachTemplateResources(tag, p.NewPath);
             tag.Save();
             result.Ms = sw.ElapsedMilliseconds;
@@ -481,6 +490,7 @@ namespace Kalo.BlamHost
                     var f = tag.SelectField(b + "Angle:facing") as TagFieldElementSingle;
                     if (f != null) f.Data = facing;
                 }
+                if (ScenarioType(tag) != "solo")
                 {
                     // With several players, and with any gametype, the game picks respawn points, not starting locations:
                     // the copy's spawn points are replaced by one per player at the same spots (later respawns happen there too).
@@ -527,21 +537,38 @@ namespace Kalo.BlamHost
         /// already hold the full placements. Only references outside the map's own folder are cleared.
         /// Returns how many were cleared.
         /// </summary>
-        public static int DetachTemplateResources(TagFile tag, string scenarioPath)
+        public static int DetachTemplateResources(TagFile tag, string scenarioPath) => DetachResources(tag, scenarioPath, false);
+
+        /// <summary>
+        /// Campaign missions also keep their trigger volumes and cutscene flags / camera points twice (scenario blocks and
+        /// split resource tags); Kalo edits those too, so they are detached the same way (only for solo scenarios).
+        /// </summary>
+        private static readonly string[] CampaignResources = { "trigger volume resource", "cutscene data resource" };
+
+        /// <summary>
+        /// Before Kalo saves a scenario: every split resource holding something the map view edits is detached, the
+        /// map's own ones too (a stock level edited in place, or a map Sapien saved), since Kalo only writes the scenario
+        /// and the game would otherwise load the older copy kept in the resource tags. Returns how many were cleared.
+        /// </summary>
+        public static int DetachEditedResources(TagFile tag, string scenarioPath) => DetachResources(tag, scenarioPath, true);
+
+        private static int DetachResources(TagFile tag, string scenarioPath, bool ownToo)
         {
             var block = tag.SelectField("Block:scenario resources") as TagFieldBlock;
             if (block == null || block.Elements.Count == 0) return 0;
             string own = (System.IO.Path.GetDirectoryName(scenarioPath.Replace('/', '\\')) ?? "") + "\\";
+            var names = ObjectResources.ToList();
+            if (ScenarioType(tag) == "solo") names.AddRange(CampaignResources);
             int cleared = 0;
             for (int r = 0; r < block.Elements.Count; r++)
             {
                 var split = tag.SelectField("Block:scenario resources[" + r + "]/Block:new split resources") as TagFieldBlock;
                 for (int i = 0; split != null && i < split.Elements.Count; i++)
-                    foreach (string name in ObjectResources)
+                    foreach (string name in names)
                     {
                         var field = tag.SelectField("Block:scenario resources[" + r + "]/Block:new split resources[" + i + "]/Reference:" + name) as TagFieldReference;
                         string value = field == null ? null : TagService.ValueOf(field);
-                        if (string.IsNullOrEmpty(value) || value.StartsWith(own, StringComparison.OrdinalIgnoreCase)) continue;
+                        if (string.IsNullOrEmpty(value) || (!ownToo && value.StartsWith(own, StringComparison.OrdinalIgnoreCase))) continue;
                         field.Path = null;
                         cleared++;
                     }
@@ -683,6 +710,12 @@ namespace Kalo.BlamHost
             yield return "editor folders";
             yield return "object names";
             yield return StartLocations.Block;
+            // Campaign blocks the map view edits (absent from multiplayer scenarios: skipped there).
+            yield return "trigger volumes";
+            yield return "squads";
+            yield return "cutscene flags";
+            yield return "cutscene camera points";
+            yield return "scripting data";
         }
 
         public SnapshotResult Snapshot(SnapshotParams p)
@@ -853,46 +886,64 @@ namespace Kalo.BlamHost
             var sw = Stopwatch.StartNew();
             TagFile tag = _tags.GetOrOpen(p.Path);
             var result = new PlacementStatusResult { States = new Dictionary<string, List<int>>() };
-            string tempRel = "_kalo_vanilla\\status\\" + Path.GetFileName(p.Path);
+            var baseline = BaselineSignatures(p.BaselineFile);
+            foreach (string[] k in Kinds)
+            {
+                var block = tag.SelectField("Block:" + k[0]) as TagFieldBlock;
+                if (block == null) continue;
+                Dictionary<int, string> before;
+                if (!baseline.TryGetValue(k[0], out before)) before = new Dictionary<int, string>();
+                var after = Signatures(tag, k, keepOrder: true);
+                var states = new List<int>();
+                var seen = new HashSet<int>();
+                for (int i = 0; i < block.Elements.Count; i++)
+                {
+                    int id = UniqueId(tag, k[0], i);
+                    string sig;
+                    string now = after.TryGetValue(-1 - i, out sig) ? sig : "";
+                    string old;
+                    if (!before.TryGetValue(id, out old)) states.Add(PlacementStates.New);
+                    else { seen.Add(id); states.Add(old == now ? PlacementStates.Same : PlacementStates.Changed); }
+                }
+                result.Removed += before.Keys.Count(id => !seen.Contains(id));
+                result.States[k[0]] = states;
+            }
+            result.Ms = sw.ElapsedMilliseconds;
+            return result;
+        }
+
+        /// <summary>
+        /// The baseline's placement signatures per kind, read once per file version: a campaign mission is tens of MB
+        /// and was reopened after every edit (seconds each, blocking the other host calls).
+        /// </summary>
+        private readonly Dictionary<string, KeyValuePair<DateTime, Dictionary<string, Dictionary<int, string>>>> _baselines =
+            new Dictionary<string, KeyValuePair<DateTime, Dictionary<string, Dictionary<int, string>>>>(StringComparer.OrdinalIgnoreCase);
+
+        private Dictionary<string, Dictionary<int, string>> BaselineSignatures(string file)
+        {
+            var empty = new Dictionary<string, Dictionary<int, string>>();
+            if (string.IsNullOrEmpty(file) || !File.Exists(file)) return empty;
+            DateTime stamp = File.GetLastWriteTimeUtc(file);
+            KeyValuePair<DateTime, Dictionary<string, Dictionary<int, string>>> cached;
+            if (_baselines.TryGetValue(file, out cached) && cached.Key == stamp) return cached.Value;
+            string tempRel = "_kalo_vanilla\\status\\" + Path.GetFileName(file);
             string temp = _tags.FullPath(tempRel);
-            bool haveBaseline = !string.IsNullOrEmpty(p.BaselineFile) && File.Exists(p.BaselineFile);
+            var all = new Dictionary<string, Dictionary<int, string>>();
             TagFile baseline = null;
             try
             {
-                if (haveBaseline)
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(temp));
-                    File.Copy(p.BaselineFile, temp, true);
-                    baseline = new TagFile(TagService.TagPathOf(tempRel));
-                }
-                foreach (string[] k in Kinds)
-                {
-                    var block = tag.SelectField("Block:" + k[0]) as TagFieldBlock;
-                    if (block == null) continue;
-                    var before = baseline == null ? new Dictionary<int, string>() : Signatures(baseline, k);
-                    var after = Signatures(tag, k, keepOrder: true);
-                    var states = new List<int>();
-                    var seen = new HashSet<int>();
-                    for (int i = 0; i < block.Elements.Count; i++)
-                    {
-                        int id = UniqueId(tag, k[0], i);
-                        string sig;
-                        string now = after.TryGetValue(-1 - i, out sig) ? sig : "";
-                        string old;
-                        if (!before.TryGetValue(id, out old)) states.Add(PlacementStates.New);
-                        else { seen.Add(id); states.Add(old == now ? PlacementStates.Same : PlacementStates.Changed); }
-                    }
-                    result.Removed += before.Keys.Count(id => !seen.Contains(id));
-                    result.States[k[0]] = states;
-                }
+                Directory.CreateDirectory(Path.GetDirectoryName(temp));
+                File.Copy(file, temp, true);
+                baseline = new TagFile(TagService.TagPathOf(tempRel));
+                foreach (string[] k in Kinds) all[k[0]] = Signatures(baseline, k);
             }
             finally
             {
                 try { if (baseline != null) baseline.Dispose(); } catch (Exception) { }
-                try { if (haveBaseline) File.Delete(temp); } catch (Exception) { }
+                try { File.Delete(temp); } catch (Exception) { }
             }
-            result.Ms = sw.ElapsedMilliseconds;
-            return result;
+            _baselines[file] = new KeyValuePair<DateTime, Dictionary<string, Dictionary<int, string>>>(stamp, all);
+            return all;
         }
 
         private static int UniqueId(TagFile tag, string block, int i) =>

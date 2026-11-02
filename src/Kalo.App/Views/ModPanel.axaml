@@ -40,8 +40,11 @@
             <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapFull}" FontSize="12">
               <TextBlock TextWrapping="Wrap" Text="Remix: a full copy of a Reach level with all its objects, to change." />
             </RadioButton>
+            <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapCampaign}" FontSize="12">
+              <TextBlock TextWrapping="Wrap" Text="Campaign mission: a full copy of a Reach mission (objects, squads, trigger volumes, cutscenes) with its own copy of the mission scripts, to change." />
+            </RadioButton>
             <StackPanel Spacing="4" IsVisible="{Binding NeedsBaseLevel}">
-              <TextBlock Text="Level to build on" Foreground="{StaticResource KMuted}" FontSize="11.5" />
+              <TextBlock Text="{Binding NewMapLevelLabel}" Foreground="{StaticResource KMuted}" FontSize="11.5" />
               <ComboBox ItemsSource="{Binding BaseLevels}" SelectedItem="{Binding NewMapBase}" HorizontalAlignment="Stretch" FontSize="12">
                 <ComboBox.ItemTemplate>
                   <DataTemplate x:DataType="sys:String">

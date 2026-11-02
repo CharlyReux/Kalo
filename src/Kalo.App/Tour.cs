@@ -47,6 +47,8 @@ public sealed class Tour
                 await Section("script objects", ScriptObjectsSection);
                 await Section("docs", DocsSection);
                 await Section("forge", Forge);
+                // Opens a whole campaign mission (minutes the first time): only when asked (--tour-sections campaign).
+                if (AppArgs.Current.TourSections?.Contains("campaign", StringComparer.OrdinalIgnoreCase) == true) await Section("campaign", Campaign);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -152,8 +154,11 @@ public sealed class Tour
             await Task.WhenAny(_vm.Ready, Task.Delay(TimeSpan.FromSeconds(60)));
             string name = scenario.Replace('/', '\\');
             if (name.EndsWith(".scenario", StringComparison.OrdinalIgnoreCase)) name = name[..^".scenario".Length];
+            // Test maps (levels\mods\_kalo_...) are kept out of the Play list: add this one, as opening it would.
+            if (!_vm.Scenarios.Contains(name, StringComparer.OrdinalIgnoreCase) && name.Contains(@"\_kalo_", StringComparison.OrdinalIgnoreCase)) _vm.Scenarios.Insert(0, name);
             Check(_vm.Scenarios.Contains(name, StringComparer.OrdinalIgnoreCase), "the map is in the Play list");
             _vm.SelectedScenario = _vm.Scenarios.First(s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (_vm.PlayIsCampaign) Say($"campaign mission: {_vm.SelectedDifficulty?.Label}, {_vm.SelectedInsertion?.Label}");
             var choice = gametype == null
                 ? _vm.GametypeChoices.FirstOrDefault(g => string.Equals(System.IO.Path.GetFileName(g.Path), "slayer.txt", StringComparison.OrdinalIgnoreCase))
                 : _vm.GametypeChoices.FirstOrDefault(g => g.Path?.Replace('/', '\\').EndsWith(gametype.Replace('/', '\\'), StringComparison.OrdinalIgnoreCase) == true);
@@ -1790,6 +1795,139 @@ public sealed class Tour
     {
         _shot++;
         _window.SaveShot(System.IO.Path.Combine(_dir, $"{_shot:D2}-{name}.png"));
+    }
+
+    /// <summary>
+    /// Campaign: a copy of m10 (made by kalo-cli campaign-probe at levels\mods\_kalo_tour\cprobe) in the map view: its
+    /// markers, zone sets, a box volume resized, a squad spawn point moved and undone, its own mission script opened and
+    /// checked; the Play bar and the New map form for campaign missions. Nothing is saved.
+    /// </summary>
+    private async Task Campaign()
+    {
+        const string probe = @"levels\mods\_kalo_tour\cprobe\cprobe.scenario";
+        if (!Check(File.Exists(System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, probe)), "the campaign probe map exists (kalo-cli campaign-probe)")) return;
+        var map = await _vm.OpenMapAsync(probe);
+        Check(map.IsCampaign, "the map is a campaign mission");
+        foreach (string c in CampaignCategories.All)
+            Check(map.Items.Any(i => i.Category == c), $"{c}: {map.Items.Count(i => i.Category == c)}");
+        Check(map.ZoneSetChoices.Count > 5, $"zone sets listed ({map.ZoneSetChoices.Count - 1})");
+        Check(map.MissionScripts.Count(s => s.IsOwn) >= 5, $"mission scripts: {map.MissionScripts.Count} ({map.MissionScripts.Count(s => s.IsOwn)} of them this map's own)");
+        Check(map.Cutscenes.Count > 0, $"cutscenes: {string.Join(", ", map.Cutscenes.Select(c => c.Name))}");
+        var until = DateTime.UtcNow.AddMinutes(12);
+        while (map.Bsp == null && DateTime.UtcNow < until && !map.GeometryStatus.StartsWith("No level") && !map.GeometryStatus.Contains("unavailable"))
+            await Task.Delay(500);
+        Check(map.Bsp is { TriangleCount: > 1000 }, $"whole mission geometry: {map.GeometryStatus}");
+        int whole = map.Bsp?.TriangleCount ?? 0;
+
+        // A box volume: inspector help and size.
+        var box = map.Items.FirstOrDefault(i => i.IsBoxVolume);
+        if (Check(box != null, "a box trigger volume"))
+        {
+            map.Selected = box;
+            Check(box!.MarkerHelp.Contains("volume_test_players"), "inspector explains trigger volumes");
+            var before = box.ZoneSize;
+            var clock = Stopwatch.StartNew();
+            box.VolumeWidth = (before.X + 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            PlacementItem resized = box;
+            while (clock.Elapsed.TotalSeconds < 30)
+            {
+                await Pause(250);
+                resized = map.Items.First(i => i.Category == box.Category && i.Index == box.Index);
+                if (Math.Abs(resized.ZoneSize.X - before.X - 2) < 0.01f) break;
+            }
+            Say($"resize took {clock.ElapsedMilliseconds} ms");
+            Check(Math.Abs(resized.ZoneSize.X - before.X - 2) < 0.01f, $"volume {box.Display} resized to width {resized.ZoneSize.X:0.##} (was {before.X:0.##})");
+            map.FocusSelectedCommand.Execute(null);
+            await Pause(1200);
+            Shot("campaign-volume");
+            await map.UndoCommand.ExecuteAsync(null);
+        }
+        // A squad spawn point moved, then undone.
+        var ai = map.Items.FirstOrDefault(i => i.Category == CampaignCategories.AiSpawnPoints);
+        if (Check(ai != null, "a squad spawn point"))
+        {
+            var p0 = ai!.Position;
+            map.Selected = ai;
+            map.MoveLocal(ai, p0 + new Vector3(1, 0, 0));
+            var moveClock = Stopwatch.StartNew();
+            await map.CommitMoveAsync(ai);
+            Say($"move took {moveClock.ElapsedMilliseconds} ms");
+            foreach (string l in _vm.OutputLines.Where(l => l.Contains("undo step")).TakeLast(3)) Say(l);
+            var moved = map.Items.First(i => i.Category == ai.Category && i.Index == ai.Index);
+            Check(Math.Abs(moved.Position.X - p0.X - 1) < 0.01f, $"spawn point {ai.Display} ({ai.Label}) moved 1 unit");
+            await map.UndoCommand.ExecuteAsync(null);
+            var back = map.Items.First(i => i.Category == ai.Category && i.Index == ai.Index);
+            Check(Math.Abs(back.Position.X - p0.X) < 0.01f, "undo puts it back");
+        }
+        // One zone set: fewer level pieces.
+        var zs = map.ZoneSetChoices.Skip(1).FirstOrDefault(z => z.Bsps is { Count: 1 });
+        if (zs != null)
+        {
+            var old = map.Bsp;
+            map.SelectedZoneSet = zs;
+            var zUntil = DateTime.UtcNow.AddMinutes(6);
+            while (ReferenceEquals(map.Bsp, old) && DateTime.UtcNow < zUntil) await Task.Delay(500);
+            Check(map.Bsp != null && map.Bsp.TriangleCount < whole, $"zone set {zs.Name}: {map.Bsp?.TriangleCount:N0} triangles (whole mission {whole:N0})");
+            map.FrameAllCommand.Execute(null);
+            await Pause(1500);
+            Shot("campaign-zoneset");
+            map.SelectedZoneSet = map.ZoneSetChoices[0];
+        }
+        // Its own mission script.
+        var own = map.MissionScripts.FirstOrDefault(s => s.IsOwn && s.Name == "m10") ?? map.MissionScripts.FirstOrDefault(s => s.IsOwn);
+        if (Check(own != null, "the map has its own mission scripts"))
+        {
+            await map.OpenMissionScriptCommand.ExecuteAsync(own);
+            var script = _vm.Tabs.OfType<MissionScriptViewModel>().FirstOrDefault();
+            if (Check(script != null && script.Text.Length > 1000, $"mission script opened: {script?.Title}, {script?.Status}"))
+            {
+                Check(script!.Declarations.Count > 10, $"scripts and globals listed ({script.Declarations.Count}): {string.Join(", ", script.Declarations.Take(5).Select(d => d.Name))}…");
+                Check(script.CheckOk, "brackets and strings OK: " + script.Summary);
+                Check(!script.IsShared, "it is this map's own copy (no shared warning)");
+                await Pause(800);
+                Shot("campaign-script");
+                string text = script.Text;
+                script.Text = text + "\r\n(script startup kalo_tour_broken\r\n    (print \"x\")\r\n";
+                script.Check();
+                Check(!script.CheckOk && script.Messages.Any(m => m.Message.Contains("never closed")), "an unclosed ( is reported: " + script.Summary);
+                script.Text = text;
+                script.Check();
+                script.IsDirty = false;
+            }
+        }
+        // The Play bar for a campaign mission.
+        _vm.SelectedScenario = map.Scenario;
+        Check(_vm.PlayIsCampaign && _vm.PlaySummary.Contains("campaign mission"), "Play shows campaign options: " + _vm.PlaySummary);
+        Check(_vm.InsertionChoices.Count > 1 && _vm.SelectedDifficulty != null, $"difficulty {_vm.SelectedDifficulty?.Label}, {_vm.InsertionChoices.Count} insertion points");
+        Shot("campaign-playbar");
+        // New map: campaign missions to copy.
+        _vm.NewMapKind = "campaign";
+        Check(_vm.BaseLevels.Any(l => l.EndsWith(@"\m10", StringComparison.OrdinalIgnoreCase)) && _vm.NewMapBase?.StartsWith(@"levels\solo\") == true,
+            $"New map › Campaign mission lists the missions ({_vm.BaseLevels.Count()}), picked {_vm.NewMapBase}");
+        _vm.NewMapKind = "barebone";
+        // Play here on the mission (the test map is saved first, as Play does): scripts off, the zone set around the
+        // camera picked from the bsps' bounds. The runner takes the game screenshots.
+        foreach (var t in _vm.Tabs.OfType<MissionScriptViewModel>().ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+        if (map.Spawn is { } spawn)
+        {
+            map.SelectedZoneSet = map.ZoneSetChoices[0];
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            var clock = Stopwatch.StartNew();
+            await _vm.PlayFromAsync(map, spawn.Position + new Vector3(0, 0, 0.5f), spawn.Facing);
+            foreach (string l in _vm.OutputLines.Where(l => l.Contains("Play from camera", StringComparison.Ordinal)).TakeLast(1)) Say(l.Length > 400 ? l[..400] : l);
+            Check(_vm.IsGameRunning, "Play here started the game");
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(5)));
+            Check(done == loaded.Task, $"the mission loaded ({clock.Elapsed.TotalSeconds:F0} s)");
+            Check(_vm.OutputLines.Any(l => l.Contains("game_initial_zone_set", StringComparison.Ordinal)) || _vm.OutputLines.Any(l => l.Contains(", zone set ", StringComparison.Ordinal)),
+                "a zone set around the camera was picked");
+            Check(!_vm.OutputLines.TakeLast(400).Any(l => l.Contains("hs: m10 go!", StringComparison.Ordinal)), "the mission scripts did not run (no intro)");
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Pause(3000);
+        }
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
     }
 
     private bool Check(bool ok, string what)

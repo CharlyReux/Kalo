@@ -141,6 +141,19 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   shows only the sizes that shape uses; zones are drawn in the view. Name an object (inspector "Name", or F2 /
   Rename in the object list) to find it again, e.g. "red_goal". Drag any number box left/right to change it
   (Shift: fine, Ctrl: coarse).
+- Campaign missions: New map › "Campaign mission" copies a Reach mission (m05 … m70_bonus) into your mod whole:
+  objects, squads, trigger volumes, cutscenes, plus its own copy of the mission scripts (levels\mods\<mod>\<map>\scripts).
+  Reach's own missions (levels\solo) also open from All game files. A mission's map view has a Campaign bar:
+  show/hide trigger volumes, squad spawn points (AI), cutscene flags and cameras, script points; pick a zone set to
+  see only the level pieces it loads; add a volume, a flag or a spawn point; open the mission scripts and cutscenes.
+  Markers move, turn, duplicate, delete and rename like objects (scripts find them by name); a box volume's size is in
+  the inspector, and every other field of the selected marker is listed there too. Mission scripts (HaloScript) open
+  in an editor with colors, a "Go to script" list and a bracket/string check; the game compiles them when the mission
+  loads. Play on a mission: difficulty and insertion point instead of a gametype; the mission's scripts run.
+  Play here (Ctrl+F5): walk around from the camera without the mission scripts, in the zone set picked in the bar.
+  Play in MCC builds the mission and lists it as the mod's campaign (not yet checked in MCC itself).
+  Saving a map detaches the split resource tags (scenario_*_resource) holding what Kalo edits, so the game reads the
+  scenario's own blocks: edits to stock levels show in game too.
 - Mod projects (fourth icon): a project is a small folder in Kalo\projects holding only the files your mod
   changes. Every save is recorded in the active project; switching projects puts the shared workspace back to
   vanilla and loads the other project's files; Export zips a project into Kalo\exports; "Import mod…" adds such a

@@ -15,7 +15,9 @@ public partial class MainViewModel
     [ObservableProperty] private bool _isBuildingForMcc;
     private CancellationTokenSource? _mccBuild;
 
-    public string PlayInMccSummary => $"Build {System.IO.Path.GetFileName(SelectedScenario ?? "?")} into a real map and play it in MCC's Custom Games, with all your gametypes in the Action Sack folder (takes a few minutes; not live like Play).";
+    public string PlayInMccSummary => PlayIsCampaign
+        ? $"Build the campaign mission {System.IO.Path.GetFileName(SelectedScenario ?? "?")} into a real map and play it in MCC as a mod campaign (takes several minutes; not live like Play)."
+        : $"Build {System.IO.Path.GetFileName(SelectedScenario ?? "?")} into a real map and play it in MCC's Custom Games, with all your gametypes in the Action Sack folder (takes a few minutes; not live like Play).";
 
     [RelayCommand]
     public async Task PlayInMccAsync()
@@ -30,6 +32,11 @@ public partial class MainViewModel
         try
         {
             foreach (var doc in Tabs.Where(t => t.IsDirty).ToList()) await doc.SaveDocumentAsync();
+            if (await IsCampaignScenarioAsync(scenario))
+            {
+                await PlayCampaignInMccAsync(mod, scenario);
+                return;
+            }
 
             // The gametypes first: a script error should not cost a five-minute build. Every gametype of the mod goes
             // in, listed in the game's Action Sack folder (the menus' folders are fixed, and MCC shows only the ones it knows: Community and
@@ -80,6 +87,37 @@ public partial class MainViewModel
             _mccBuild?.Dispose();
             _mccBuild = null;
         }
+    }
+
+    /// <summary>
+    /// A campaign mission in MCC: built like a multiplayer map, then listed as the mod's campaign (one mission) with an
+    /// insertion point per zone set the mission starts in (its first zone set).
+    /// </summary>
+    private async Task PlayCampaignInMccAsync(MccMod mod, string scenario)
+    {
+        string mapName = System.IO.Path.GetFileName(scenario);
+        var points = new List<(string Title, string ZoneSet)>();
+        try
+        {
+            var data = await Host!.GetPlacementsAsync(scenario + ".scenario");
+            if (data.ZoneSets is { Count: > 0 } zs) points.Add(("Start", zs[0].Name ?? ""));
+        }
+        catch (HostException ex) { Log("Play in MCC: zone sets unavailable (" + ex.Message + ")."); }
+        Log($"Play in MCC: building the campaign mission {scenario} with tool.exe. A mission takes longer than a multiplayer map (often 10 minutes or more); Stop build in the Play menu cancels it.");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        bool built = await mod.BuildMapAsync(scenario, line => Post(() => AppendOutput("[tool] " + line)), _mccBuild!.Token);
+        if (!built)
+        {
+            AddProblem("error", $"Play in MCC: tool.exe could not build {mapName}.map. Its messages are in Output (search for [tool]).", scenario + ".scenario");
+            return;
+        }
+        Log($"Play in MCC: {mapName}.map built in {clock.Elapsed.TotalMinutes:F1} min.");
+        mod.SetCampaignMap(scenario, mapName + " (Kalo)", points);
+        bool registered = mod.RegisterWithMcc();
+        Log($"Play in MCC: the mod \"Kalo playtest\" now holds the campaign mission {mapName} ({mod.ModFolder})" +
+            (registered ? $"; MCC now looks for mods in {mod.Root}." : ".") +
+            " Start MCC from Steam with mods (anti-cheat off), then Campaign → Halo: Reach and pick the mod's campaign \"Kalo playtest\". " +
+            "Kalo has not yet checked campaign mods in MCC itself: if the mission is not listed, tell Claude what MCC shows.");
     }
 
     /// <summary>The game menu folder (Megalo category) Kalo lists your game types in, in MCC.</summary>

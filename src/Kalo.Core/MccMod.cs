@@ -75,7 +75,64 @@ public sealed class MccMod
             ["ValidMultiplayerObjectTypes"] = new JsonArray(Enumerable.Range(0, Math.Max(1, objectTypeCount)).Select(i => (JsonNode)i).ToArray()),
         };
         File.WriteAllText(Path.Combine(ModFolder, "multiplayer", name + ".json"), map.ToJsonString(JsonOptions));
+        RemoveCampaign();
         WriteModInfo(new[] { "multiplayer/" + name + ".json" });
+    }
+
+    /// <summary>
+    /// A campaign mission instead: the built map, its description in campaign\&lt;name&gt;.json (keys from MCC's mod
+    /// reader: MapGuid, ScenarioFile, Title, Description, Images, Flags, InsertionPoints with Title, Description and
+    /// ZoneSetName) and the mod's one campaign in CampaignInfo.json (CampaignGuid, Title, Description, CampaignMaps).
+    /// The mod then holds this mission only. Not yet checked in MCC (see claude/campaign.md).
+    /// </summary>
+    public void SetCampaignMap(string scenario, string title, IReadOnlyList<(string Title, string ZoneSet)> insertionPoints)
+    {
+        string name = Path.GetFileName(scenario);
+        string built = BuiltMap(scenario);
+        if (!File.Exists(built)) throw new FileNotFoundException("The built map is missing: " + built);
+        Directory.CreateDirectory(Path.Combine(ModFolder, "maps"));
+        Directory.CreateDirectory(Path.Combine(ModFolder, "campaign"));
+        foreach (var old in Directory.GetFiles(Path.Combine(ModFolder, "maps"), "*.map")) File.Delete(old);
+        foreach (var old in Directory.GetFiles(Path.Combine(ModFolder, "campaign"), "*.json")) File.Delete(old);
+        string mp = Path.Combine(ModFolder, "multiplayer");
+        if (Directory.Exists(mp)) foreach (var old in Directory.GetFiles(mp, "*.json")) File.Delete(old);
+        File.Move(built, Path.Combine(ModFolder, "maps", name + ".map"), true);
+
+        var points = insertionPoints.Count > 0 ? insertionPoints : new List<(string, string)> { ("Start", "") };
+        var map = new JsonObject
+        {
+            ["MapGuid"] = GuidFor("map:" + scenario.ToLowerInvariant()).ToString(),
+            ["ScenarioFile"] = scenario.Replace('/', '\\'),
+            ["Title"] = Neutral(title),
+            ["Description"] = Neutral("Built by Kalo for a playtest (" + scenario + ")."),
+            ["Images"] = new JsonObject { ["Large"] = "", ["Thumbnail"] = "", ["LoadingScreen"] = "", ["TopDown"] = "" },
+            ["Flags"] = new JsonArray(),
+            ["InsertionPoints"] = new JsonArray(points.Select(p => (JsonNode)new JsonObject
+            {
+                ["Title"] = Neutral(p.Item1),
+                ["Description"] = Neutral(p.Item1),
+                ["ZoneSetName"] = p.Item2,
+            }).ToArray()),
+        };
+        File.WriteAllText(Path.Combine(ModFolder, "campaign", name + ".json"), map.ToJsonString(JsonOptions));
+        var campaign = new JsonObject
+        {
+            ["CampaignGuid"] = GuidFor("campaign:kalo-playtest").ToString(),
+            ["Title"] = Neutral("Kalo playtest"),
+            ["Description"] = Neutral("The campaign mission you are testing in Kalo."),
+            ["Images"] = new JsonObject { ["Large"] = "", ["Thumbnail"] = "", ["LoadingScreen"] = "" },
+            ["CampaignMaps"] = new JsonArray((JsonNode)("campaign/" + name + ".json")),
+        };
+        File.WriteAllText(Path.Combine(ModFolder, "CampaignInfo.json"), campaign.ToJsonString(JsonOptions));
+        WriteModInfo(Array.Empty<string>(), campaign: true);
+    }
+
+    private void RemoveCampaign()
+    {
+        string info = Path.Combine(ModFolder, "CampaignInfo.json");
+        if (File.Exists(info)) File.Delete(info);
+        string dir = Path.Combine(ModFolder, "campaign");
+        if (Directory.Exists(dir)) foreach (var old in Directory.GetFiles(dir, "*.json")) File.Delete(old);
     }
 
     /// <summary>
@@ -131,7 +188,7 @@ public sealed class MccMod
         }
     }
 
-    private void WriteModInfo(IEnumerable<string> multiplayerMaps)
+    private void WriteModInfo(IEnumerable<string> multiplayerMaps, bool campaign = false)
     {
         string file = Path.Combine(ModFolder, "ModInfo.json");
         // Keep the mod's id across updates: MCC tells mods apart by it.
@@ -160,7 +217,7 @@ public sealed class MccMod
             ["GameModContents"] = new JsonObject
             {
                 ["HasSharedFiles"] = false,
-                ["HasCampaign"] = false,
+                ["HasCampaign"] = campaign,
                 ["HasSpartanOps"] = false,
                 ["HasController"] = false,
                 ["MultiplayerMaps"] = new JsonArray(multiplayerMaps.Select(m => (JsonNode)m).ToArray()),

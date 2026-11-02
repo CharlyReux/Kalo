@@ -1,0 +1,50 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Kalo.App.ViewModels"
+             xmlns:ae="using:AvaloniaEdit"
+             x:Class="Kalo.App.Views.MissionScriptView"
+             x:DataType="vm:MissionScriptViewModel">
+  <!-- A campaign mission script (HaloScript). Kalo checks brackets and strings; the game compiles it when the mission loads. -->
+  <DockPanel>
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
+      <Grid Margin="10,5" ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="8,0,0,0">
+          <ComboBox ItemsSource="{Binding Declarations}" SelectedItem="{Binding SelectedDeclaration}" PlaceholderText="Go to script…"
+                    MinWidth="220" MaxWidth="320" FontSize="12" MinHeight="26"
+                    ToolTip.Tip="The scripts and globals this file declares: pick one to jump to it" />
+          <Button Classes="outline" Content="Check" Command="{Binding CheckNowCommand}"
+                  ToolTip.Tip="Check brackets and strings. The game compiles the scripts when the mission loads (Play); its errors show in Output." />
+          <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" ClipToBounds="True">
+          <Ellipse Width="8" Height="8" Fill="{StaticResource KSuccess}" IsVisible="{Binding CheckOk}" />
+          <TextBlock Text="{Binding Summary}" Foreground="{StaticResource KMuted}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Summary}" />
+        </StackPanel>
+      </Grid>
+    </Border>
+
+    <Border DockPanel.Dock="Top" Background="#33402A10" BorderBrush="{StaticResource KWarning}" BorderThickness="0,0,0,1" Padding="10,4" IsVisible="{Binding IsShared}">
+      <TextBlock Text="{Binding SharedWarning}" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource KWarning}" />
+    </Border>
+
+    <Border DockPanel.Dock="Bottom" MaxHeight="160" BorderBrush="{StaticResource KBorder}" BorderThickness="0,1,0,0" Background="{StaticResource KPanel}"
+            IsVisible="{Binding HasMessages}">
+      <ListBox ItemsSource="{Binding Messages}" SelectedItem="{Binding SelectedMessage}" Background="Transparent">
+        <ListBox.ItemTemplate>
+          <DataTemplate DataType="vm:ScriptMessage">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <TextBlock Text="✕" Foreground="{StaticResource KError}" IsVisible="{Binding IsError}" />
+              <TextBlock Text="!" Foreground="{StaticResource KWarning}" IsVisible="{Binding !IsError}" />
+              <TextBlock Text="{Binding Where}" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" FontSize="11.5" MinWidth="60" />
+              <TextBlock Text="{Binding Display}" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+      </ListBox>
+    </Border>
+
+    <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontFamily="{StaticResource KMono}" FontSize="13"
+                   Background="{StaticResource KBg}" Foreground="{StaticResource KText}" LineNumbersForeground="{StaticResource KFaint}"
+                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4" />
+  </DockPanel>
+</UserControl>

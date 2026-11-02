@@ -94,6 +94,7 @@
       <views:MapEditorView DataContext="{Binding CurrentMap}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasMap}" />
       <views:ScriptEditorView DataContext="{Binding CurrentScript}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasScript}" />
       <views:DiffView DataContext="{Binding CurrentDiff}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasDiff}" />
+      <views:MissionScriptView DataContext="{Binding CurrentMission}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).HasMission}" />
       <views:StartPage DataContext="{Binding Main}" IsVisible="{Binding $parent[views:EditorGroupView].((vm:EditorGroup)DataContext).ShowStart}" />
       <StackPanel IsVisible="{Binding ShowEmpty}" VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6" MaxWidth="360">
         <TextBlock Text="Second editor" FontSize="15" FontWeight="SemiBold" HorizontalAlignment="Center" />

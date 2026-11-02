@@ -46,6 +46,72 @@
       </ScrollViewer>
     </Border>
 
+    <!-- Campaign missions: their markers, zone sets, mission scripts and cutscenes -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" IsVisible="{Binding IsCampaign}">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+        <StackPanel Orientation="Horizontal" Spacing="6" Margin="10,4" VerticalAlignment="Center">
+          <TextBlock Text="Campaign" Foreground="{StaticResource KAccentText}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
+          <ToggleButton Classes="chip" Content="Volumes" IsChecked="{Binding ShowVolumes}" ToolTip.Tip="Trigger volumes: areas mission scripts test (players inside...), zone set switches, kill and safe zones" />
+          <ToggleButton Classes="chip" Content="AI" IsChecked="{Binding ShowAi}" ToolTip.Tip="Squad spawn points: where each AI of a squad appears (red markers)" />
+          <ToggleButton Classes="chip" Content="Cutscenes" IsChecked="{Binding ShowCutscene}" ToolTip.Tip="Cutscene flags and camera points used by mission scripts" />
+          <ToggleButton Classes="chip" Content="Script points" IsChecked="{Binding ShowScriptPoints}" ToolTip.Tip="Points of point sets: where scripts send AI" />
+          <Border Width="1" Height="18" Background="{StaticResource KBorder}" Margin="4,0" />
+          <TextBlock Text="Zone set" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+          <ComboBox ItemsSource="{Binding ZoneSetChoices}" SelectedItem="{Binding SelectedZoneSet}" MinWidth="200" MaxWidth="320" MinHeight="24" FontSize="12"
+                    ToolTip.Tip="Show only the level pieces (bsps) a zone set loads, like Sapien's Switch zone set. Play here (Ctrl+F5) loads this zone set." />
+          <Border Width="1" Height="18" Background="{StaticResource KBorder}" Margin="4,0" />
+          <TextBlock Text="Add" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+          <Button Classes="outline" Content="Volume" Command="{Binding AddMarkerCommand}" CommandParameter="trigger volumes"
+                  ToolTip.Tip="A new trigger volume (a 4 x 4 x 3 box) in front of the camera. Rename it so scripts can use it." />
+          <Button Classes="outline" Content="Flag" Command="{Binding AddMarkerCommand}" CommandParameter="cutscene flags"
+                  ToolTip.Tip="A new cutscene flag (a named point for scripts) in front of the camera" />
+          <Button Classes="outline" Content="Spawn point" Command="{Binding AddMarkerCommand}" CommandParameter="ai spawn points"
+                  ToolTip.Tip="Another spawn point for the squad of the selected spawn point, in front of the camera" />
+          <Border Width="1" Height="18" Background="{StaticResource KBorder}" Margin="4,0" />
+          <Button Classes="outline" IsEnabled="{Binding HasMissionScripts}" ToolTip.Tip="Open one of the mission's scripts (HaloScript). This map's own copies come first.">
+            <Button.Content>
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="Mission scripts" />
+                <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70D;" FontSize="9" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button.Content>
+            <Button.Flyout>
+              <MenuFlyout ItemsSource="{Binding MissionScripts}">
+                <MenuFlyout.ItemContainerTheme>
+                  <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:MissionFile">
+                    <Setter Property="Header" Value="{Binding Name}" />
+                    <Setter Property="ToolTip.Tip" Value="{Binding Hint}" />
+                    <Setter Property="Command" Value="{Binding $parent[UserControl].((vm:MapEditorViewModel)DataContext).OpenMissionScriptCommand}" />
+                    <Setter Property="CommandParameter" Value="{Binding}" />
+                  </ControlTheme>
+                </MenuFlyout.ItemContainerTheme>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+          <Button Classes="outline" IsEnabled="{Binding HasCutscenes}" ToolTip.Tip="The mission's cutscenes (cinematic tags), opened in the tag editor">
+            <Button.Content>
+              <StackPanel Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="Cutscenes" />
+                <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70D;" FontSize="9" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button.Content>
+            <Button.Flyout>
+              <MenuFlyout ItemsSource="{Binding Cutscenes}">
+                <MenuFlyout.ItemContainerTheme>
+                  <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:MissionFile">
+                    <Setter Property="Header" Value="{Binding Name}" />
+                    <Setter Property="ToolTip.Tip" Value="{Binding Path}" />
+                    <Setter Property="Command" Value="{Binding $parent[UserControl].((vm:MapEditorViewModel)DataContext).OpenCutsceneCommand}" />
+                    <Setter Property="CommandParameter" Value="{Binding}" />
+                  </ControlTheme>
+                </MenuFlyout.ItemContainerTheme>
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+
     <!-- Objects off the level geometry: removed by the game -->
     <Border DockPanel.Dock="Bottom" Background="#3A1D1D" BorderBrush="#E5534B" BorderThickness="0,1,0,0" Padding="10,4" IsVisible="{Binding HasOutside}">
       <TextBlock Text="{Binding OutsideText}" FontSize="12" Foreground="#F0A8A3" TextWrapping="Wrap" />

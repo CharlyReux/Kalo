@@ -270,6 +270,16 @@ switch (command)
                 }
         break;
     }
+    case "campaign-probe":
+        // campaign-probe <template scenario> <new scenario>: a campaign copy (CreateMap), checked through the host:
+        // campaign categories, zone sets, mission scripts; a named Warthog near the start, moves of a volume and a squad
+        // spawn point, and a probe script appended to the main mission script. Then saved.
+        await CampaignProbe(argsList[1], argsList[2]);
+        break;
+    case "campaign-report":
+        // campaign-report <scenario>: what the map view reads of a campaign mission.
+        await CampaignReport(argsList[1]);
+        break;
     case "dump":
         await Dump(argsList.ElementAtOrDefault(1) ?? Weapon, int.Parse(argsList.ElementAtOrDefault(2) ?? "2"));
         break;
@@ -527,6 +537,103 @@ async Task MaterialsReport(string scenario)
     }
     Console.WriteLine($"{tris[^1],8} (no material)");
     foreach (var e in textures.LastErrors.Take(20)) Console.WriteLine("  texture error: " + e);
+}
+
+async Task CampaignReport(string scenario)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.Error.WriteLine("  host> " + line));
+    var data = await host.GetPlacementsAsync(scenario);
+    Console.WriteLine($"{scenario}: type {data.Type}, {data.Bsps?.Count} bsps, read in {data.Ms} ms");
+    foreach (var c in data.Categories ?? new())
+    {
+        Console.WriteLine($"  {c.Name}: {c.Items?.Count} (palette {string.Join(", ", (c.Palette ?? new()).Take(3).Select(p => p.Tag + (p.RenderModel != null ? "*" : "")))})");
+        foreach (var p in (c.Items ?? new()).Where(_ => CampaignCategories.Contains(c.Name)).Take(3))
+            Console.WriteLine($"     [{p.Index}] {p.Name} · {p.Label} at {string.Join(", ", (p.Position ?? new float[0]).Select(v => v.ToString("0.##")))} rot {string.Join(", ", (p.Rotation ?? new float[0]).Select(v => v.ToString("0.#")))} size {string.Join(", ", (p.ShapeSize ?? new float[0]).Select(v => v.ToString("0.##")))} block {p.Block}[{p.BlockIndex}] folder {p.Folder}");
+    }
+    foreach (var z in data.ZoneSets ?? new()) Console.WriteLine($"  zone set {z.Index} {z.Name}: bsps {(z.Bsps == null ? "?" : string.Join(",", z.Bsps))}");
+    var bounds = await host.BspBoundsAsync(scenario);
+    for (int i = 0; i < bounds.Bounds.Count; i++) Console.WriteLine($"  bsp {i} bounds {(bounds.Bounds[i] == null ? "?" : string.Join(" ", bounds.Bounds[i].Select(v => v.ToString("0.#"))))}");
+    Console.WriteLine($"  (bounds read in {bounds.Ms} ms)");
+    foreach (var s in data.Scripts ?? new()) Console.WriteLine($"  script {s}");
+    foreach (var s in data.Cinematics ?? new()) Console.WriteLine($"  cinematic {s}");
+    Check("campaign categories read", data.Type != "solo" || CampaignCategories.All.All(n => data.Categories!.Any(c => c.Name == n)));
+}
+
+async Task CampaignProbe(string template, string scenario)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.Error.WriteLine("  host> " + line));
+    string dir = Path.GetDirectoryName(Path.Combine(paths.WorkspaceTags, scenario))!;
+    if (Directory.Exists(dir)) { Directory.Delete(dir, true); Console.WriteLine("removed old " + dir); }
+    var made = await host.CreateMapAsync(new CreateMapParams { Template = template, NewPath = scenario, Empty = false, MapId = 7991 });
+    Console.WriteLine($"created {made.Path}: type {made.Type}, {made.Ms} ms, scripts: {string.Join(", ", made.Scripts ?? new())}");
+    Check("the copy is a campaign mission", made.Type == "solo");
+    Check("its own mission scripts were copied", made.Scripts is { Count: > 0 } && made.Scripts.All(s => File.Exists(Path.Combine(paths.WorkspaceTags, s))));
+    var data = await host.GetPlacementsAsync(scenario);
+    foreach (var c in data.Categories ?? new()) Console.WriteLine($"  {c.Name}: {c.Items?.Count}");
+    Check("scripts point at the copies", data.Scripts?.Any(s => s.StartsWith(Path.GetDirectoryName(scenario)!, StringComparison.OrdinalIgnoreCase)) == true);
+    foreach (var z in data.ZoneSets ?? new()) Console.WriteLine($"  zone set {z.Index} {z.Name}: bsps {(z.Bsps == null ? "?" : string.Join(",", z.Bsps))}");
+    Check("zone set bsps read", data.ZoneSets?.Any(z => z.Bsps is { Count: > 0 }) == true);
+
+    // A named Warthog 6 units in front of the first start location.
+    var start = data.Categories!.First(c => c.Name == StartLocations.Category).Items![0];
+    double yaw = start.Rotation![0] * Math.PI / 180;
+    var at = new[] { start.Position![0] + (float)Math.Cos(yaw) * 6, start.Position[1] + (float)Math.Sin(yaw) * 6, start.Position[2] + 1f };
+    const string warthog = @"objects\vehicles\human\warthog\warthog.vehicle";
+    var pal = await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = "vehicles", Op = PlacementOps.AddPalette, Tag = warthog });
+    var add = await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = "vehicles", Op = PlacementOps.Add, Type = pal.SelectIndex, Position = at });
+    await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = "vehicles", Op = PlacementOps.Rename, Index = add.SelectIndex, Tag = "kalo_probe_wh" });
+    Console.WriteLine($"placed kalo_probe_wh (vehicles[{add.SelectIndex}]) at {string.Join(", ", at)}");
+
+    // Move a box volume, a sector volume and a squad spawn point, and check they read back where they were put.
+    var vols = data.Categories!.First(c => c.Name == CampaignCategories.TriggerVolumes).Items!;
+    foreach (var v in new[] { vols.FirstOrDefault(x => !x.IsSector), vols.FirstOrDefault(x => x.IsSector) })
+    {
+        if (v == null) continue;
+        var to = new[] { v.Position![0] + 1, v.Position[1] - 2, v.Position[2] + 0.5f };
+        var moved = await host.SetPlacementAsync(new SetPlacementParams { Path = scenario, Category = CampaignCategories.TriggerVolumes, Index = v.Index, Position = to, Rotation = v.Rotation });
+        bool ok = Enumerable.Range(0, 3).All(i => Math.Abs(moved.Position![i] - to[i]) < 0.01f) && Enumerable.Range(0, 4).All(i => Math.Abs(moved.ShapeSize![i] - v.ShapeSize![i]) < 0.01f);
+        Check($"{(v.IsSector ? "sector" : "box")} volume {v.Name} moved by (1, -2, 0.5), same size ({string.Join(", ", moved.Position!.Select(x => x.ToString("0.##")))})", ok);
+        var back = await host.SetPlacementAsync(new SetPlacementParams { Path = scenario, Category = CampaignCategories.TriggerVolumes, Index = v.Index, Position = v.Position, Rotation = v.Rotation });
+        Check($"  and back", Enumerable.Range(0, 3).All(i => Math.Abs(back.Position![i] - v.Position[i]) < 0.01f));
+    }
+    var box = vols.FirstOrDefault(x => !x.IsSector);
+    if (box != null)
+    {
+        var turned = await host.SetPlacementAsync(new SetPlacementParams { Path = scenario, Category = CampaignCategories.TriggerVolumes, Index = box.Index, Rotation = new[] { box.Rotation![0] + 30, 0f, 0f }, Size = new[] { 6f, 5f, 4f } });
+        Check($"box volume turned 30° and resized to 6 x 5 x 4, middle kept", Math.Abs(Math.IEEERemainder(turned.Rotation![0] - box.Rotation[0] - 30, 360)) < 0.1f && Math.Abs(turned.ShapeSize![0] - 6) < 0.01f && Math.Abs(turned.ShapeSize[2] - 2) < 0.01f
+              && Enumerable.Range(0, 3).All(i => Math.Abs(turned.Position![i] - box.Position![i]) < 0.01f));
+    }
+    var ai = data.Categories!.First(c => c.Name == CampaignCategories.AiSpawnPoints).Items!;
+    if (ai.Count > 0)
+    {
+        var p0 = ai[0];
+        var to = new[] { p0.Position![0] + 0.5f, p0.Position[1], p0.Position[2] };
+        var moved = await host.SetPlacementAsync(new SetPlacementParams { Path = scenario, Category = CampaignCategories.AiSpawnPoints, Index = 0, Position = to, Rotation = new[] { 45f, 0f, 0f } });
+        Check($"squad spawn point {p0.Label}/{p0.Name} moved and turned", Math.Abs(moved.Position![0] - to[0]) < 0.01f && Math.Abs(moved.Rotation![0] - 45) < 0.1f);
+        var dup = await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = CampaignCategories.AiSpawnPoints, Op = PlacementOps.Duplicate, Index = 0, Position = p0.Position });
+        Check($"duplicated in its squad: {dup.Category!.Items![dup.SelectIndex].Name} ({dup.Category.Items.Count} points)", dup.Category.Items.Count == ai.Count + 1 && dup.Category.Items[dup.SelectIndex].Label == p0.Label);
+        await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = CampaignCategories.AiSpawnPoints, Op = PlacementOps.Remove, Index = dup.SelectIndex });
+        await host.SetPlacementAsync(new SetPlacementParams { Path = scenario, Category = CampaignCategories.AiSpawnPoints, Index = 0, Position = p0.Position, Rotation = p0.Rotation });
+    }
+    var flagAdd = await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = CampaignCategories.CutsceneFlags, Op = PlacementOps.Add, Position = at });
+    Check($"new cutscene flag {flagAdd.Category!.Items![flagAdd.SelectIndex].Name}", flagAdd.SelectIndex >= 0);
+    await host.PlacementOpAsync(new PlacementOpParams { Path = scenario, Category = CampaignCategories.CutsceneFlags, Op = PlacementOps.Remove, Index = flagAdd.SelectIndex });
+
+    // The probe script, appended to the mission's main script.
+    string main = made.Scripts!.FirstOrDefault(s => Path.GetFileName(s).StartsWith(Path.GetFileName(Path.GetDirectoryName(template)!) + ".", StringComparison.OrdinalIgnoreCase)) ?? made.Scripts![0];
+    var src = await host.CallAsync<MissionScriptResult>(Methods.ReadMissionScript, new MissionScriptParams { Path = main });
+    Console.WriteLine($"{main}: name {src.Name}, {src.Text.Length} characters, first line: {src.Text.Split('\n')[0].Trim()}");
+    Check("mission script text read", src.Text.Length > 100 && src.Text.Contains("(script"));
+    string probe = "\r\n; ---- Kalo campaign probe ----\r\n(script startup kalo_probe\r\n    (sleep 150)\r\n    (print \"KALO PROBE: script compiled from source\")\r\n    (if (> (object_get_health kalo_probe_wh) 0)\r\n        (print \"KALO PROBE: placed object exists\")\r\n        (print \"KALO PROBE: placed object missing\"))\r\n)\r\n";
+    await host.CallAsync<MissionScriptResult>(Methods.WriteMissionScript, new MissionScriptParams { Path = main, Text = src.Text + probe });
+    await host.CloseTagAsync(main);
+    var again = await host.CallAsync<MissionScriptResult>(Methods.ReadMissionScript, new MissionScriptParams { Path = main });
+    Check("probe script written and read back", again.Text.Contains("KALO PROBE: script compiled"));
+    var saved = await host.SaveTagAsync(scenario);
+    Console.WriteLine($"saved {scenario} in {saved.Ms} ms");
+    await host.CloseTagAsync(scenario);
+    var re = await host.GetPlacementsAsync(scenario);
+    Check("the saved copy has kalo_probe_wh", re.Categories!.First(c => c.Name == "vehicles").Items!.Any(p => p.Name == "kalo_probe_wh"));
 }
 
 async Task Dump(string tag, int elements)

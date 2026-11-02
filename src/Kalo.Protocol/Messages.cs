@@ -53,6 +53,14 @@ namespace Kalo.Protocol
         public const string Shutdown = "shutdown";
         public const string ScriptObjects = "scriptObjects";
         public const string ForgeNames = "forgeNames";
+        /// <summary>Text of a campaign mission script (.scenario_hs_source_file).</summary>
+        public const string ReadMissionScript = "readMissionScript";
+        /// <summary>Writes a mission script's text and saves it.</summary>
+        public const string WriteMissionScript = "writeMissionScript";
+        /// <summary>A scenario's type (solo, multiplayer, main menu...) without reading its placements.</summary>
+        public const string ScenarioType = "scenarioType";
+        /// <summary>Each structure bsp's world bounds (to find which zone sets hold a point).</summary>
+        public const string BspBounds = "bspBounds";
     }
 
     public static class Wire
@@ -290,6 +298,14 @@ namespace Kalo.Protocol
         public int Shape { get; set; }
         /// <summary>Boundary sizes in world units: width or radius, box length, height above, depth below.</summary>
         public float[] ShapeSize { get; set; }
+        /// <summary>
+        /// Campaign placements that are not objects (squad spawn points, script points...): the block holding the element,
+        /// as a field path below the scenario root (e.g. squads[3]/Block:spawn points), and its index there. Null for objects.
+        /// </summary>
+        public string Block { get; set; }
+        public int BlockIndex { get; set; }
+        /// <summary>Trigger volumes: true when the volume is a sector (a floor polygon with a height), false for a box.</summary>
+        public bool IsSector { get; set; }
     }
 
     /// <summary>A Sapien editor folder of the scenario (objects point at one).</summary>
@@ -315,6 +331,62 @@ namespace Kalo.Protocol
         public List<PlacementCategory> Categories { get; set; }
         public List<Placement> SpawnPoints { get; set; }
         public List<EditorFolder> Folders { get; set; }
+        /// <summary>Scenario type: solo (campaign), multiplayer, main menu...</summary>
+        public string Type { get; set; }
+        /// <summary>Campaign: the zone sets (which level pieces are loaded together).</summary>
+        public List<ZoneSetInfo> ZoneSets { get; set; }
+        /// <summary>Campaign: the mission scripts the scenario compiles (.scenario_hs_source_file tags).</summary>
+        public List<string> Scripts { get; set; }
+        /// <summary>Campaign: the cutscenes (cinematic tags) the scenario plays.</summary>
+        public List<string> Cinematics { get; set; }
+        public long Ms { get; set; }
+    }
+
+    public sealed class ZoneSetInfo
+    {
+        public int Index { get; set; }
+        public string Name { get; set; }
+        /// <summary>Indices into ScenarioPlacements.Bsps; null when they could not be read.</summary>
+        public List<int> Bsps { get; set; }
+    }
+
+    /// <summary>Pseudo placement categories of campaign maps (shown and moved like objects in the map view).</summary>
+    public static class CampaignCategories
+    {
+        public const string TriggerVolumes = "trigger volumes";
+        public const string AiSpawnPoints = "ai spawn points";
+        public const string CutsceneFlags = "cutscene flags";
+        public const string CutsceneCameras = "cutscene cameras";
+        public const string ScriptPoints = "script points";
+        public static readonly string[] All = { TriggerVolumes, AiSpawnPoints, CutsceneFlags, CutsceneCameras, ScriptPoints };
+        public static bool Contains(string category)
+        {
+            foreach (string c in All) if (c == category) return true;
+            return false;
+        }
+    }
+
+    public sealed class BspBoundsResult
+    {
+        /// <summary>Per structure bsp: x0, x1, y0, y1, z0, z1; null when unknown.</summary>
+        public List<float[]> Bounds { get; set; }
+        public long Ms { get; set; }
+    }
+
+    public sealed class MissionScriptParams
+    {
+        /// <summary>The .scenario_hs_source_file tag.</summary>
+        public string Path { get; set; }
+        /// <summary>writeMissionScript: the new text.</summary>
+        public string Text { get; set; }
+    }
+
+    public sealed class MissionScriptResult
+    {
+        public string Path { get; set; }
+        /// <summary>The script file's own name (its "name" field), e.g. m10.</summary>
+        public string Name { get; set; }
+        public string Text { get; set; }
         public long Ms { get; set; }
     }
 
@@ -326,6 +398,8 @@ namespace Kalo.Protocol
         public float[] Position { get; set; }
         public float[] Rotation { get; set; }
         public float? Scale { get; set; }
+        /// <summary>Trigger volumes (boxes): width, length, height in world units; the middle stays where it is.</summary>
+        public float[] Size { get; set; }
     }
 
     public static class PlacementOps
@@ -507,6 +581,8 @@ namespace Kalo.Protocol
         public string Scenario { get; set; }
         /// <summary>Where to write the mesh (Kalo's .kmesh cache format).</summary>
         public string OutputFile { get; set; }
+        /// <summary>Only these structure bsps (indices), e.g. a campaign zone set; null for all of them.</summary>
+        public List<int> Bsps { get; set; }
     }
 
     public sealed class ExportLevelMeshResult
@@ -617,6 +693,10 @@ namespace Kalo.Protocol
     public sealed class CreateMapResult
     {
         public string Path { get; set; }
+        /// <summary>The new scenario's type (solo for a campaign mission).</summary>
+        public string Type { get; set; }
+        /// <summary>Campaign: mission scripts copied next to the new map (so they can be edited for this map only).</summary>
+        public List<string> Scripts { get; set; }
         public int Kept { get; set; }
         public int Removed { get; set; }
         public long Ms { get; set; }

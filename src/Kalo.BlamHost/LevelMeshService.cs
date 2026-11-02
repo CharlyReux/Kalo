@@ -524,7 +524,7 @@ namespace Kalo.BlamHost
 
         // ---- levels -------------------------------------------------------------------------------------
 
-        public static ExportLevelMeshResult Export(TagService tags, string scenario, string outputFile)
+        public static ExportLevelMeshResult Export(TagService tags, string scenario, string outputFile, List<int> only = null)
         {
             var sw = Stopwatch.StartNew();
             TagFile scen = tags.GetOrOpen(scenario);
@@ -533,6 +533,7 @@ namespace Kalo.BlamHost
             if (block != null)
                 for (int i = 0; i < block.Elements.Count; i++)
                 {
+                    if (only != null && !only.Contains(i)) continue;
                     string p = TagService.ValueOf(scen.SelectField("Block:structure bsps[" + i + "]/Reference:structure bsp"));
                     if (!string.IsNullOrEmpty(p)) bspPaths.Add(p);
                 }

@@ -60,9 +60,14 @@
           <TextBlock Text="Play" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" />
           <ComboBox ItemsSource="{Binding Scenarios}" SelectedItem="{Binding SelectedScenario}" Width="300" MinHeight="26" FontSize="12"
                     ToolTip.Tip="Map to play. Follows the map tab you are working in." />
-          <TextBlock Text="with" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" />
-          <ComboBox ItemsSource="{Binding GametypeChoices}" SelectedItem="{Binding SelectedGametype}" Width="200" MinHeight="26" FontSize="12"
+          <TextBlock Text="with" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" FontSize="12" IsVisible="{Binding PlayIsMultiplayer}" />
+          <ComboBox ItemsSource="{Binding GametypeChoices}" SelectedItem="{Binding SelectedGametype}" Width="200" MinHeight="26" FontSize="12" IsVisible="{Binding PlayIsMultiplayer}"
                     ToolTip.Tip="Gametype to play. 'Map default' plays the map as it is; your own gametypes are compiled and loaded first." />
+          <!-- Campaign missions: no gametype; a difficulty and where the mission starts -->
+          <ComboBox ItemsSource="{Binding Difficulties}" SelectedItem="{Binding SelectedDifficulty}" Width="104" MinHeight="26" FontSize="12" IsVisible="{Binding PlayIsCampaign}"
+                    ToolTip.Tip="Campaign difficulty" />
+          <ComboBox ItemsSource="{Binding InsertionChoices}" SelectedItem="{Binding SelectedInsertion}" Width="150" MinHeight="26" FontSize="12" IsVisible="{Binding PlayIsCampaign}"
+                    ToolTip.Tip="Where the mission starts (its insertion point). What each one does is up to the mission's insertion script (e.g. m10_insertion): 0 is the beginning." />
           <ComboBox ItemsSource="{Binding PlayerChoices}" SelectedItem="{Binding SelectedPlayers}" Width="96" MinHeight="26" FontSize="12"
                     ToolTip.Tip="Local players, split-screen in one game window. Player 1 uses the keyboard and mouse (or the first gamepad); plug in gamepads for the others." />
           <Button Classes="primary" Command="{Binding PlayCommand}" ToolTip.Tip="{Binding PlaySummary}" Padding="10,3">
@@ -433,6 +438,25 @@
                     <Button Classes="outline" Content="Delete" Margin="0,0,6,6" Command="{Binding ActiveMap.DeleteSelectedCommand, FallbackValue={x:Null}}" />
                     <Button Classes="outline" Content="Copy" Margin="0,0,6,6" Command="{Binding ActiveMap.CopySelectionCommand, FallbackValue={x:Null}}" />
                   </WrapPanel>
+                  <!-- Campaign markers: what they are, and a box volume's size -->
+                  <StackPanel Spacing="6" IsVisible="{Binding ActiveMap.Selected.IsCampaignMarker, FallbackValue=False}">
+                    <TextBlock Text="{Binding ActiveMap.Selected.MarkerHelp, FallbackValue=''}" TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+                    <Button Classes="outline" Content="Squad fields…" HorizontalAlignment="Left" IsVisible="{Binding ActiveMap.Selected.IsAiSpawnPoint, FallbackValue=False}"
+                            Command="{Binding ActiveMap.OpenSquadFieldsCommand, FallbackValue={x:Null}}"
+                            ToolTip.Tip="Open this squad in the tag editor: its team, characters and weapons (cells), initial zone and objective" />
+                    <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" IsVisible="{Binding ActiveMap.Selected.IsBoxVolume, FallbackValue=False}">
+                      <TextBlock Text="W" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip.Tip="Width (along its forward direction)" />
+                      <TextBox Grid.Column="1" Classes="compact mono" Margin="0,0,6,0" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0.05"
+                               Text="{Binding ActiveMap.Selected.VolumeWidth, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                      <TextBlock Grid.Column="2" Text="L" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip.Tip="Length (sideways)" />
+                      <TextBox Grid.Column="3" Classes="compact mono" Margin="0,0,6,0" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0.05"
+                               Text="{Binding ActiveMap.Selected.VolumeLength, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                      <TextBlock Grid.Column="4" Text="H" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip.Tip="Height" />
+                      <TextBox Grid.Column="5" Classes="compact mono" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0.05"
+                               Text="{Binding ActiveMap.Selected.VolumeHeight, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
+                    </Grid>
+                  </StackPanel>
+                  <StackPanel Spacing="8" IsVisible="{Binding ActiveMap.Selected.IsObject, FallbackValue=False}">
                   <DockPanel>
                     <TextBlock Text="Scale" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Width="46" />
                     <Button DockPanel.Dock="Right" Classes="tool" Content="Set" Command="{Binding ActiveMap.SetScaleCommand, FallbackValue={x:Null}}"
@@ -475,6 +499,7 @@
                                IsVisible="{Binding !ActiveMap.Selected.IsSphereZone, FallbackValue=False}" ToolTip.Tip="Depth below the object"
                                Text="{Binding ActiveMap.Selected.ZoneBottom, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
                     </Grid>
+                  </StackPanel>
                   </StackPanel>
                   <!-- Every other property of this object, as saved in the map -->
                   <StackPanel Spacing="4" IsVisible="{Binding ActiveMap.HasProperties, FallbackValue=False}">
