@@ -12,8 +12,26 @@ public static class ScriptFormatter
 {
     public sealed record Result(string Text, bool Changed, string Message);
 
+    /// <summary>The indentation depth of each classic Kalo Script line (null when the blocks don't add up).</summary>
+    internal static int[]? Depths(List<string> lines, bool[] verbatim) => KaloDepths(lines, verbatim);
+
     public static Result Format(string text, bool kaloScript)
     {
+        if (kaloScript && !KaloScriptStyle.IsClassic(text))
+        {
+            // Python style: indentation is the structure. Rewritten through the classic form (4 spaces per level).
+            var (classic, errors) = KaloScriptStyle.ToClassic(text);
+            if (errors.Count > 0) return new Result(text, false, $"Not formatted: line {errors[0].Line}: {errors[0].Message}.");
+            string? py = KaloScriptStyle.FromClassic(classic);
+            if (py == null) return new Result(text, false, "Not formatted: the blocks don't add up.");
+            string nl = text.Contains("\r\n") ? "\r\n" : "\n";
+            py = py.Replace("\n", nl);
+            if (!py.EndsWith(nl)) py += nl;
+            var a = KaloScript.Transpile(text);
+            var b = KaloScript.Transpile(py);
+            if (a.Megalo != b.Megalo) return new Result(text, false, "Not formatted: the formatter would have changed the script (please report this).");
+            return new Result(py, py != text, py != text ? "Formatted." : "Already formatted.");
+        }
         string newline = text.Contains("\r\n") ? "\r\n" : "\n";
         var lines = text.Replace("\r\n", "\n").Split('\n').ToList();
         if (lines.Count > 0 && lines[^1].Length == 0) lines.RemoveAt(lines.Count - 1);
@@ -139,8 +157,12 @@ public static class ScriptFormatter
             string? frame = stack.Count > 0 ? stack.Peek() : null;
             if (frame is "decl" or "generic")
             {
-                if (first.Is("end")) stack.Pop();
-                else if (frame == "generic" && !l.Any(t => t.Is("=")) && l.Count >= 1) stack.Push("generic");
+                // Rows end with "end" tokens when the Python style closes blocks on their last line.
+                int ends = 0;
+                for (int k = l.Count - 1; k >= 0 && l[k].Is("end"); k--) ends++;
+                if (ends == l.Count) { for (int k = 0; k < ends && stack.Count > 0; k++) stack.Pop(); continue; }
+                if (frame == "generic" && !l.Any(t => t.Is("="))) stack.Push("generic");
+                for (int k = 0; k < ends; k++) { if (stack.Count == 0) return null; stack.Pop(); }
                 continue;
             }
 

@@ -35,8 +35,13 @@ public static class KaloScriptGuide
 {
     private static GuideBlock H(string text) => new(GuideKind.Heading, text);
     private static GuideBlock P(string text) => new(GuideKind.Text, text);
-    private static GuideBlock C(string code) => new(GuideKind.Code, code.Trim('\n'));
-    private static GuideBlock Prog(string code) => new(GuideKind.Program, code.Trim('\n'));
+    private static GuideBlock C(string code) => new(GuideKind.Code, Py(code.Trim('\n')));
+    private static GuideBlock Prog(string code) => new(GuideKind.Program, Py(code.Trim('\n')));
+    /// <summary>Raw code kept exactly as written (tables, the older style).</summary>
+    private static GuideBlock Verbatim(string code) => new(GuideKind.Code, code.Trim('\n'));
+
+    /// <summary>Examples are written once and shown in the Python style.</summary>
+    private static string Py(string code) => KaloScriptStyle.IsClassic(code) && KaloScriptStyle.FromClassic(code) is { } py ? py : code;
     private static GuideBlock Tip(string text) => new(GuideKind.Note, text);
 
     public static IReadOnlyList<GuideSection> Build(MegaloCatalog? catalog)
@@ -51,9 +56,10 @@ public static class KaloScriptGuide
     {
         yield return new("start", "Guide", "Getting started", new[]
         {
-            P("Kalo Script is the language Kalo uses for gametypes. It reads like ReachVariantTool's scripts: if / then / else, " +
-              "for each player do, function calls like f(a, b), and x += 1. Kalo turns it into Megalo, the language of Bungie's " +
-              "gametype scripts, and compiles that with HREK's own compiler: everything Megalo can do, Kalo Script can do."),
+            P("Kalo Script is the language Kalo uses for gametypes. It reads like Python: a line ending with a colon opens a block " +
+              "(if x:, for each player:) and the lines under it are indented; # starts a comment; calls look like f(a, b), and x += 1 " +
+              "adds. Kalo turns it into Megalo, the language of Bungie's gametype scripts, and compiles that with HREK's own compiler: " +
+              "everything Megalo can do, Kalo Script can do."),
             H("Your first gametype"),
             P("Make a mod (start page), then New gametype in My mod. Leave \"Write it in Kalo Script\" ticked. Kalo creates a " +
               ".kscript file in data\\multiplayer\\megalo\\mods\\<your mod> from a template and opens it."),
@@ -77,7 +83,7 @@ end
             P("Hover any word for its help. Autocomplete (Ctrl+Space, or just type) offers actions, conditions, keywords, " +
               "the game's value lists (weapons, vehicles, sounds...) and your variables. The panel on the right lists every action " +
               "and condition; double-click inserts one."),
-            Tip("A line starting with -- is a comment. A \"-- title: Name\" line near the top names the exported game type."),
+            Tip("A line starting with # is a comment. A \"# title: Name\" line near the top names the exported game type. Indent with 4 spaces (Tab)."),
         });
 
         yield return new("ticks", "Guide", "How a gametype runs", new[]
@@ -104,23 +110,23 @@ end
         yield return new("triggers", "Guide", "Triggers: for each, on, do", new[]
         {
             P("At the top level of the file, each of these is a trigger:"),
-            C(@"
-do ... end                                  -- every tick, once
-for each player do ... end                  -- every tick, for each player: current_player
-for each team do ... end                    -- every tick, for each team: current_team
-for each object do ... end                  -- every tick, for each object: current_object (expensive)
-for each random player do ... end           -- every tick, one random player
-for each object with label ""koth_hill"" do ... end   -- objects whose Megalo label is koth_hill
-for each object with type ""flag"" do ... end         -- objects of that object type
-for each hill do ... end                    -- objects declared with: objects hill with label ""koth_hill""
-on init do ... end                          -- once at the start of the round
-on local do ... end                         -- on every machine, for things only shown locally
-on host_migration do ... end                -- after the host changed
-on double_migration do ... end
-on pregame do ... end                       -- before the game starts
+            Verbatim(@"
+every tick:                       # every tick, once
+for each player:                  # every tick, for each player: current_player
+for each team:                    # every tick, for each team: current_team
+for each object:                  # every tick, for each object: current_object (expensive)
+for each random player:           # every tick, one random player
+for each object with label ""koth_hill"":   # objects whose Megalo label is koth_hill
+for each object with type ""flag"":         # objects of that object type
+for each hill:                    # objects declared with: objects hill with label ""koth_hill""
+on init:                          # once at the start of the round
+on local:                         # on every machine, for things only shown locally
+on host_migration:                # after the host changed
+on double_migration:
+on pregame:                       # before the game starts
 "),
-            P("Inside a trigger, the same words make loops and blocks: \"for each player do\" loops over the players, \"do ... end\" " +
-              "is a block (its conditions only gate what is inside), \"inline ... end\" is a block that doesn't use up a trigger."),
+            P("Inside a trigger, the same words make loops and blocks: \"for each player:\" loops over the players, \"do:\" " +
+              "is a block (its conditions only gate what is inside), \"inline:\" is a block that doesn't use up a trigger."),
             Tip("Objects you place in the map editor get their Megalo label in the inspector (Properties, megalo label). That's how " +
                 "a script finds \"the hill\" or \"the bomb spawn\" on your map."),
         });
@@ -158,7 +164,7 @@ end
               "a or (b and c) becomes (a or b) and (a or c), which costs one more condition. Very large expressions are refused; " +
               "split them into nested ifs."),
             P("How it compiles: an if becomes a block whose conditions gate its contents. An if that is the last thing in its block " +
-              "needs no block of its own, so it costs nothing extra. else / elseif add a temporary number that remembers whether a " +
+              "needs no block of its own, so it costs nothing extra. else / elif add a temporary number that remembers whether a " +
               "branch already ran."),
             H("Conditions"),
             P(string.Join(", ", MegaloDocs.Conditions.Keys.Where(k => k != "if")) + ". See Reference › Conditions."),
@@ -185,8 +191,8 @@ adjust_grenades(current_player, frag, set_to, 4)
 
         yield return new("variables", "Guide", "Variables: declare, temp, members", new[]
         {
-            P("declare makes a variable that keeps its value between ticks. It belongs to the game (global), or there is one for " +
-              "each player, team or object."),
+            P("scope.name: type makes a variable that keeps its value between ticks (write it at the top of the file). It belongs to " +
+              "the game (global), or there is one for each player, team or object."),
             C(@"
 declare global.number round_count = 0
 declare player.number streak = 0            -- one per player: current_player.streak, killer.streak
@@ -196,8 +202,8 @@ declare local global.number host_only = 0   -- local: not sent to players (use i
 "),
             P("Types: number, timer, object, player, team. Variables are networked (sent to every player) unless declared local. " +
               "Each kind of variable is limited in number; the compiler says when there are too many."),
-            P("temp makes a temporary variable that only lives during the current tick. Use temps to hold a result (the killer, " +
-              "a distance) before using it."),
+            P("name: type inside a trigger makes a temporary variable that only lives during the current tick. Use temps to hold a " +
+              "result (the killer, a distance) before using it."),
             C(@"
 temp player killer = none
 temp number distance = 0
@@ -228,7 +234,7 @@ hud_post_message(everyone, ball_taken, goal_message)
 
         yield return new("functions", "Guide", "Functions", new[]
         {
-            P("A function names a group of statements so you can use them in several places. Define it at the top level " +
+            P("A function names a group of statements so you can use them in several places. Define it with def at the top level " +
               "(outside triggers) and call it on its own line, like an action."),
             C(@"
 function award(p, points)
@@ -299,15 +305,14 @@ end
 "),
             H("Lobby options"),
             P("Options players pick in the lobby. Use them in triggers like a number: killer.score += kill_points."),
-            C(@"
+            Verbatim(@"
 option kill_points ""Kill Points"" ""Points per kill"" = 1 range -10 10
-option hill_time ""Hill Movement Time"" ""How often the hill moves"" = 30
-  value 0 ""Never""
-  value 30 ""30 seconds""
-  value 60 ""1 minute""
-end
-hidden option ...                      -- not shown in the lobby
-option ""Sides"" = k_side_option_one_sided   -- sets an option declared in an include
+option hill_time ""Hill Movement Time"" ""How often the hill moves"" = 30:
+    value 0 ""Never""
+    value 30 ""30 seconds""
+    value 60 ""1 minute""
+hidden option ...                      # not shown in the lobby
+option ""Sides"" = k_side_option_one_sided   # sets an option declared in an include
 "),
             H("Player traits"),
             P("A named set of traits; apply_player_traits(player, name) applies it for a tick (do it every tick to keep it)."),
@@ -328,11 +333,11 @@ widget hill_timer at bottom_center            -- a HUD widget (hud_widget_set_te
 stat stat_time_in_hill = timer stat_time_in_hill team 0
 "),
             P("A name declared with objects is a group (a filter), not one object: use it with for each, or keep one of its objects in a variable, " +
-              "e.g. declare global.object spot = none, then get_random_object(hill, none, spot) (or for each hill do spot = current_object end). Megalo has no teleport: " +
+              "e.g. global.spot: object = none, then get_random_object(hill, none, spot) (or for each hill: spot = current_object). Megalo has no teleport: " +
               "object_attach(thing, spot, 0, 0, 0) then object_detach(thing) moves thing onto spot."),
             H("Other declarations"),
             P("engine (menu name, description, icon), teams, loadout, loadout_palette, map_permissions and player_rating use " +
-              "the same form: the block name, name = value lines, nested blocks, end."),
+              "the same form: the block name and a colon, then indented name = value lines and nested blocks."),
             C(@"
 engine
   name = koth_title
@@ -415,27 +420,31 @@ hud_post_message(player current_player, none, ""Welcome!"")
               "opens it; the original stays as it is. Every Bungie script that compiles converts and compiles back to the same " +
               "gametype."),
             H("Megalo → Kalo Script"),
-            C(@"
-trigger general                   do ... end
-trigger player                    for each player do ... end
-trigger initialization            on init do ... end
-action for_each player            for each player do ... end (inside a trigger)
-action for_each general           do ... end (inside a trigger)
-begin ... end                     inline ... end
-condition if a equal_to b         if a == b then ... end
+            Verbatim(@"
+trigger general                   every tick:
+trigger player                    for each player:
+trigger initialization            on init:
+action for_each player            for each player:   (inside a trigger)
+action for_each general           do:   (inside a trigger)
+begin ... end                     inline:
+condition if a equal_to b         if a == b:
 condition timer_expired t or      timer_expired(t) or ...
 condition not if a == b           not a == b
 action set x add 1                x += 1
 action hud_post_message a b ""c""   hud_post_message(a, b, ""c"")
-temporary player p none           temp player p = none
-networked number n 0              declare networked global.number n = 0   (in variables global)
+temporary player p none           p: player = none
+networked number n 0              global.n: number = 0   (in variables global)
 override score_to_win_round 50    setting score_to_win_round = 50
 ranged_option p t d 1 -10 10 end  option p t d = 1 range -10 10
-player_traits t a b ... end       traits t a b ... end   (lines: key = value)
+player_traits t a b ... end       traits t a b:   (indented lines: key = value)
 map_object hill label ""x"" end     objects hill with label ""x""
 constants number k 0 end          constant k = 0
-; comment                         -- comment
+; comment                         # comment
 "),
+            H("The older style"),
+            P("Kalo Script used to close blocks with then / do / end (if x then ... end, for each player do ... end, -- comments, " +
+              "temp player p = none, declare player.number n = 0, function f() ... end). Files written that way still work. A banner " +
+              "offers to rewrite them in the Python style; the gametype stays exactly the same (Kalo checks it)."),
             P("In Megalo, a condition gates everything after it in its block; Kalo Script makes that an if around the rest of the block."),
         });
     }

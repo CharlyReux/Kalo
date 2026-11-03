@@ -26,6 +26,10 @@ public partial class SquadEditorViewModel : ObservableObject
         if (!string.IsNullOrEmpty(d.Team)) about.Add("team " + d.Team);
         if (d.Groups is { Count: > 0 }) about.Add("in " + string.Join(" › ", d.Groups));
         About = string.Join(" · ", about);
+        var starts = new List<string>();
+        if (!string.IsNullOrEmpty(d.Objective)) starts.Add("follows the objective " + d.Objective + " (what the AI do)");
+        if (!string.IsNullOrEmpty(d.Zone)) starts.Add("uses the zone " + d.Zone + " (where they can go)");
+        Starts = starts.Count == 0 ? "" : "Once placed, it " + string.Join(" and ", starts) + ".";
         IsTemplated = d.CellsKind == "templated";
         // Checked in reach_tag_test (m10 copy, barn_skirm_init): with its templated cell set to an Elite the game still
         // spawned a Skirmisher; with the spawn point's own character set to an Elite it spawned an Elite.
@@ -45,6 +49,13 @@ public partial class SquadEditorViewModel : ObservableObject
     public string Name { get; }
     public string Title => "SQUAD " + Name.ToUpperInvariant();
     public string About { get; }
+    /// <summary>Its objective and zone in plain words.</summary>
+    public string Starts { get; }
+    public bool HasStarts => Starts.Length > 0;
+    /// <summary>Which script lines place it (ai_place), set by the map once the script uses are read.</summary>
+    [ObservableProperty] private string _placedBy = "";
+    public bool HasPlacedBy => PlacedBy.Length > 0;
+    partial void OnPlacedByChanged(string value) => OnPropertyChanged(nameof(HasPlacedBy));
     public string PointsText { get; }
     public bool IsTemplated { get; }
     public string TemplateNote { get; }

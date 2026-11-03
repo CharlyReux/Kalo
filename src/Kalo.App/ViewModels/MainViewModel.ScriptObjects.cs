@@ -39,7 +39,7 @@ public partial class MainViewModel
     /// <summary>Lets scripts create the object under <paramref name="name"/>. Null when done, otherwise why not.</summary>
     public async Task<string?> RegisterScriptObjectAsync(string tagPath, string name)
     {
-        if (Paths == null || Host == null) return "The Blam Host is not running.";
+        if (Paths == null || Host == null) return "The Engine is not running.";
         if (!ScriptObjects.IsObjectTag(tagPath)) return "Only objects (crate, scenery, weapon, vehicle...) can be used in scripts.";
         if (!File.Exists(System.IO.Path.Combine(Paths.WorkspaceTags, tagPath))) return "Save the tag first.";
         var r = await GetScriptObjectsAsync();
@@ -66,7 +66,7 @@ public partial class MainViewModel
 
     public async Task<string?> RenameScriptObjectAsync(ScriptObjectEntry entry, string name)
     {
-        if (Paths == null || Host == null) return "The Blam Host is not running.";
+        if (Paths == null || Host == null) return "The Engine is not running.";
         var names = ScriptObjects.ReadNames(Paths);
         if (entry.Index < ScriptObjects.VanillaCount(Paths)) return "This is one of the game's own objects.";
         if (entry.Index >= names.Count) return "objects.txt doesn't list this object.";
@@ -85,7 +85,7 @@ public partial class MainViewModel
 
     public async Task<string?> RemoveScriptObjectAsync(ScriptObjectEntry entry)
     {
-        if (Paths == null || Host == null || Baseline == null) return "The Blam Host is not running.";
+        if (Paths == null || Host == null || Baseline == null) return "The Engine is not running.";
         var r = await GetScriptObjectsAsync();
         if (r == null) return "Could not read the object type list.";
         if (WhyNotRemovable(entry, r.Entries.Count) is { } why) return why;

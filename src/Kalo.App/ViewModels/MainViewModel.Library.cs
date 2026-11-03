@@ -285,7 +285,7 @@ public partial class MainViewModel
                 var image = Textures.Get(s.BaseMap);
                 if (image != null) Materials.Add(new MaterialChoice(s.Shader!, image));
             }
-            Log($"{Materials.Count} materials ready for the block tools.");
+            Trace($"{Materials.Count} materials ready for the block tools.");
         }
         catch (Exception ex)
         {

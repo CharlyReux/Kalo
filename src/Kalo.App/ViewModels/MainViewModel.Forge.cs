@@ -28,7 +28,7 @@ public partial class MainViewModel
     {
         if (Paths == null || Host == null || Game == null || SelectedScenario == null || IsExportingForge) return;
         IsExportingForge = true;
-        BottomPanel = "output";
+        BottomPanel = "activity";
         string scenario = SelectedScenario;
         string map = System.IO.Path.GetFileName(scenario);
         string copy = $@"levels\mods\_kalo_play\{map}_forge\{map}_forge.scenario";

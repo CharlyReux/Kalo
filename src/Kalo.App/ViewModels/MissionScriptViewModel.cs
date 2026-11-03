@@ -7,23 +7,44 @@ using Kalo.Core;
 namespace Kalo.App.ViewModels;
 
 /// <summary>
-/// A campaign mission script (HaloScript, a .scenario_hs_source_file tag): its text in an editor, a list of the scripts
-/// and globals it declares, and a check of its brackets and strings before saving. The game compiles the scripts when
-/// the mission loads (Play); its compile errors show in Output.
+/// A campaign mission script (a .scenario_hs_source_file tag). Shown in Kalo Script (Python style) by default, or as
+/// Bungie's HaloScript; saved as HaloScript, which the game compiles when the mission loads. Help while typing:
+/// autocomplete and hover for every game function and every name in the map, checks (unknown functions, wrong number of
+/// values, names not in the map), Ctrl+click on a name to see it in the map.
 /// </summary>
 public partial class MissionScriptViewModel : DocumentViewModel
 {
     public const string Extension = ".scenario_hs_source_file";
     private readonly MainViewModel _main;
     private string _saved = "";
+    private string _savedHaloScript = "";
     private bool _loading;
 
-    public MissionScriptViewModel(MainViewModel main, string path) : base(path) => _main = main;
+    public MissionScriptViewModel(MainViewModel main, string path, string? scenario = null) : base(path)
+    {
+        _main = main;
+        ScenarioPath = scenario;
+    }
 
-    public override string Title => System.IO.Path.GetFileName(Path)[..^Extension.Length] + ".hsc";
+    public MainViewModel Main => _main;
+    public override string Title => System.IO.Path.GetFileName(Path)[..^Extension.Length] + (IsKaloScript ? ".ks" : ".hsc");
     public override string Badge => "mission";
 
-    /// <summary>The script file's own name (its "name" field).</summary>
+    /// <summary>The scenario these scripts belong to (for the names of its squads, volumes, objects...).</summary>
+    public string? ScenarioPath { get; set; }
+
+    /// <summary>Shown in Kalo Script (Python style) rather than HaloScript.</summary>
+    [ObservableProperty] private bool _isKaloScript = true;
+    public string ViewLabel => IsKaloScript ? "Show HaloScript" : "Show Kalo Script";
+    public string LanguageName => IsKaloScript ? "Kalo Script" : "HaloScript";
+    partial void OnIsKaloScriptChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ViewLabel));
+        OnPropertyChanged(nameof(LanguageName));
+        OnPropertyChanged(nameof(Title));
+    }
+
+    /// <summary>The script file's own name (its "name" field): the game names it in its errors ([m10 line 12]).</summary>
     [ObservableProperty] private string _scriptName = "";
     [ObservableProperty] private string _text = "";
     [ObservableProperty] private string _summary = "";
@@ -36,6 +57,18 @@ public partial class MissionScriptViewModel : DocumentViewModel
     /// <summary>Kept in a map's own folder (levels\mods\...): editing it changes only that map.</summary>
     public bool IsShared => !Path.StartsWith(@"levels\mods\", StringComparison.OrdinalIgnoreCase);
     public string SharedWarning => "This script is shared (" + System.IO.Path.GetDirectoryName(Path) + "): changing it changes every mission that uses it. Copy a campaign mission into your mod (New map › Campaign) to get its own scripts.";
+
+    /// <summary>The map's names by kind (squad, trigger volume...), and the scripts and globals of the mission's other files.</summary>
+    public IReadOnlyDictionary<string, List<string>>? Names { get; private set; }
+    public IReadOnlyList<Kalo.Core.Scripting.MissionDecl>? Others { get; private set; }
+
+    /// <summary>For the saved HaloScript: its line i+1 came from Kalo Script line LineMap[i] (to place the game's errors).</summary>
+    public IReadOnlyList<int>? LineMap { get; private set; }
+
+    /// <summary>The checked messages, for the editor's underlines (and the text they were checked on).</summary>
+    public IReadOnlyList<ScriptMessage> Diagnostics { get; private set; } = Array.Empty<ScriptMessage>();
+    public string DiagnosticsText { get; private set; } = "";
+    public event Action? DiagnosticsChanged;
 
     /// <summary>Asks the view to select a range: line, start offset, length.</summary>
     public event Action<int, int, int>? RevealRequested;
@@ -59,20 +92,33 @@ public partial class MissionScriptViewModel : DocumentViewModel
         if (value != null) RevealRequested?.Invoke(value.Line, value.Start, value.Name.Length);
     }
 
+    /// <summary>Shows a line (1-based), e.g. from "Used by scripts".</summary>
+    public void RevealLine(int line, string? word = null)
+    {
+        var lines = Text.Split('\n');
+        if (line < 1 || line > lines.Length) return;
+        int offset = lines.Take(line - 1).Sum(l => l.Length + 1);
+        int at = word != null ? lines[line - 1].IndexOf(word, StringComparison.OrdinalIgnoreCase) : -1;
+        RevealRequested?.Invoke(line, at >= 0 ? offset + at : offset, at >= 0 ? word!.Length : 0);
+    }
+
     public async Task LoadAsync()
     {
-        if (_main.Host == null) { Status = "The Blam Host is not running."; return; }
+        if (_main.Host == null) { Status = "The Engine is not running."; return; }
         try
         {
             var r = await _main.Host.ReadMissionScriptAsync(Path);
             _loading = true;
             ScriptName = r.Name ?? "";
-            _saved = r.Text ?? "";
+            _savedHaloScript = r.Text ?? "";
+            _saved = IsKaloScript ? Kalo.Core.Scripting.MissionScript.ToPython(_savedHaloScript) : _savedHaloScript;
             Text = _saved;
             _loading = false;
             IsDirty = false;
+            if (IsKaloScript) LineMap = Kalo.Core.Scripting.MissionScript.ToHaloScript(Text).LineMap;
             Check();
             Status = $"{Text.Split('\n').Length:N0} lines";
+            _ = LoadContextAsync();
         }
         catch (HostException ex)
         {
@@ -82,12 +128,70 @@ public partial class MissionScriptViewModel : DocumentViewModel
         }
     }
 
+    /// <summary>The map's names and the mission's other scripts, for help and checks (in the background).</summary>
+    public async Task LoadContextAsync()
+    {
+        ScenarioPath ??= _main.ScenarioOfMissionScript(Path);
+        if (_main.Host == null || ScenarioPath == null) return;
+        try
+        {
+            var r = await _main.Host.ScenarioNamesAsync(ScenarioPath);
+            var names = new Dictionary<string, List<string>>(r.Names ?? new());
+            var others = new List<Kalo.Core.Scripting.MissionDecl>();
+            foreach (var script in r.Scripts ?? new())
+            {
+                if (script.Equals(Path, StringComparison.OrdinalIgnoreCase)) continue;
+                others.AddRange(await _main.MissionDeclarationsAsync(script));
+            }
+            names["script"] = others.Where(d => d.Kind != "global").Select(d => d.Name).ToList();
+            Names = names;
+            Others = others;
+            Check();
+        }
+        catch (HostException ex)
+        {
+            _main.Log($"{Title}: map names unavailable ({ex.Message}).");
+        }
+    }
+
+    /// <summary>Switches between Kalo Script and HaloScript (the text is converted; nothing is saved).</summary>
+    [RelayCommand]
+    private void SwitchView()
+    {
+        if (IsKaloScript)
+        {
+            var r = Kalo.Core.Scripting.MissionScript.ToHaloScript(Text);
+            if (!r.Ok)
+            {
+                Check();
+                Status = $"Fix the errors first (line {r.Errors[0].Line}: {r.Errors[0].Message}).";
+                return;
+            }
+            _loading = true;
+            Text = IsDirty ? r.HaloScript : _savedHaloScript;
+            _saved = _savedHaloScript;
+            IsKaloScript = false;
+            _loading = false;
+        }
+        else
+        {
+            _loading = true;
+            string py = Kalo.Core.Scripting.MissionScript.ToPython(Text);
+            _saved = Kalo.Core.Scripting.MissionScript.ToPython(_savedHaloScript);
+            Text = IsDirty ? py : _saved;
+            IsKaloScript = true;
+            _loading = false;
+        }
+        IsDirty = Text != _saved;
+        Check();
+    }
+
     [RelayCommand]
     private async Task Save()
     {
         if (_main.Host == null) return;
         Check();
-        var error = Messages.FirstOrDefault(m => m.Severity == "error");
+        var error = Messages.FirstOrDefault(m => m.Severity == "error" && !m.Message.StartsWith("Game: ", StringComparison.Ordinal));
         if (error != null)
         {
             _main.AddProblem("error", $"{Title} not saved: line {error.Line}: {error.Message}", Path);
@@ -97,11 +201,21 @@ public partial class MissionScriptViewModel : DocumentViewModel
         try
         {
             string text = Text;
-            var r = await _main.Host.WriteMissionScriptAsync(Path, text);
+            string haloScript = text;
+            if (IsKaloScript)
+            {
+                var r = Kalo.Core.Scripting.MissionScript.ToHaloScript(text);
+                haloScript = r.HaloScript;
+                LineMap = r.LineMap;
+            }
+            var w = await _main.Host.WriteMissionScriptAsync(Path, haloScript);
             _saved = text;
+            _savedHaloScript = haloScript;
             IsDirty = false;
-            Status = $"Saved in {r.Ms} ms. The game compiles it when the mission loads: press Play; compile errors show in Output.";
+            Status = $"Saved in {w.Ms} ms. The game compiles it when the mission loads: press Play; its errors show in Problems.";
+            _gameErrors.Clear();
             _main.OnDocumentSaved(this);
+            _main.ForgetMissionDeclarations(Path);
         }
         catch (HostException ex)
         {
@@ -119,19 +233,103 @@ public partial class MissionScriptViewModel : DocumentViewModel
     [RelayCommand]
     private void CheckNow() => Check();
 
-    /// <summary>Brackets and strings (what most often breaks a HaloScript file), plus the declarations list.</summary>
+    /// <summary>Kalo Script: syntax, functions, values, names; HaloScript: brackets and strings. And the declarations list.</summary>
     public void Check()
     {
         Messages.Clear();
-        foreach (var m in HaloScriptCheck.Run(Text)) Messages.Add(m);
         Declarations.Clear();
-        foreach (var d in HaloScriptCheck.Declarations(Text)) Declarations.Add(d);
-        int errors = Messages.Count(m => m.Severity == "error");
+        if (IsKaloScript)
+        {
+            foreach (var m in Kalo.Core.Scripting.MissionAssist.Check(Text, Names, Others).Take(200))
+                Messages.Add(new ScriptMessage(m.Line, -1, m.Length, m.IsError ? "error" : "warning", m.Text, null, m.Column));
+            var starts = LineStarts(Text);
+            foreach (var d in Kalo.Core.Scripting.MissionAssist.Declarations(Text))
+                Declarations.Add(new HsDeclaration(d.Kind, d.Name, d.Line, starts[d.Line - 1] + d.Column - 1));
+        }
+        else
+        {
+            foreach (var m in HaloScriptCheck.Run(Text)) Messages.Add(m);
+            foreach (var d in HaloScriptCheck.Declarations(Text)) Declarations.Add(d);
+        }
+        foreach (var g in _gameErrors) Messages.Add(g);
+        int errors = Messages.Count(m => m.Severity == "error"), warnings = Messages.Count - errors;
         CheckOk = errors == 0;
         Summary = errors == 0
-            ? $"{Declarations.Count(d => d.Kind != "global")} scripts, {Declarations.Count(d => d.Kind == "global")} globals · brackets and strings OK"
-            : $"{errors} problem{(errors == 1 ? "" : "s")}: {Messages[0].Message} (line {Messages[0].Line})";
+            ? $"{Declarations.Count(d => d.Kind != "global")} scripts, {Declarations.Count(d => d.Kind == "global")} globals · " +
+              (IsKaloScript ? (warnings == 0 ? "no problems found" : $"{warnings} warning{(warnings == 1 ? "" : "s")}") : "brackets and strings OK")
+            : $"{errors} problem{(errors == 1 ? "" : "s")}: {Messages.First(m => m.IsError).Message} (line {Messages.First(m => m.IsError).Line})";
         OnPropertyChanged(nameof(HasMessages));
+        Diagnostics = Messages.ToList();
+        DiagnosticsText = Text;
+        DiagnosticsChanged?.Invoke();
+    }
+
+    private static List<int> LineStarts(string text)
+    {
+        var starts = new List<int> { 0 };
+        for (int i = 0; i < text.Length; i++) if (text[i] == '\n') starts.Add(i + 1);
+        return starts;
+    }
+
+    // ---- help while typing ----
+
+    public (int Start, List<CompletionItem> Items) Complete(string lineBefore)
+    {
+        if (!IsKaloScript) return (lineBefore.Length, new());
+        var (start, items) = Kalo.Core.Scripting.MissionAssist.Complete(lineBefore, Text, Names, Others);
+        return (start, items.Select(i => new CompletionItem(i.Text, i.Kind, i.Signature != null ? i.Signature + (i.About is { Length: > 0 } ? "\n\n" + i.About : "") : i.About)).ToList());
+    }
+
+    public HoverInfo? Hover(string line, int column)
+    {
+        var h = Kalo.Core.Scripting.MissionAssist.Hover(line, column, Text, Names, Others);
+        if (h == null) return null;
+        return new HoverInfo(h.Kind == "function" ? h.Text : $"{h.Text}  ({h.Kind})", h.Signature, null, h.About ?? "", null);
+    }
+
+    /// <summary>Ctrl+click: a name of the map (squad, volume, object, flag...) shown in the map view.</summary>
+    public async Task<bool> GoToNameAsync(string word)
+    {
+        if (ScenarioPath == null || Names == null) return false;
+        foreach (var (kind, list) in Names)
+            if (kind != "script" && list.Contains(word, StringComparer.OrdinalIgnoreCase))
+                return await _main.ShowNameInMapAsync(ScenarioPath, word, kind);
+        var decl = Kalo.Core.Scripting.MissionAssist.Declarations(Text).FirstOrDefault(d => d.Name.Equals(word, StringComparison.OrdinalIgnoreCase));
+        if (decl != null) { RevealLine(decl.Line, decl.Name); return true; }
+        var other = Others?.FirstOrDefault(d => d.Name.Equals(word, StringComparison.OrdinalIgnoreCase) && d.File != null);
+        if (other?.File != null)
+        {
+            var doc = await _main.OpenMissionScriptAsync(other.File, ScenarioPath);
+            doc.RevealLine(doc.FindDeclarationLine(other.Name), other.Name);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>The line declaring a script or global in this file's current view.</summary>
+    public int FindDeclarationLine(string name)
+    {
+        var d = IsKaloScript ? Kalo.Core.Scripting.MissionAssist.Declarations(Text).FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            : Kalo.Core.Scripting.MissionAssist.HaloScriptDeclarations(Text).FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        return d?.Line ?? 1;
+    }
+
+    /// <summary>A line of the game's HaloScript (from a compile error) in this view's numbering.</summary>
+    public int ViewLine(int haloScriptLine)
+    {
+        if (!IsKaloScript || LineMap == null || haloScriptLine < 1 || haloScriptLine > LineMap.Count) return haloScriptLine;
+        // Closing brackets have no line of their own in Kalo Script: the nearest line above.
+        for (int k = haloScriptLine - 1; k >= 0; k--) if (LineMap[k] > 0) return LineMap[k];
+        return 1;
+    }
+
+    private readonly List<ScriptMessage> _gameErrors = new();
+
+    /// <summary>An error the game reported when compiling this script (kept until the next save).</summary>
+    public void AddGameError(int line, string message)
+    {
+        _gameErrors.Add(new ScriptMessage(line, -1, 0, "error", "Game: " + message, null, 0));
+        Check();
     }
 }
 

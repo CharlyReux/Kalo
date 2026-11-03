@@ -101,6 +101,15 @@ public sealed record ProblemItem(string Severity, string Message, string Source,
     public bool IsError => Severity == "error";
 }
 
+/// <summary>One line of the Activity panel: kind is info, ok, warning or error.</summary>
+public sealed record ActivityItem(string Time, string Text, string Kind)
+{
+    public bool IsError => Kind == "error";
+    public bool IsWarning => Kind == "warning";
+    public bool IsOk => Kind == "ok";
+    public bool IsInfo => Kind == "info";
+}
+
 public partial class ChangeItem : ObservableObject
 {
     public required string Path { get; init; }

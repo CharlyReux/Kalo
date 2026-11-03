@@ -4,7 +4,8 @@ using System.Text;
 namespace Kalo.Core.Scripting;
 
 /// <summary>
-/// Kalo Script: a modern, ReachVariantTool-style language for gametypes (if/then/else, for each, function-call
+/// Kalo Script: a modern language for gametypes, written in a Python style (indentation, if x:, def, # comments; see
+/// KaloScriptStyle; the older then / do / end style still works) (if/then/else, for each, function-call
 /// syntax, operators, named temporaries), turned into the Megalo text that HREK's compiler understands.
 /// Declarations Megalo already writes well (options, traits, map objects, HUD widgets...) go through unchanged
 /// inside <c>megalo [[ ... ]]</c> blocks.
@@ -56,6 +57,33 @@ public static class KaloScript
 
     /// <summary>The starter for new gametypes: points per kill, a streak bonus and a message, with comments.</summary>
     public const string Starter = """
+    # Settings and lobby options (the Settings button shows them as a form).
+    setting score_to_win_round = 25
+    setting round_time_limit = 10
+    option kill_points "Kill Points" "How many points you get for killing an enemy" = 1 range -10 10
+
+    # Variables: each player keeps their own kill streak.
+    player.streak: number = 0
+
+    for each player:
+        # player_died is true on the tick this player was killed by an enemy
+        if player_died(current_player, enemy):
+            killer: player = none
+            player_death_get_killing_player(current_player, killer)
+            killer.score += kill_points
+            killer.streak += 1
+            current_player.streak = 0
+
+            # every 5 kills in a row: a bonus point and a message
+            if killer.streak == 5:
+                killer.score += 1
+                killer.streak = 0
+                hud_post_message(player killer, none, "Killing spree! +1")
+
+    """;
+
+    /// <summary>The same starter in the classic style (then / do / end), used by the tour's checks.</summary>
+    public const string ClassicStarter = """
     -- Settings and lobby options (the Settings button shows them as a form).
     setting score_to_win_round = 25
     setting round_time_limit = 10
@@ -84,7 +112,20 @@ public static class KaloScript
 
     """;
 
-    public static TranspileResult Transpile(string source) => new Transpiler(source).Run();
+    /// <summary>
+    /// Kalo Script → Megalo. Python-style files (the default) are first turned into the classic style, line for line,
+    /// so line numbers in errors are the file's own.
+    /// </summary>
+    public static TranspileResult Transpile(string source)
+    {
+        if (KaloScriptStyle.IsClassic(source)) return new Transpiler(source).Run();
+        var (classic, styleErrors) = KaloScriptStyle.ToClassic(source);
+        var r = new Transpiler(classic).Run();
+        if (styleErrors.Count == 0 && r.Errors.Count == 0) return r;
+        var errors = styleErrors.Concat(r.Errors.Where(e => styleErrors.All(s => s.Line != e.Line)).Select(e => e with { Message = KaloScriptStyle.PythonMessage(e.Message) }))
+            .Distinct().OrderBy(e => e.Line).ToList();
+        return new TranspileResult { Megalo = styleErrors.Count == 0 ? r.Megalo : "", LineMap = r.LineMap, Errors = errors };
+    }
 
     /// <summary>Converts one Megalo declaration block, or says why it stays Megalo (diagnostics, tests).</summary>
     public static (string? Kalo, string? Reason) ConvertDeclaration(IReadOnlyList<string> megaloLines)

@@ -29,7 +29,7 @@ public partial class FieldViewModel : ObservableObject
     public string Label { get; }
     public string Units { get; }
     public string Range { get; }
-    public string? Description => string.IsNullOrWhiteSpace(Node.Description) ? null : Node.Description;
+    public string? Description => _owner.SimpleFor(this)?.Help is { } help ? help : string.IsNullOrWhiteSpace(Node.Description) ? null : Node.Description;
     public IReadOnlyList<string> Options => Node.Options ?? (IReadOnlyList<string>)Array.Empty<string>();
 
     public bool IsBlock => Kind == ValueKinds.Block;
@@ -62,7 +62,7 @@ public partial class FieldViewModel : ObservableObject
     public bool IsInternal { get; }
     public string SavedValue { get; private set; }
     /// <summary>Label in the labeled view, engine name in the raw view.</summary>
-    public string DisplayText => _owner.ShowRaw && Kind != ValueKinds.Element && RawName.Length > 0 ? RawName : Label;
+    public string DisplayText => _owner.ShowRaw && Kind != ValueKinds.Element && RawName.Length > 0 ? RawName : _owner.SimpleFor(this)?.Label ?? Label;
     /// <summary>Range in the labeled view, engine type in the raw view.</summary>
     public string Extra => _owner.ShowRaw ? Type : Range;
 
@@ -70,6 +70,7 @@ public partial class FieldViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(DisplayText));
         OnPropertyChanged(nameof(Extra));
+        OnPropertyChanged(nameof(Description));
     }
 
     [ObservableProperty] private string? _value;

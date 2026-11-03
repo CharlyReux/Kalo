@@ -7,41 +7,51 @@
   <DockPanel>
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
-      <DockPanel Margin="10,5">
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-          <Button Classes="outline" Content="Compare" Command="{Binding CompareCommand}" IsEnabled="{Binding DiffersFromVanilla}"
-                  ToolTip.Tip="List the fields that differ from the vanilla HREK tag (unsaved edits included)" />
-          <Button Classes="outline" Content="Revert to vanilla" Command="{Binding RevertToVanillaCommand}" IsEnabled="{Binding DiffersFromVanilla}"
-                  ToolTip.Tip="Put the original HREK version of this tag back" />
-          <TextBlock Text="{Binding ScriptNameText}" IsVisible="{Binding ShowScriptName}" VerticalAlignment="Center" Foreground="{StaticResource KMuted}"
-                     ToolTip.Tip="Gametype scripts create this object with create_object(&quot;name&quot;, at ...)" />
-          <Button Classes="outline" Content="Rename…" IsVisible="{Binding ShowScriptName}" Click="RenameScriptName_Click"
-                  ToolTip.Tip="Change the name scripts use for this object" />
-          <Button Classes="outline" Content="Remove from scripts" IsVisible="{Binding ShowScriptName}" IsEnabled="{Binding CanRemoveScriptName}"
-                  Command="{Binding RemoveScriptNameCommand}" ToolTip.ShowOnDisabled="True" ToolTip.Tip="{Binding RemoveScriptNameTip}" />
-          <Button Classes="outline" Content="Use in scripts…" IsVisible="{Binding ShowUseInScripts}" Click="UseInScripts_Click"
-                  ToolTip.Tip="Let gametype scripts create this object: create_object(&quot;name&quot;, at ...)" />
-          <Button Classes="outline" Content="Save as new…" Click="SaveAsNew_Click"
-                  ToolTip.Tip="Save this tag, with your edits, as a new tag in your mod (e.g. a new object based on this one). This tag itself is not changed." />
-          <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S). A running game reloads it." />
-        </StackPanel>
-        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-          <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" Margin="0,0,8,0" ClipToBounds="True">
-            <StackPanel Orientation="Horizontal">
-              <ToggleButton Classes="seg" Content="Labeled" IsChecked="{Binding ShowLabeled, Mode=TwoWay}" />
-              <ToggleButton Classes="seg" Content="Raw fields" IsChecked="{Binding ShowRaw, Mode=TwoWay}" />
-            </StackPanel>
-          </Border>
-          <TextBox Classes="compact" Width="200" Watermark="Filter fields" Text="{Binding Filter}" Margin="0,0,8,0" />
-          <CheckBox Content="Changed only" IsChecked="{Binding ChangedOnly}" FontSize="12" Margin="0,0,8,0" />
-          <Button Classes="tool" Command="{Binding ExpandAllCommand}" ToolTip.Tip="Expand all">
-            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70D;" FontSize="12" />
-          </Button>
-          <Button Classes="tool" Command="{Binding CollapseAllCommand}" ToolTip.Tip="Collapse all">
-            <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70E;" FontSize="12" />
-          </Button>
-        </WrapPanel>
-      </DockPanel>
+      <!-- View controls, then actions; the actions go to a second row when the editor is narrow (nothing is cut). -->
+      <WrapPanel Orientation="Horizontal" Margin="10,2">
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,24,3">
+            <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" Margin="0,0,8,0" ClipToBounds="True">
+              <StackPanel Orientation="Horizontal">
+                <ToggleButton Classes="seg" Content="Simple" IsChecked="{Binding ShowSimple, Mode=TwoWay}" IsVisible="{Binding HasSimpleView}"
+                              ToolTip.Tip="Only the settings most people change, with plain names" />
+                <ToggleButton Classes="seg" Content="All fields" IsChecked="{Binding ShowLabeled, Mode=TwoWay}"
+                              ToolTip.Tip="Every field, with readable names" />
+                <ToggleButton Classes="seg" Content="Raw" IsChecked="{Binding ShowRaw, Mode=TwoWay}"
+                            ToolTip.Tip="Every field with the engine's own names and types (for guides written for Guerilla)" />
+              </StackPanel>
+            </Border>
+            <TextBox Classes="compact" Width="200" Watermark="Filter fields" Text="{Binding Filter}" Margin="0,0,8,0" />
+            <CheckBox Content="Changed only" MinWidth="110" IsChecked="{Binding ChangedOnly}" FontSize="12" Margin="0,0,8,0" />
+            <Button Classes="tool" Command="{Binding ExpandAllCommand}" ToolTip.Tip="Expand all">
+              <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70D;" FontSize="12" />
+            </Button>
+            <Button Classes="tool" Command="{Binding CollapseAllCommand}" ToolTip.Tip="Collapse all">
+              <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE70E;" FontSize="12" />
+            </Button>
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,3">
+            <Button Classes="outline" Content="Compare" Command="{Binding CompareCommand}" IsEnabled="{Binding DiffersFromVanilla}"
+                    ToolTip.Tip="List the fields that differ from the game's original file (unsaved edits included)" />
+            <Button Classes="outline" Content="Revert to original" Command="{Binding RevertToVanillaCommand}" IsEnabled="{Binding DiffersFromVanilla}"
+                    ToolTip.Tip="Put the game's original version of this file back" />
+            <TextBlock Text="{Binding ScriptNameText}" IsVisible="{Binding ShowScriptName}" VerticalAlignment="Center" Foreground="{StaticResource KMuted}"
+                       ToolTip.Tip="Gametype scripts create this object with create_object(&quot;name&quot;, at ...)" />
+            <Button Classes="outline" Content="Rename…" IsVisible="{Binding ShowScriptName}" Click="RenameScriptName_Click"
+                    ToolTip.Tip="Change the name scripts use for this object" />
+            <Button Classes="outline" Content="Remove from scripts" IsVisible="{Binding ShowScriptName}" IsEnabled="{Binding CanRemoveScriptName}"
+                    Command="{Binding RemoveScriptNameCommand}" ToolTip.ShowOnDisabled="True" ToolTip.Tip="{Binding RemoveScriptNameTip}" />
+            <Button Classes="outline" Content="Use in scripts…" IsVisible="{Binding ShowUseInScripts}" Click="UseInScripts_Click"
+                    ToolTip.Tip="Let gametype scripts create this object: create_object(&quot;name&quot;, at ...)" />
+            <Button Classes="outline" Content="Save as new…" Click="SaveAsNew_Click"
+                    ToolTip.Tip="Save this file, with your edits, as a new file in your mod (e.g. a new object based on this one). This file itself is not changed." />
+            <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S). A running game reloads it." />
+          </StackPanel>
+      </WrapPanel>
+    </Border>
+
+    <!-- Simple view: what it shows and where the rest is -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="12,6" IsVisible="{Binding ShowSimple}">
+      <TextBlock Text="{Binding SimpleIntro}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource KMuted}" />
     </Border>
 
     <!-- Column header -->

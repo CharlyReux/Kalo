@@ -46,6 +46,9 @@ public partial class MapEditorViewModel : DocumentViewModel
     public Func<Vector3>? PlacementPointProvider { get; set; }
     /// <summary>Set by the 3D view: where "Play from camera" starts (ground under the camera) and the facing.</summary>
     public Func<(Vector3 Position, float FacingDegrees)>? PlayFromProvider { get; set; }
+    /// <summary>Set by the 3D view: why starting under the camera would go wrong (no floor, a low ceiling), or null.</summary>
+    public Func<string?>? PlayFromCheck { get; set; }
+    private DateTime _playAnywayUntil;
 
     public event Action? SceneChanged;
     public event Action<Vector3, float>? FocusRequested;
@@ -239,6 +242,7 @@ public partial class MapEditorViewModel : DocumentViewModel
         SceneChanged?.Invoke();
         _ = LoadPropertiesAsync();
         _ = LoadSquadAsync();
+        _ = LoadScriptUsesAsync();
         if (!_syncingFromOutliner) OutlinerChanged?.Invoke();
     }
 
@@ -350,11 +354,11 @@ public partial class MapEditorViewModel : DocumentViewModel
         if (_main.Host == null)
         {
             // Opened right after launch: wait for the host instead of showing an empty map.
-            Status = "Waiting for the Blam Host…";
+            Status = "Waiting for the Engine…";
             if (await _main.WaitForHostAsync() == null)
             {
-                Status = "The Blam Host is not running: the map could not be read. Don't edit it here; reopen it once the host runs.";
-                _main.AddProblem("error", $"{Title}: the Blam Host is not running, so the map could not be read.", Path);
+                Status = "The Engine is not running: the map could not be read. Don't edit it here; reopen it once the Engine runs.";
+                _main.AddProblem("error", $"{Title}: the Engine is not running, so the map could not be read.", Path);
                 return;
             }
         }
@@ -427,7 +431,7 @@ public partial class MapEditorViewModel : DocumentViewModel
             foreach (var item in Items) item.RefreshOutside();
             RefreshOutsideSummary();
             GeometryStatus = mesh == null ? "No level geometry (objects only)." : $"{mesh.TriangleCount:N0} triangles";
-            _main.Log($"{Title}: level geometry {GeometryStatus}");
+            _main.Trace($"{Title}: level geometry {GeometryStatus}");
             SceneChanged?.Invoke();
             _ = EnsureTexturesAsync();
         }
@@ -459,6 +463,9 @@ public partial class MapEditorViewModel : DocumentViewModel
     {
         get
         {
+            // Missions span many level pieces loaded one zone set at a time, and their markers (volumes, spawn points...)
+            // may sit anywhere: this multiplayer check does not apply.
+            if (IsCampaign) return "";
             int n = Items.Count(i => i.IsOutside);
             return n == 0 ? "" : $"{n} object{(n == 1 ? " is" : "s are")} outside the level geometry: Reach removes them in game (and players spawning there die). Move them over the floor.";
         }
@@ -698,6 +705,16 @@ public partial class MapEditorViewModel : DocumentViewModel
     private async Task PlayFromCamera()
     {
         if (PlayFromProvider == null) { Status = "Open the 3D view first."; return; }
+        // A start with no floor under it (or inside a low space) makes the player fall or die right away; in a mission
+        // the game then restarts from the last checkpoint again and again. Say so first; a second press plays anyway.
+        if (PlayFromCheck?.Invoke() is { } problem && DateTime.UtcNow > _playAnywayUntil)
+        {
+            _playAnywayUntil = DateTime.UtcNow.AddSeconds(15);
+            Status = problem + " Press Play here again to play anyway.";
+            _main.AddProblem("warning", "Play here: " + problem + " Move the camera above a floor, or press Play here again to play anyway.", Path);
+            return;
+        }
+        _playAnywayUntil = default;
         var (position, facing) = PlayFromProvider();
         await _main.PlayFromAsync(this, position, facing);
     }
@@ -762,6 +779,28 @@ public partial class PlacementItem : ObservableObject
         CampaignCategories.ScriptPoints => "A named point of " + (Label ?? "a point set") + " that mission scripts use to move AI or aim (e.g. cs_go_to ps_set/point).",
         _ => "",
     };
+    /// <summary>What a trigger volume is for, guessed from its name (zone set switch, kill volume...), or "".</summary>
+    public string Purpose
+    {
+        get
+        {
+            if (!IsVolume) return "";
+            string n = PlacedName ?? "";
+            if (n.StartsWith("zone_set:", StringComparison.OrdinalIgnoreCase))
+                return $"Zone set switch: when a player enters, the game switches to the zone set {n["zone_set:".Length..]} (the level pieces it loads).";
+            if (n.StartsWith("begin_zone_set:", StringComparison.OrdinalIgnoreCase))
+                return $"Zone set preload: when a player enters, the game starts loading the zone set {n["begin_zone_set:".Length..]} in the background.";
+            if (n.Contains("kill", StringComparison.OrdinalIgnoreCase))
+                return "Kill volume (from its name): whoever is inside dies, e.g. under the level or off a cliff.";
+            if (n.Contains("safe", StringComparison.OrdinalIgnoreCase))
+                return "Safe zone (from its name): where players can respawn or the game counts them safe.";
+            if (n.StartsWith("tv_", StringComparison.OrdinalIgnoreCase) || n.StartsWith("vol_", StringComparison.OrdinalIgnoreCase))
+                return "Mission script trigger: scripts wait for players (or AI) to enter it, e.g. sleep_until(volume_test_players(" + n + ")). See Used by scripts below.";
+            return "";
+        }
+    }
+    public bool HasPurpose => Purpose.Length > 0;
+
     [ObservableProperty] private string _volumeWidth = "";
     [ObservableProperty] private string _volumeLength = "";
     [ObservableProperty] private string _volumeHeight = "";
@@ -836,6 +875,7 @@ public partial class PlacementItem : ObservableObject
         ZoneWidth = Fmt(zs[0]); ZoneLength = Fmt(zs[1]); ZoneTop = Fmt(zs[2]); ZoneBottom = Fmt(zs[3]);
         VolumeWidth = Fmt(zs[0]); VolumeLength = Fmt(zs[1]); VolumeHeight = Fmt(zs[2] + zs[3]);
         OnPropertyChanged(nameof(IsSectorVolume)); OnPropertyChanged(nameof(IsBoxVolume)); OnPropertyChanged(nameof(MarkerHelp));
+        OnPropertyChanged(nameof(Purpose)); OnPropertyChanged(nameof(HasPurpose));
         OnPropertyChanged(nameof(HasZone)); OnPropertyChanged(nameof(IsBoxZone)); OnPropertyChanged(nameof(IsSphereZone)); OnPropertyChanged(nameof(ZoneWidthLabel));
         X = Fmt(pos.X); Y = Fmt(pos.Y); Z = Fmt(pos.Z);
         YawText = Fmt(Yaw); PitchText = Fmt(Pitch); RollText = Fmt(Roll);

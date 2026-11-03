@@ -432,15 +432,16 @@ public partial class ScriptEditorView : UserControl
   <RuleSet>
     <Span color='Comment' begin='--' />
     <Span color='Comment' begin='//' />
+    <Span color='Comment' begin='\#' />
     <Span color='String'><Begin>""</Begin><End>""</End></Span>
     <Span color='Raw' multiline='true'><Begin>\[\[</Begin><End>\]\]</End></Span>
     <Keywords color='Section'>
-      <Word>declare</Word><Word>enum</Word><Word>function</Word><Word>alias</Word><Word>megalo</Word><Word>include</Word><Word>on</Word><Word>setting</Word><Word>option</Word>
+      <Word>declare</Word><Word>enum</Word><Word>function</Word><Word>def</Word><Word>every</Word><Word>tick</Word><Word>alias</Word><Word>megalo</Word><Word>include</Word><Word>on</Word><Word>setting</Word><Word>option</Word>
       <Word>traits</Word><Word>objects</Word><Word>constant</Word><Word>widget</Word><Word>stat</Word><Word>engine</Word><Word>teams</Word><Word>loadout</Word>
       <Word>hidden</Word><Word>locked</Word><Word>value</Word><Word>range</Word>
     </Keywords>
     <Keywords color='Keyword'>
-      <Word>if</Word><Word>then</Word><Word>else</Word><Word>elseif</Word><Word>end</Word><Word>for</Word><Word>each</Word><Word>do</Word><Word>inline</Word>
+      <Word>if</Word><Word>then</Word><Word>else</Word><Word>elseif</Word><Word>elif</Word><Word>pass</Word><Word>end</Word><Word>for</Word><Word>each</Word><Word>do</Word><Word>inline</Word>
       <Word>and</Word><Word>or</Word><Word>not</Word><Word>temp</Word><Word>with</Word><Word>networked</Word><Word>local</Word>
       <Word>true</Word><Word>false</Word><Word>none</Word>
     </Keywords>

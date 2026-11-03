@@ -14,4 +14,9 @@
     <PackageReference Include="NVorbis" Version="0.10.5" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Every HaloScript function and engine global (the game's script_doc output), for mission script help and checks. -->
+    <EmbeddedResource Include="Scripting\hs_doc.txt" LogicalName="Kalo.HsDoc" />
+  </ItemGroup>
+
 </Project>

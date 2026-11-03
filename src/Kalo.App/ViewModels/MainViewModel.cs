@@ -68,9 +68,9 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     [ObservableProperty] private string _searchText = "";
     [ObservableProperty] private bool _isSearching;
     [ObservableProperty] private string _sidePanel = "explorer";
-    [ObservableProperty] private string _bottomPanel = "output";
+    [ObservableProperty] private string _bottomPanel = "activity";
     [ObservableProperty] private string? _selectedScenario;
-    [ObservableProperty] private string _hostStatus = "Blam Host starting…";
+    [ObservableProperty] private string _hostStatus = "Engine starting…";
     [ObservableProperty] private IBrush _hostBrush = Brushes.Orange;
     [ObservableProperty] private string _gameStatus = "Game not running";
     [ObservableProperty] private IBrush _gameBrush = Brushes.Gray;
@@ -95,6 +95,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     public bool IsGametypesPanel => SidePanel == "gametypes";
     public bool IsProjectsPanel => SidePanel == "projects";
     public bool IsOutput => BottomPanel == "output";
+    public bool IsActivity => BottomPanel == "activity";
     public bool IsProblems => BottomPanel == "problems";
     public bool NotSearching => !IsSearching;
     public string WorkspaceText => Paths == null ? "no workspace" : Paths.Workspace;
@@ -129,7 +130,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             if (Host == null) return null;
             string file = Geometry.CacheFile(scenario) + ".host";
             var r = await Host.ExportLevelMeshAsync(scenario, file, only);
-            Post(() => Log($"Level geometry for {scenario}: {r.Triangles:N0} triangles ({r.Clusters} clusters, {r.Instances} instances) in {r.Ms} ms" + (string.IsNullOrEmpty(r.Notes) ? "" : " — " + r.Notes)));
+            Post(() => Trace($"Level geometry for {scenario}: {r.Triangles:N0} triangles ({r.Clusters} clusters, {r.Instances} instances) in {r.Ms} ms" + (string.IsNullOrEmpty(r.Notes) ? "" : " — " + r.Notes)));
             var mesh = Kalo.Core.Geometry.Mesh.TryLoad(file);
             try { File.Delete(file); } catch { }
             return mesh;
@@ -137,6 +138,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Game.Output += line => Post(() =>
         {
             AppendOutput("[game] " + line);
+            OnGameScriptLine(line);
+            OnGameRevertLine(line);
             // The gametype didn't load: the game then runs with no gametype at all (no script, default traits).
             if (line.Contains("main_game_start:", StringComparison.Ordinal) && !line.Contains("-ERROR-", StringComparison.Ordinal))
                 AddProblem("error", "The game could not start the gametype (" + line[(line.IndexOf("main_game_start:", StringComparison.Ordinal) + 16)..].Trim() + "): it runs without it.", "Play");
@@ -144,8 +147,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
                      && (line.Contains("failed", StringComparison.Ordinal) || line.Contains("not valid", StringComparison.Ordinal) || line.Contains("doesn't match", StringComparison.Ordinal)))
                 AddProblem("error", "Gametype: " + line[line.IndexOf("megalogamengine:", StringComparison.Ordinal)..].Trim(), "Play");
         });
-        Game.Loaded += () => Post(() => { GameStatus = "Game running · map loaded"; GameBrush = Brushes.LimeGreen; Log("Map loaded in the game."); });
-        Game.TagReloaded += tag => Post(() => { StatusMessage = "Game reloaded " + System.IO.Path.GetFileName(tag); Log("Game hot-reloaded " + tag); });
+        Game.Loaded += () => Post(() => { GameStatus = "Game running · map loaded"; GameBrush = Brushes.LimeGreen; Log("The map is loaded in the game."); AddActivity("Game ready", "ok"); });
+        Game.TagReloaded += tag => Post(() => { StatusMessage = "Game reloaded " + System.IO.Path.GetFileName(tag); Log("The game reloaded " + System.IO.Path.GetFileName(tag) + "."); });
         Game.Exited += code => Post(() =>
         {
             Log($"Game exited (code {code}).");
@@ -227,22 +230,23 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     private async Task StartHostAsync()
     {
         _hostStarting = true;
-        HostStatus = "Blam Host starting…";
+        HostStatus = "Engine starting…";
         HostBrush = Brushes.Orange;
         try
         {
             var sw = Stopwatch.StartNew();
             Host = await HostClient.StartAsync(Paths!, line => Post(() => AppendOutput(line)));
-            Host.Exited += () => Post(() => { HostStatus = "Blam Host stopped"; HostBrush = Brushes.IndianRed; });
-            HostStatus = "Blam Host";
+            Host.Exited += () => Post(() => { HostStatus = "Engine stopped"; HostBrush = Brushes.IndianRed; });
+            HostStatus = "Engine";
             HostBrush = Brushes.LimeGreen;
-            Log($"Blam Host ready in {sw.ElapsedMilliseconds} ms (ManagedBlam {Host.Info?.StartMs} ms, {Host.Info?.TagGroups} tag groups).");
+            Trace($"Engine (Blam Host) ready in {sw.ElapsedMilliseconds} ms (ManagedBlam {Host.Info?.StartMs} ms, {Host.Info?.TagGroups} tag groups).");
+            AddActivity("Kalo is ready: open a map, a gametype or a game file to start (Help › Recipes shows how to do common things).", "ok");
         }
         catch (Exception ex)
         {
-            HostStatus = "Blam Host failed";
+            HostStatus = "Engine failed";
             HostBrush = Brushes.IndianRed;
-            AddProblem("error", "Could not start the Blam Host: " + ex.Message, "Kalo");
+            AddProblem("error", "Could not start the Engine: " + ex.Message, "Kalo");
         }
         finally
         {
@@ -252,7 +256,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public async Task RestartHostAsync()
     {
-        AddProblem("warning", "The engine stopped; restarting the Blam Host. Unsaved edits were lost.", "Kalo");
+        AddProblem("warning", "The engine stopped; restarting the Engine. Unsaved edits were lost.", "Kalo");
         _hostStarting = true;
         if (Host != null) await Host.DisposeAsync();
         Host = null;
@@ -301,8 +305,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     {
         if (await WaitForHostAsync() == null)
         {
-            tab.Fail("the Blam Host is not running");
-            AddProblem("error", "Could not open " + tab.Path + ": the Blam Host is not running.", tab.Path);
+            tab.Fail("the Engine is not running");
+            AddProblem("error", "Could not open " + tab.Path + ": the Engine is not running.", tab.Path);
             return;
         }
         try
@@ -403,7 +407,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             if (!File.Exists(current)) { diff.Summary = "This mod deletes the vanilla file."; return diff; }
             if (workspacePath.StartsWith(@"tags\", StringComparison.OrdinalIgnoreCase))
             {
-                if (Host == null) { diff.Summary = "The Blam Host is not running."; return diff; }
+                if (Host == null) { diff.Summary = "The Engine is not running."; return diff; }
                 var r = await Host.DiffTagAsync(workspacePath.Substring(5), vanilla);
                 foreach (var e in r.Entries ?? new())
                     diff.Rows.Add(new DiffRow(e.Kind ?? "changed", FieldLabels.For(e.Name, e.Name), e.Path ?? "", e.Vanilla ?? "", e.Current ?? ""));
@@ -498,7 +502,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             MegaloCatalog = await Host.MegaloCatalogAsync(Paths.MegaloObjectLists);
             Kalo.Core.Scripting.MegaloDocs.Fix(MegaloCatalog);
-            Log($"Gametype compiler ready: {MegaloCatalog.Actions?.Count} actions, {MegaloCatalog.Conditions?.Count} conditions.");
+            Trace($"Gametype compiler ready: {MegaloCatalog.Actions?.Count} actions, {MegaloCatalog.Conditions?.Count} conditions.");
         }
         catch (Exception ex)
         {
@@ -700,8 +704,10 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     /// <param name="scripts">False: the map's scripts don't run (a campaign mission without its cutscenes and AI).</param>
     public void StartGame(string scenario, IReadOnlyList<string> initCommands, string? note, IReadOnlyList<string>? after, bool scripts)
     {
+        _hsErrorsSeen.Clear();
         if (Game == null) return;
         if (IsGameRunning) Game.Stop();
+        _reverts.Clear();
         try
         {
             ApplyPlaytestInput(PlayerCount);
@@ -712,8 +718,8 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
             IsGameRunning = true;
             GameStatus = "Game loading " + System.IO.Path.GetFileName(scenario) + "…";
             GameBrush = Brushes.Orange;
-            Log("Play: launched reach_tag_test on " + scenario + ". Saved tags reload in the game automatically.");
-            BottomPanel = "output";
+            Log("Play: started the game on " + System.IO.Path.GetFileNameWithoutExtension(scenario) + ". Saved files reload in the game automatically.");
+            BottomPanel = "activity";
         }
         catch (Exception ex)
         {
@@ -753,7 +759,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         {
             var map = PlaytestInput.Resolve(AppSettings.Current.GamepadPlayers, _runningPlayers);
             PlaytestInput.WriteConfig(Paths.Workspace, _runningPlayers, map);
-            Log("Gamepads (live): " + PlaytestInput.Describe(_runningPlayers, map) + ".");
+            Trace("Gamepads (live): " + PlaytestInput.Describe(_runningPlayers, map) + ".");
         }
         catch { }
     }
@@ -866,10 +872,12 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Post(RefreshProjects);
     }
     [RelayCommand] private void ShowOutput() => BottomPanel = "output";
+    [RelayCommand] private void ShowActivity() => BottomPanel = "activity";
     [RelayCommand] private void ShowProblems() => BottomPanel = "problems";
     [RelayCommand]
     private void ClearOutput()
     {
+        if (IsActivity) { Activity.Clear(); return; }
         OutputLines.Clear();
         VisibleOutput.Clear();
         OnPropertyChanged(nameof(OutputFilterSummary));
@@ -887,6 +895,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     partial void OnBottomPanelChanged(string value)
     {
         OnPropertyChanged(nameof(IsOutput));
+        OnPropertyChanged(nameof(IsActivity));
         OnPropertyChanged(nameof(IsProblems));
         OnPropertyChanged(nameof(IsObjects));
         OnPropertyChanged(nameof(IsPrefabs));
@@ -911,7 +920,42 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     // ---- output and problems ---------------------------------------------------------------
 
-    public void Log(string message) => AppendOutput($"[kalo {DateTime.Now:HH:mm:ss}] {message}");
+    private readonly List<DateTime> _reverts = new();
+
+    /// <summary>
+    /// A mission going back to its last checkpoint (the player died). Several in a row right after the start mean the
+    /// player dies as soon as they appear: say so instead of letting the game loop.
+    /// </summary>
+    private void OnGameRevertLine(string line)
+    {
+        if (!line.Contains("game_state:save: reverting to game", StringComparison.Ordinal)) return;
+        var now = DateTime.UtcNow;
+        _reverts.RemoveAll(t => now - t > TimeSpan.FromMinutes(2));
+        _reverts.Add(now);
+        if (_reverts.Count == 1) AddActivity("The mission went back to its last checkpoint (the player died).", "warning");
+        else if (_reverts.Count == 3)
+            AddProblem("warning", "The mission restarted from its checkpoint 3 times in 2 minutes: the player probably dies as soon as they appear " +
+                "(no floor, outside the level, or in a kill volume). Stop the game and start somewhere else (Play here over a floor), or from the start.", "Play");
+    }
+
+    /// <summary>A message for the person: in Activity (plain, newest last) and in the Log.</summary>
+    public void Log(string message)
+    {
+        AppendOutput($"[kalo {DateTime.Now:HH:mm:ss}] {message}");
+        AddActivity(message, "info");
+    }
+
+    /// <summary>Technical detail (timings, sizes): only in the Log.</summary>
+    public void Trace(string message) => AppendOutput($"[kalo {DateTime.Now:HH:mm:ss}] {message}");
+
+    /// <summary>What Kalo and the game did, in plain words: the default bottom panel. The Log keeps every raw line.</summary>
+    public ObservableCollection<ActivityItem> Activity { get; } = new();
+
+    public void AddActivity(string message, string kind)
+    {
+        Activity.Add(new ActivityItem(DateTime.Now.ToString("HH:mm:ss"), message, kind));
+        while (Activity.Count > 500) Activity.RemoveAt(0);
+    }
 
     private void AppendOutput(string line)
     {
@@ -946,6 +990,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         Post(() =>
         {
             Problems.Insert(0, new ProblemItem(severity, message, source, DateTime.Now.ToString("HH:mm:ss")));
+            AddActivity((string.IsNullOrEmpty(source) ? "" : source + ": ") + message, severity == "error" ? "error" : "warning");
             ErrorCount = Problems.Count(p => p.Severity == "error");
             WarningCount = Problems.Count(p => p.Severity == "warning");
             if (severity == "error") BottomPanel = "problems";

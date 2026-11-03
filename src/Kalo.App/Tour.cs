@@ -50,6 +50,8 @@ public sealed class Tour
                 // Opens a whole campaign mission (minutes the first time): only when asked (--tour-sections campaign).
                 if (AppArgs.Current.TourSections?.Contains("campaign", StringComparer.OrdinalIgnoreCase) == true) await Section("campaign", Campaign);
                 if (AppArgs.Current.TourSections?.Contains("squads", StringComparer.OrdinalIgnoreCase) == true) await Section("squads", Squads);
+                if (AppArgs.Current.TourSections?.Contains("mission", StringComparer.OrdinalIgnoreCase) == true) await Section("mission", MissionKaloScript);
+                if (AppArgs.Current.TourSections?.Contains("squad-tools", StringComparer.OrdinalIgnoreCase) == true) await Section("squad-tools", SquadTools);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -467,6 +469,13 @@ public sealed class Tour
                 var (pos, facing) = map.PlayFromProvider();
                 Check(Math.Abs(pos.Z - (center.Z + 0.1f)) < 0.6f, $"start point on the ground under the camera ({pos.X:F1}, {pos.Y:F1}, {pos.Z:F2}; facing {facing:F0})");
             }
+            // Safer Play here: high above the level there is no floor to land on.
+            map.LookFrom(center + new Vector3(0, 0, 150f), 0, -5);
+            await Pause(800);
+            Check(map.PlayFromCheck?.Invoke() is { } noFloor && noFloor.Contains("no floor"), "Play here warns when there is no floor under the camera: " + map.PlayFromCheck?.Invoke());
+            map.LookFrom(center + new Vector3(0, 0, 1.6f), 0, -5);
+            await Pause(800);
+            Check(map.PlayFromCheck?.Invoke() == null, "and not over the floor");
             _vm.SelectedPlayers = _vm.PlayerChoices.First(c => c.Count == players);
             _vm.SelectedGametype = _vm.GametypeChoices.FirstOrDefault(g => string.Equals(System.IO.Path.GetFileName(g.Path), "slayer.txt", StringComparison.OrdinalIgnoreCase)) ?? _vm.SelectedGametype;
             Check(_vm.SelectedGametype?.Path != null, $"gametype {_vm.SelectedGametype?.Label}");
@@ -479,6 +488,20 @@ public sealed class Tour
             Check(File.Exists(System.IO.Path.Combine(copyFolder, "playfrom", "playfrom.scenario")), "a play copy was made in levels\\mods\\_kalo_play");
             var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
             Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, $"the game loaded the play copy ({sw.Elapsed.TotalSeconds:F0} s)");
+            if (players == 1 && loaded.Task.IsCompletedSuccessfully)
+            {
+                // Live game bar: move the player to another spot (on top of the landmark block), can't die.
+                Check(map.IsGameRunning, "the Live game bar shows while the game runs");
+                await Task.Delay(TimeSpan.FromSeconds(10));
+                map.LookFrom(center + new Vector3(8, 0, 4f), 180, -10);
+                await Pause(800);
+                await map.LiveTeleportCommand.ExecuteAsync(null);
+                Check(map.LiveStatus.StartsWith("Moved the player"), "Move me to the camera: " + map.LiveStatus);
+                map.LiveInvincible = true;
+                await Task.Delay(3000);
+                Check(map.LiveStatus.Contains("can't die"), "Can't die: " + map.LiveStatus);
+                Shot("live-bar");
+            }
             Say($"holding the game for {_hold:F0} s");
             await Task.Delay(TimeSpan.FromSeconds(_hold));
             _vm.StopGameCommand.Execute(null);
@@ -715,7 +738,17 @@ public sealed class Tour
         const string weapon = @"objects\weapons\rifle\assault_rifle\assault_rifle.weapon";
         var tab = await _vm.OpenTagAsync(weapon);
         if (!Check(tab is { IsLoading: false }, "opened the assault rifle")) return;
-        var block = tab!.FindField("Block:magazines");
+        // Simple view first: a weapon opens with the fields most people change, by plain names.
+        var shown = tab!.AllFields().Where(f => f.IsVisible && !f.IsContainer).ToList();
+        Check(tab.ShowSimple && shown.Count is > 8 and < 30, $"a weapon opens in the Simple view ({shown.Count} fields: {string.Join(", ", shown.Take(6).Select(f => f.DisplayText))}…)");
+        var magSize = tab.FindField("Block:magazines[0]/ShortInteger:rounds loaded maximum");
+        Check(magSize is { IsVisible: true, DisplayText: "Magazine size" } && magSize.Description?.Contains("full magazine") == true, "Magazine size with its help: " + magSize?.Description);
+        Check(tab.FindField("Block:barrels[0]/Reference:projectile") is { IsVisible: true }, "the projectile (where the damage is) is in the Simple view");
+        await Pause(800);
+        Shot("simple-weapon");
+        tab.ShowLabeled = true;
+        Check(!tab.ShowSimple && tab.AllFields().Count(f => f.IsVisible && !f.IsContainer) > 60, "All fields shows the rest");
+        var block = tab.FindField("Block:magazines");
         if (!Check(block != null && block.IsBlock, "magazines is a block")) return;
         tab.Reveal(block!);
         var first = tab.FindField("Block:magazines[0]");
@@ -1282,14 +1315,14 @@ public sealed class Tour
     {
         await _vm.EnsureMegaloCatalogAsync();
         // In memory only: nothing is written to the mod.
-        var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\tour.kscript") { Text = Kalo.Core.Scripting.KaloScript.Starter };
+        var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\tour.kscript") { Text = Kalo.Core.Scripting.KaloScript.ClassicStarter };
         Check(doc.IsKaloScript && doc.Badge == "kalo", "a .kscript opens as Kalo Script");
         await doc.CompileCommand.ExecuteAsync(null);
         Check(doc.CompileOk, "the starter compiles: " + doc.CompileSummary);
         Check(doc.GeneratedMegalo.Contains("trigger player") && doc.GeneratedMegalo.Contains("action set killer.score += kill_points"), "it turns into the expected Megalo");
 
         // Grouped conditions: a or (b and c) compiles (as (a or b) and (a or c)).
-        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("if killer.streak == 5 then",
+        doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter.Replace("if killer.streak == 5 then",
             "if killer.streak == 5 or (killer.score > 10 and not current_player.team == none) then");
         await doc.CompileCommand.ExecuteAsync(null);
         Check(doc.CompileOk && doc.GeneratedMegalo.Contains("condition if killer.streak == 5 or"),
@@ -1333,20 +1366,20 @@ public sealed class Tour
         await doc.CompileCommand.ExecuteAsync(null);
         Check(doc.CompileOk, "with \"monitor\" it compiles: " + doc.CompileSummary);
 
-        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
+        doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter.Replace("killer.streak += 1", "killer.streak += ");
         await doc.CompileCommand.ExecuteAsync(null);
         var first = doc.Messages.FirstOrDefault();
-        int expected = Kalo.Core.Scripting.KaloScript.Starter.Split('\n').ToList().FindIndex(l => l.Contains("killer.streak += 1")) + 2;
+        int expected = Kalo.Core.Scripting.KaloScript.ClassicStarter.Split('\n').ToList().FindIndex(l => l.Contains("killer.streak += 1")) + 2;
         Check(!doc.CompileOk && first != null && first.Line >= expected - 1 && first.Line <= expected, $"a mistake is reported on the Kalo Script line ({first?.Line}: {first?.Message})");
 
-        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("player_death_get_killing_player", "player_death_get_killing_playr");
+        doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter.Replace("player_death_get_killing_player", "player_death_get_killing_playr");
         await doc.CompileCommand.ExecuteAsync(null);
         first = doc.Messages.FirstOrDefault(m => m.IsError);
-        int callLine = Kalo.Core.Scripting.KaloScript.Starter.Split('\n').ToList().FindIndex(l => l.Contains("player_death_get_killing_player")) + 1;
+        int callLine = Kalo.Core.Scripting.KaloScript.ClassicStarter.Split('\n').ToList().FindIndex(l => l.Contains("player_death_get_killing_player")) + 1;
         Check(!doc.CompileOk && first?.Line == callLine, $"a Megalo compiler error points at the Kalo Script line ({first?.Line} vs {callLine}: {first?.Message})");
 
         // The Settings panel: the declarations as forms, written back into the code.
-        doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+        doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter;
         doc.ToggleSettingsCommand.Execute(null);
         var gs = doc.GametypeSettings;
         var score = gs.Settings.FirstOrDefault(r => r.Name == "score_to_win_round");
@@ -1362,7 +1395,7 @@ public sealed class Tour
         Check(doc.CompileOk, "the edited script still compiles: " + doc.CompileSummary);
         doc.ToggleSettingsCommand.Execute(null);
 
-        doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+        doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter;
         string? bin = await doc.ExportBin();
         Check(bin != null && File.Exists(bin) && Kalo.Core.Scripting.GameVariantFile.HashIsValid(File.ReadAllBytes(bin)), "Export .bin wrote an MCC game type file: " + bin);
         Check(_vm.NewGametypeKaloScript, "new gametypes default to Kalo Script");
@@ -1372,8 +1405,9 @@ public sealed class Tour
         if (koth != null)
         {
             var megalo = await _vm.OpenScriptAsync(koth.RelativePath);
-            string converted = Kalo.Core.Scripting.KaloScript.FromMegalo(megalo!.Text);
+            string converted = MainViewModel.PythonStyle(Kalo.Core.Scripting.KaloScript.FromMegalo(megalo!.Text));
             var kdoc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\juggernaut.kscript") { Text = converted };
+            Check(!kdoc.IsClassicStyle, "the conversion is in the Python style (no then/do/end)");
             await kdoc.CompileCommand.ExecuteAsync(null);
             Check(kdoc.CompileOk, "a converted Bungie script (Juggernaut) compiles: " + kdoc.CompileSummary);
             _vm.Tabs.Add(kdoc);
@@ -1411,7 +1445,7 @@ public sealed class Tour
         _vm.OutputFilter = "";
         Check(_vm.VisibleOutput.Count == _vm.OutputLines.Count && _vm.OutputLines.Count >= all + 1, "clearing the search shows every line");
         await _vm.EnsureMegaloCatalogAsync();
-        var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\hover.kscript") { Text = Kalo.Core.Scripting.KaloScript.Starter };
+        var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\hover.kscript") { Text = Kalo.Core.Scripting.KaloScript.ClassicStarter };
         _vm.Tabs.Add(doc);
         _vm.ActiveDocument = doc;
         await Pause(800);
@@ -1448,19 +1482,19 @@ public sealed class Tour
                 return done();
             }
             // Grouped conditions: a or (b and c) compiles (as (a or b) and (a or c)).
-        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("if killer.streak == 5 then",
+        doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter.Replace("if killer.streak == 5 then",
             "if killer.streak == 5 or (killer.score > 10 and not current_player.team == none) then");
         await doc.CompileCommand.ExecuteAsync(null);
         Check(doc.CompileOk && doc.GeneratedMegalo.Contains("condition if killer.streak == 5 or"),
             "an if with parentheses compiles: " + doc.CompileSummary);
 
-        doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("killer.streak += 1", "killer.streak += ");
+        doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter.Replace("killer.streak += 1", "killer.streak += ");
             bool underlined = await Settle(() => view.Underlined.Any(m => m.IsError));
             var marks = view.UnderlinedText;
             int streakAt = Line("killer.streak += 1");
             Check(underlined && marks.Any(m => m.Line == streakAt && m.Text == "+="),
                 $"a Kalo Script mistake is underlined while typing, no Compile needed ({string.Join(", ", marks.Select(m => $"line {m.Line} '{m.Text}'"))})");
-            doc.Text = Kalo.Core.Scripting.KaloScript.Starter.Replace("player_death_get_killing_player", "player_death_get_killing_playr");
+            doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter.Replace("player_death_get_killing_player", "player_death_get_killing_playr");
             underlined = await Settle(() => view.UnderlinedText.Any(m => m.Text.Contains("player_death_get_killing_playr")));
             Check(underlined, $"an unknown action (found by HREK's compiler) is underlined on its word ({string.Join(", ", view.UnderlinedText.Select(m => $"line {m.Line} '{m.Text}'"))})");
             Check(view.UnderlinedText.Count(m => m.Line == callLine) == 1 && view.UnderlinedText.All(m => !m.Text.Contains("Kill Points")),
@@ -1469,7 +1503,7 @@ public sealed class Tour
             await Pause(600);
             view.SaveHoverShot(System.IO.Path.Combine(_dir, $"{++_shot:D2}-error-hover.png"));
             Shot("error-underline");
-            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter;
             Check(await Settle(() => view.Underlined.Count(m => m.IsError) == 0), "fixing it removes the underline");
 
             // Autocomplete by argument: inside a call, what that argument takes.
@@ -1481,14 +1515,14 @@ public sealed class Tour
             var targets = view.SuggestionsAfter("hud_post_message(");
             Check(targets.Contains("player killer") || targets.Contains("player current_player"), $"a message target offers 'player ...' ({string.Join(", ", targets.Take(8))})");
             // Arrow keys after typing a call (a suggestion list opened at "(" must not keep them).
-            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter;
             await Pause(300);
             int startLine = Line("player_death_get_killing_player(");
             var (after, open) = view.TypeThenPress(startLine, "\n    hud_post_message(everyone, flag_captured, \"x\")", Avalonia.Input.Key.Down);
             Check(after == startLine + 2 && !open, $"Down moves to the next line after typing a call ({startLine + 1} → {after}, list open: {open})");
             var (back, _) = view.TypeThenPress(after, "", Avalonia.Input.Key.Up);
             Check(back == startLine + 1, $"Up moves back ({after} → {back})");
-            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter;
             await Pause(200);
 
             // Format document (Ctrl+Shift+I).
@@ -1498,7 +1532,7 @@ public sealed class Tour
             string formatted = doc.Text.Replace("\r\n", "\n");
             Check(formatted == "for each player do\n  if player_died(current_player, enemy) then\n    temp player killer = none\n\n    killer.score += 1\n  end\nend\n",
                 "Ctrl+Shift+I formats the file (indentation, spaces, blank lines): " + formatted.Replace("\n", "⏎"));
-            doc.Text = Kalo.Core.Scripting.KaloScript.Starter;
+            doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter;
             await Pause(200);
             var members = view.SuggestionsAfter("killer.score += kill_points\n    killer.");
             Check(members.Contains("streak") && members.Contains("score") && !members.Contains("create_object"),
@@ -1888,7 +1922,7 @@ public sealed class Tour
                 await Pause(800);
                 Shot("campaign-script");
                 string text = script.Text;
-                script.Text = text + "\r\n(script startup kalo_tour_broken\r\n    (print \"x\")\r\n";
+                script.Text = script.IsKaloScript ? text + "\nstartup kalo_tour_broken:\n    print(\"x\"\n" : text + "\r\n(script startup kalo_tour_broken\r\n    (print \"x\")\r\n";
                 script.Check();
                 Check(!script.CheckOk && script.Messages.Any(m => m.Message.Contains("never closed")), "an unclosed ( is reported: " + script.Summary);
                 script.Text = text;
@@ -1989,6 +2023,19 @@ public sealed class Tour
         Check(elite >= 0, $"the palette has an Elite (#{elite}) among {sq.Characters.Count} characters");
         var clock = Stopwatch.StartNew();
         bool viaCell = AppArgs.Current.TourSections?.Contains("squads-cell", StringComparer.OrdinalIgnoreCase) == true;
+        bool viaDetach = AppArgs.Current.TourSections?.Contains("squads-detach", StringComparer.OrdinalIgnoreCase) == true;
+        string scenarioFile = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, probe);
+        if (viaDetach)
+        {
+            // Variant: Use its own cells (detach from the template), then the cell's character. The test map is put back
+            // from a copy at the end.
+            File.Copy(scenarioFile, scenarioFile + ".kalo_tour_bak", true);
+            await map.DetachSquadCommand.ExecuteAsync(null);
+            map.SetSelection(new[] { pt });
+            sq = await WaitSquad(e => e.HasPoint && !e.IsTemplated);
+            Check(sq is { IsTemplated: false, Cells.Count: > 0 }, "detached: the squad has its own cells");
+            viaCell = true;
+        }
         if (viaCell)
         {
             // Variant: the templated cell's character instead of the spawn point's own.
@@ -2098,7 +2145,135 @@ public sealed class Tour
         }
         back = await _vm.Host!.SquadAsync(map.Path, squadIndex);
         Check(back.SpawnPoints[pt.BlockIndex].Character == -1, "reset to From its cell");
-        if (play) await _vm.SaveActiveCommand.ExecuteAsync(null);
+        if (play && !viaDetach) await _vm.SaveActiveCommand.ExecuteAsync(null);
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+        if (viaDetach && File.Exists(scenarioFile + ".kalo_tour_bak"))
+        {
+            await Task.Delay(1000);
+            File.Copy(scenarioFile + ".kalo_tour_bak", scenarioFile, true);
+            File.Delete(scenarioFile + ".kalo_tour_bak");
+            Say("the test map is back as it was (templated squad)");
+        }
+    }
+
+    /// <summary>
+    /// Squad tools and the cleaner campaign inspector on the m10 copy (nothing is saved): the squad's plain summary
+    /// (placed by which script line, its objective), Use its own cells, New squad here, a volume's purpose, no
+    /// multiplayer "outside the level" warning, and the Activity panel.
+    /// </summary>
+    private async Task SquadTools()
+    {
+        const string probe = @"levels\mods\_kalo_tour\cprobe\cprobe.scenario";
+        if (!Check(File.Exists(System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, probe)), "the campaign probe map exists")) return;
+        var map = await _vm.OpenMapAsync(probe);
+        Check(!map.HasOutside, "a mission has no multiplayer 'outside the level' warning");
+        int squads = map.Squads.Count;
+        var pt = map.Items.FirstOrDefault(i => i.IsAiSpawnPoint && map.Squads.FirstOrDefault(s => s.Index == MapEditorViewModel.SquadOf(i))?.Name == "barn_skirm_init");
+        if (!Check(pt != null, "a spawn point of barn_skirm_init")) return;
+        map.SetSelection(new[] { pt! });
+        var until = DateTime.UtcNow.AddSeconds(60);
+        while (DateTime.UtcNow < until && !(map.SquadEditor is { Name: "barn_skirm_init", HasPlacedBy: true })) await Task.Delay(250);
+        var sq = map.SquadEditor;
+        Check(sq is { HasPlacedBy: true } && sq.PlacedBy.Contains("m10 line"), "placed by: " + sq?.PlacedBy);
+        Check(sq is { HasStarts: true }, "objective and zone: " + sq?.Starts);
+        Check(sq is { IsTemplated: true }, "the squad is made from a template");
+        await Pause(800);
+        Shot("squad-summary");
+        await map.DetachSquadCommand.ExecuteAsync(null);
+        until = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < until && map.SquadEditor is { IsTemplated: true }) await Task.Delay(200);
+        sq = map.SquadEditor;
+        Check(sq is { IsTemplated: false } && sq.Cells.Count > 0 && sq.Cells.All(c => c.CanEdit), $"Use its own cells: {sq?.Cells.Count} editable cells, no template ({map.Status})");
+        var back = await _vm.Host!.SquadAsync(map.Path, sq!.Index);
+        Check(back.CellsKind == "designer" && string.IsNullOrEmpty(back.Template), $"the host reads designer cells and no template ({back.CellsKind}, '{back.Template}')");
+        await map.NewSquadHereCommand.ExecuteAsync(null);
+        Check(map.Squads.Count == squads + 1 && map.Selected is { IsAiSpawnPoint: true }, $"New squad here: {map.Squads.Count - squads} new squad, its spawn point selected ({map.Status})");
+        until = DateTime.UtcNow.AddSeconds(20);
+        while (DateTime.UtcNow < until && map.SquadEditor?.Name.EndsWith("_new") != true) await Task.Delay(200);
+        Check(map.SquadEditor is { IsTemplated: false } && map.SquadEditor.Name.StartsWith("barn_skirm_init_new"), "the new squad has its own cells: " + map.SquadEditor?.Name);
+        Check(!map.IsGameRunning, "no Live game bar while the game is not running");
+        await Pause(800);
+        Shot("squad-new");
+        // A zone set switch volume says what it does.
+        var zone = map.Items.FirstOrDefault(i => i.IsVolume && (i.PlacedName ?? "").StartsWith("zone_set:", StringComparison.OrdinalIgnoreCase));
+        if (zone != null)
+        {
+            map.SetSelection(new[] { zone });
+            await Pause(1500);
+            Check(zone.HasPurpose && zone.Purpose.StartsWith("Zone set switch"), $"{zone.PlacedName}: {zone.Purpose}");
+            Check(!map.Properties.Any(p => p.Label.Equals("Extents", StringComparison.OrdinalIgnoreCase) || p.Label.Equals("Forward", StringComparison.OrdinalIgnoreCase)), "no raw extents / forward rows (the size is edited above)");
+            Shot("volume-purpose");
+        }
+        _vm.BottomPanel = "activity";
+        Check(_vm.Activity.Count > 0 && _vm.Activity.Any(a => a.Text.Contains("new squad")), $"Activity: {_vm.Activity.Count} lines, last: {_vm.Activity.LastOrDefault()?.Text}");
+        await Pause(600);
+        Shot("activity");
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+    }
+
+    /// <summary>
+    /// Mission scripts in Kalo Script on the m10 copy (cprobe): the view, hover help and autocomplete from the game's
+    /// function list and the map's names, checks, Ctrl+click to the map, HaloScript view and back, a save that the host
+    /// reads back as HaloScript, and the inspector's "Used by scripts".
+    /// </summary>
+    private async Task MissionKaloScript()
+    {
+        const string probe = @"levels\mods\_kalo_tour\cprobe\cprobe.scenario";
+        if (!Check(File.Exists(System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, probe)), "the campaign probe map exists")) return;
+        var map = await _vm.OpenMapAsync(probe);
+        var own = map.MissionScripts.FirstOrDefault(s => s.IsOwn && s.Name == "m10");
+        if (!Check(own != null, "the map has its own m10 script")) return;
+        var clock = Stopwatch.StartNew();
+        var doc = await _vm.OpenMissionScriptAsync(own!.Path, map.Path);
+        Say($"opened in {clock.ElapsedMilliseconds} ms: {doc.Status}");
+        Check(doc.IsKaloScript && doc.Text.Contains("dormant barn_skirm_init_start:") && doc.Text.Contains("ai_place(barn_skirm_init)"), "shown in Kalo Script (dormant barn_skirm_init_start:, ai_place(barn_skirm_init))");
+        var until = DateTime.UtcNow.AddSeconds(60);
+        while (doc.Names == null && DateTime.UtcNow < until) await Task.Delay(250);
+        Check(doc.Names != null && doc.Names.TryGetValue("squad", out var squads) && squads.Contains("barn_skirm_init"), $"the map's names are known ({doc.Names?.Sum(n => n.Value.Count) ?? 0} names, {doc.Others?.Count ?? 0} declarations in the other files)");
+        Check(doc.CheckOk, "no errors in the converted script: " + doc.Summary);
+        var hover = doc.Hover("    ai_place(barn_skirm_init)", 6);
+        Check(hover != null && hover.Text.Contains("places the specified squad"), "hover on ai_place: " + hover?.Signature + " · " + hover?.Text);
+        var hoverName = doc.Hover("    ai_place(barn_skirm_init)", 16);
+        Check(hoverName != null && hoverName.Title.Contains("squad"), "hover on barn_skirm_init: " + hoverName?.Title);
+        var (_, items) = doc.Complete("    ai_pla");
+        Check(items.Any(i => i.Text == "ai_place"), $"autocomplete ai_pla: {string.Join(", ", items.Take(5).Select(i => i.Text))}");
+        var (_, names) = doc.Complete("    ai_place(barn_sk");
+        Check(names.Any(i => i.Text == "barn_skirm_init" && i.Kind == "squad"), $"autocomplete barn_sk: {string.Join(", ", names.Take(5).Select(i => i.Text + " (" + i.Kind + ")"))}");
+        // A typo: a squad that doesn't exist, a function with too few values.
+        string text = doc.Text;
+        doc.Text = text.Replace("ai_place(barn_skirm_init)", "ai_place(barn_skirm_typo)").Replace("wake(md_motion_tracker)", "wake()");
+        doc.Check();
+        Check(doc.Messages.Any(m => m.Message.Contains("barn_skirm_typo")), "a squad name that isn't in the map is flagged: " + doc.Messages.FirstOrDefault(m => m.Message.Contains("barn_skirm_typo"))?.Message);
+        Check(doc.Messages.Any(m => m.Message.StartsWith("wake takes")), "wake() without a script is an error: " + doc.Messages.FirstOrDefault(m => m.Message.StartsWith("wake"))?.Message);
+        doc.SelectedMessage = doc.Messages.FirstOrDefault(m => m.Message.Contains("barn_skirm_typo"));
+        await Pause(1000);
+        Shot("mission-check");
+        doc.Text = text;
+        doc.Check();
+        // Ctrl+click on a squad name: the map selects its spawn points.
+        bool went = await doc.GoToNameAsync("barn_skirm_init");
+        await Pause(1500);
+        Check(went && map.Selection.Count > 0 && map.Selection.All(i => i.IsAiSpawnPoint), $"Ctrl+click barn_skirm_init selects its spawn point in the map ({map.Selection.Count})");
+        Shot("mission-goto");
+        // Used by scripts.
+        var until2 = DateTime.UtcNow.AddSeconds(60);
+        while (map.ScriptUses.Count == 0 && DateTime.UtcNow < until2) await Task.Delay(250);
+        Check(map.ScriptUses.Count > 0, $"inspector: used by {map.ScriptUses.Count} script lines, e.g. {map.ScriptUses.FirstOrDefault()?.Where} {map.ScriptUses.FirstOrDefault()?.Text}");
+        // HaloScript view and back.
+        _vm.ActiveDocument = doc;
+        doc.SwitchViewCommand.Execute(null);
+        Check(!doc.IsKaloScript && doc.Text.Contains("(script dormant barn_skirm_init_start"), "HaloScript view");
+        doc.SwitchViewCommand.Execute(null);
+        Check(doc.IsKaloScript && !doc.IsDirty, "back to Kalo Script, nothing changed");
+        // Save a small change; the host reads HaloScript back.
+        doc.Text = doc.Text.Replace("dormant barn_skirm_init_start:", "dormant barn_skirm_init_start:\n    # kalo tour was here");
+        await doc.SaveDocumentAsync();
+        var back = await _vm.Host!.ReadMissionScriptAsync(own.Path);
+        Check(back.Text != null && back.Text.Contains("; kalo tour was here") && back.Text.Contains("(script dormant barn_skirm_init_start"), "saved as HaloScript (the host reads the comment back)");
+        doc.Text = doc.Text.Replace("\n    # kalo tour was here", "");
+        await doc.SaveDocumentAsync();
+        await Pause(800);
+        Shot("mission-script");
         foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
     }
 

@@ -196,6 +196,7 @@ public static class KaloCompletion
 
     public static ScriptNames Scan(string script)
     {
+        if (!KaloScriptStyle.IsClassic(script)) script = KaloScriptStyle.ToClassic(script).Classic;
         var n = new ScriptNames();
         foreach (Match m in Declare.Matches(script))
         {

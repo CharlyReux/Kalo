@@ -280,6 +280,82 @@ switch (command)
         // campaign-report <scenario>: what the map view reads of a campaign mission.
         await CampaignReport(argsList[1]);
         break;
+    case "mission-roundtrip":
+    {
+        // mission-roundtrip <scenario> [break]: each of the map's own mission scripts (in its folder) through Kalo Script
+        // and back (HaloScript → Python style → HaloScript), written back; originals kept in .kalo\inspect\mission_backup.
+        // "break" appends two broken scripts to the first one (to see how the game reports compile errors).
+        await using var host = await HostClient.StartAsync(paths, line => Console.Error.WriteLine("  host> " + line));
+        var data = await host.GetPlacementsAsync(argsList[1]);
+        string folder = Path.GetDirectoryName(argsList[1])! + "\\";
+        string backup = Path.Combine(paths.Repo, ".kalo", "inspect", "mission_backup");
+        Directory.CreateDirectory(backup);
+        bool first = true;
+        foreach (var script in (data.Scripts ?? new()).Where(s => s.StartsWith(folder, StringComparison.OrdinalIgnoreCase)))
+        {
+            var r = await host.ReadMissionScriptAsync(script);
+            string original = r.Text ?? "";
+            string bak = Path.Combine(backup, script.Replace('\\', '_') + ".txt");
+            if (!File.Exists(bak)) { File.WriteAllText(bak, original); File.AppendAllText(Path.Combine(backup, "index.tsv"), script + "\t" + bak + "\n"); }
+            string py = MissionScript.ToPython(original);
+            var back = MissionScript.ToHaloScript(py);
+            bool same = MissionScript.Canonical(original) == MissionScript.Canonical(back.HaloScript);
+            Check($"{script}: {py.Split('\n').Length} Kalo Script lines, back to HaloScript {(back.Ok ? "without errors" : string.Join("; ", back.Errors.Take(3)))}, same meaning", back.Ok && same);
+            string text = back.HaloScript;
+            if (argsList.ElementAtOrDefault(2) == "break" && first)
+                text += "\r\n(script startup kalo_broken_args\r\n\t(ai_place)\r\n)\r\n(script startup kalo_broken_name\r\n\t(kalo_no_such_function 1)\r\n)\r\n(script startup kalo_roundtrip_probe\r\n\t(print \"kalo probe: roundtrip scripts compiled\")\r\n)\r\n";
+            first = false;
+            await host.WriteMissionScriptAsync(script, text);
+        }
+        break;
+    }
+    case "mission-restore":
+    {
+        // mission-restore: puts back the mission scripts saved by mission-roundtrip.
+        await using var host = await HostClient.StartAsync(paths, line => Console.Error.WriteLine("  host> " + line));
+        string backup = Path.Combine(paths.Repo, ".kalo", "inspect", "mission_backup");
+        string index = Path.Combine(backup, "index.tsv");
+        foreach (var row in File.Exists(index) ? File.ReadAllLines(index) : Array.Empty<string>())
+        {
+            var parts = row.Split('\t');
+            if (parts.Length != 2 || !File.Exists(parts[1])) continue;
+            await host.WriteMissionScriptAsync(parts[0], File.ReadAllText(parts[1]));
+            Console.WriteLine("restored " + parts[0]);
+        }
+        if (Directory.Exists(backup)) Directory.Delete(backup, true);
+        break;
+    }
+    case "hs-doc":
+    {
+        // hs-doc <out file>: runs the game's script_doc (hs_doc.txt: every HaloScript function with its parameters
+        // and help) on a small map, then copies the file (inside the Kalo folder).
+        string target = Path.GetFullPath(argsList[1]);
+        if (!target.StartsWith(paths.Repo, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("hs-doc writes inside the Kalo folder only");
+        string doc = Path.Combine(paths.Workspace, "hs_doc.txt");
+        if (File.Exists(doc)) File.Delete(doc);
+        using var game = new GameSession(paths);
+        game.Start(@"levels\multi\20_sword_slayer\20_sword_slayer", new[] { "script_doc" });
+        var clock = Stopwatch.StartNew();
+        while (!File.Exists(doc) && clock.Elapsed < TimeSpan.FromMinutes(4)) await Task.Delay(1000);
+        await Task.Delay(3000);
+        game.Stop();
+        Check($"hs_doc.txt written ({clock.Elapsed.TotalSeconds:0} s)", File.Exists(doc));
+        if (File.Exists(doc)) { Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(doc, target, true); Console.WriteLine($"{new FileInfo(target).Length} bytes -> {target}"); }
+        break;
+    }
+    case "zip-dir":
+    {
+        // zip-dir <folder> <pattern> <out.zip>: the matching files under a folder (read only) in a zip inside the Kalo folder.
+        string target = Path.GetFullPath(argsList[3]);
+        if (!target.StartsWith(paths.Repo, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("zip-dir writes inside the Kalo folder only");
+        if (File.Exists(target)) File.Delete(target);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        using (var zip = System.IO.Compression.ZipFile.Open(target, System.IO.Compression.ZipArchiveMode.Create))
+            foreach (var f in Directory.EnumerateFiles(argsList[1], argsList[2], SearchOption.AllDirectories))
+                System.IO.Compression.ZipFileExtensions.CreateEntryFromFile(zip, f, Path.GetRelativePath(argsList[1], f));
+        Console.WriteLine($"{new FileInfo(target).Length} bytes -> {target}");
+        break;
+    }
     case "elements":
         // elements <tag> <block> [name part]: the elements of one block (e.g. squads) whose name contains the part, in full.
         await Elements(argsList[1], argsList[2], argsList.ElementAtOrDefault(3));

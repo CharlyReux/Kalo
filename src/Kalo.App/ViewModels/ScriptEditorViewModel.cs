@@ -43,7 +43,8 @@ public partial class ScriptEditorViewModel : DocumentViewModel
 
     private static readonly string[] KaloKeywords =
     {
-        "if", "then", "else", "elseif", "end", "for", "each", "do", "inline", "on", "init", "and", "or", "not", "temp", "declare", "alias",
+        "if", "elif", "else", "for", "each", "every", "tick", "inline", "on", "init", "and", "or", "not", "def", "pass", "alias",
+        "then", "elseif", "end", "do", "temp", "declare",
         "megalo", "include", "with", "label", "networked", "local", "global", "player", "team", "object", "number", "timer", "enum", "function",
         "setting", "option", "value", "range", "traits", "hidden", "locked", "objects", "constant", "widget", "stat", "engine", "teams", "loadout",
         "current_player", "current_team", "current_object", "none", "true", "false", "random",
@@ -255,10 +256,18 @@ public partial class ScriptEditorViewModel : DocumentViewModel
                     $"A temporary {m.Groups[1].Value}: it only lives during this tick" + (m.Groups[2].Success ? $", starting at {m.Groups[2].Value.Trim()}." : "."), null);
             if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(networked\w*|local)\s+(\w+)\s+{w}\b\s*(.*)")).Success)
                 return new HoverInfo(word, $"{scope} {m.Groups[2].Value} {word}" + at, null, Describe(scope, m.Groups[2].Value, m.Groups[1].Value, m.Groups[3].Value), null);
-            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^function\s+{w}\s*\(([^)]*)\)")).Success)
+            // Python style: player.streak: number = 0, killer: player = none
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(?:(networked\w*|local)\s+)?(global|player|team|object)\.{w}\s*:\s*(\w+)(?:\s*=\s*(.+))?")).Success)
+                return new HoverInfo(word, $"{m.Groups[2].Value}.{word}: {m.Groups[3].Value}" + at,
+                    null, Describe(m.Groups[2].Value, m.Groups[3].Value, m.Groups[1].Value, m.Groups[4].Value), null);
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^{w}\s*:\s*(number|player|object|team)\b(?:\s*=\s*(.+))?")).Success)
+                return new HoverInfo(word, $"{word}: {m.Groups[1].Value}" + at, null,
+                    $"A temporary {m.Groups[1].Value}: it only lives during this tick" + (m.Groups[2].Success ? $", starting at {m.Groups[2].Value.Trim()}." : "."), null);
+            if ((m = System.Text.RegularExpressions.Regex.Match(l, $@"^(?:function|def)\s+{w}\s*\(([^)]*)\)")).Success)
             {
                 // The comment just above the function, if any, describes it.
-                string about = i > 0 && lines[i - 1].Trim().StartsWith("--") ? lines[i - 1].Trim()[2..].Trim() + " " : "";
+                string above = i > 0 ? lines[i - 1].Trim() : "";
+                string about = above.StartsWith("--") ? above[2..].Trim() + " " : above.StartsWith('#') ? above[1..].Trim() + " " : "";
                 return new HoverInfo("function " + word, $"{word}({string.Join(", ", m.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))})" + at,
                     null, about + "Your function: each call runs a copy of its body.", null);
             }
@@ -382,6 +391,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     partial void OnTextChanged(string value)
     {
         IsDirty = value != _savedText;
+        OnPropertyChanged(nameof(IsClassicStyle));
         ScheduleCheck();
     }
     partial void OnCatalogQueryChanged(string value) => UpdateCatalog();
@@ -459,6 +469,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
         {
             string code = lines[i];
             int comment = code.IndexOf("--", StringComparison.Ordinal);
+            if (comment < 0) comment = code.IndexOf('#');
             if (comment >= 0) code = code[..comment];
             foreach (var call in calls)
             foreach (System.Text.RegularExpressions.Match m in call.Matches(code))
@@ -686,10 +697,31 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     {
         foreach (var raw in Text.Split('\n').Take(10))
         {
-            string l = raw.Trim().TrimStart('-', ';', '/').Trim();
+            string l = raw.Trim().TrimStart('-', ';', '/', '#').Trim();
             if (l.StartsWith("title:", StringComparison.OrdinalIgnoreCase)) return l[6..].Trim();
         }
         return null;
+    }
+
+    /// <summary>A Kalo Script file in the classic style (then / do / end).</summary>
+    public bool IsClassicStyle => IsKaloScript && KaloScriptStyle.IsClassic(Text);
+
+    /// <summary>Rewrites a classic-style file in the Python style, only if it compiles to the same Megalo.</summary>
+    [RelayCommand]
+    private void ConvertToPythonStyle()
+    {
+        if (!IsClassicStyle) return;
+        var before = KaloScript.Transpile(Text);
+        string? py = KaloScriptStyle.FromClassic(Text);
+        if (py == null) { _main.AddProblem("warning", "Not converted: the blocks don't add up (a missing or extra end?).", Path); return; }
+        var after = KaloScript.Transpile(py);
+        if (before.Succeeded && (!after.Succeeded || after.Megalo != before.Megalo))
+        {
+            _main.AddProblem("warning", "Not converted: the Python style would change the gametype (please report this).", Path);
+            return;
+        }
+        Text = py.Replace("\n", Text.Contains("\r\n") ? "\r\n" : "\n");
+        Status = "Rewritten in the Python style (same gametype). Save to keep it.";
     }
 
     /// <summary>Megalo text → a new Kalo Script file in the active mod (the original stays as it is).</summary>
@@ -697,7 +729,7 @@ public partial class ScriptEditorViewModel : DocumentViewModel
     private async Task ConvertToKaloScript()
     {
         if (IsKaloScript) return;
-        string kscript = KaloScript.FromMegalo(Text);
+        string kscript = MainViewModel.PythonStyle(KaloScript.FromMegalo(Text));
         var check = KaloScript.Transpile(kscript);
         if (!check.Succeeded)
         {

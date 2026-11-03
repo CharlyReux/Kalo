@@ -224,6 +224,7 @@ void main() {
             // Another view may already show this map (moved to the other editor group): keep its provider.
             if (_subscribed.PlacementPointProvider is { } provider && ReferenceEquals(provider.Target, this)) _subscribed.PlacementPointProvider = null;
             if (_subscribed.PlayFromProvider is { } play && ReferenceEquals(play.Target, this)) _subscribed.PlayFromProvider = null;
+            if (_subscribed.PlayFromCheck is { } check && ReferenceEquals(check.Target, this)) _subscribed.PlayFromCheck = null;
         }
         _subscribed = Map;
         if (_subscribed != null)
@@ -235,6 +236,7 @@ void main() {
             _subscribed.CaptureRequested += OnCaptureRequested;
             _subscribed.PlacementPointProvider = PlacementPoint;
             _subscribed.PlayFromProvider = PlayFromPoint;
+            _subscribed.PlayFromCheck = PlayFromProblem;
             _cameraPlaced = false;
         }
         RequestNextFrameRendering();
@@ -970,6 +972,20 @@ void main() {
     /// Play from camera: the ground (level or object) straight below the camera, facing where the camera looks.
     /// With nothing below within 60 units the player starts at the camera and falls.
     /// </summary>
+    /// <summary>Why the camera is a bad start: no floor under it, or no room to stand. Null when it looks fine.</summary>
+    private string? PlayFromProblem()
+    {
+        if (Map?.Bsp == null) return null; // no level geometry loaded: nothing to check against
+        var below = HitScene(_eye + new Vector3(0, 0, 0.2f), -Vector3.UnitZ);
+        if (below is not { } b || _eye.Z - b.Z >= 60f)
+            return "There is no floor under the camera: the player would fall (in a mission, the game then restarts from its last checkpoint over and over).";
+        // A Spartan is about 0.7 units (7 ft) tall.
+        var above = HitScene(b + new Vector3(0, 0, 0.15f), Vector3.UnitZ);
+        if (above is { } a && a.Z - b.Z < 0.75f)
+            return $"The space under the camera is only {(a.Z - b.Z) * 10:F0} ft high: the player would be stuck (or the camera is inside a wall or under the floor).";
+        return null;
+    }
+
     private (Vector3 Position, float FacingDegrees) PlayFromPoint()
     {
         var below = HitScene(_eye + new Vector3(0, 0, 0.2f), -Vector3.UnitZ);

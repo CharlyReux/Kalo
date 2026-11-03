@@ -45,7 +45,7 @@ public partial class MainViewModel
     {
         await RefreshChangesAsync();
         if (Vanilla == null) return;
-        BottomPanel = "output";
+        BottomPanel = "activity";
         Log("Vanilla check: " + Vanilla.Summary);
         foreach (var group in Vanilla.Items.GroupBy(i => i.Status).OrderBy(g => g.Key))
         {

@@ -62,6 +62,9 @@ namespace Kalo.Protocol
         /// <summary>Each structure bsp's world bounds (to find which zone sets hold a point).</summary>
         public const string BspBounds = "bspBounds";
         public const string Squad = "squad";
+        /// <summary>Squad tools: detach a squad from its template, or a new squad like the selected one.</summary>
+        public const string SquadOp = "squadOp";
+        public const string ScenarioNames = "scenarioNames";
     }
 
     public static class Wire
@@ -346,6 +349,15 @@ namespace Kalo.Protocol
         public long Ms { get; set; }
     }
 
+    /// <summary>The names a mission script can use, by kind (squad, trigger volume, object, cutscene flag, point...).</summary>
+    public sealed class ScenarioNamesResult
+    {
+        public Dictionary<string, List<string>> Names { get; set; }
+        /// <summary>The mission script files (.scenario_hs_source_file) the scenario compiles.</summary>
+        public List<string> Scripts { get; set; }
+        public long Ms { get; set; }
+    }
+
     public sealed class SquadSummary
     {
         public int Index { get; set; }
@@ -386,6 +398,9 @@ namespace Kalo.Protocol
         public string Template { get; set; }
         /// <summary>"designer" or "templated": the cells block in use.</summary>
         public string CellsKind { get; set; }
+        /// <summary>Its initial objective and zone (names, "" if none).</summary>
+        public string Objective { get; set; }
+        public string Zone { get; set; }
         public List<SquadCell> Cells { get; set; }
         public List<SquadPoint> SpawnPoints { get; set; }
         /// <summary>The scenario's character palette (character tag paths) and weapon palette (weapon tag paths).</summary>
@@ -412,6 +427,39 @@ namespace Kalo.Protocol
         public string Path { get; set; }
         public int Chance { get; set; }
         public string ChancePath { get; set; }
+    }
+
+    public static class SquadOps
+    {
+        /// <summary>The squad gets its own cells (a copy of its template's) and no template: its cells then decide what spawns.</summary>
+        public const string Detach = "detach";
+        /// <summary>A copy of the squad (team, group, zone, objective), with its own cells and one spawn point at Position.</summary>
+        public const string New = "new";
+    }
+
+    public sealed class SquadOpParams
+    {
+        public string Path { get; set; }
+        public string Op { get; set; }
+        public int Index { get; set; }
+        /// <summary>New: the new squad's name (made unique).</summary>
+        public string Name { get; set; }
+        /// <summary>New: x, y, z and facing (degrees) of its spawn point.</summary>
+        public float[] Position { get; set; }
+    }
+
+    public sealed class SquadOpResult
+    {
+        /// <summary>The squad (new: the new one).</summary>
+        public int Index { get; set; }
+        public string Name { get; set; }
+        /// <summary>New: the flat index (ai spawn points category) of its spawn point.</summary>
+        public int SpawnPoint { get; set; } = -1;
+        /// <summary>Detach: how many cells were copied.</summary>
+        public int Cells { get; set; }
+        /// <summary>The map's squads and the ai spawn points category afterwards (new squad).</summary>
+        public List<SquadSummary> Squads { get; set; }
+        public PlacementCategory Category { get; set; }
     }
 
     public sealed class SquadPoint

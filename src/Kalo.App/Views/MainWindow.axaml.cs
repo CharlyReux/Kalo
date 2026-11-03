@@ -25,6 +25,7 @@ public partial class MainWindow : Window
             if (DataContext is MainViewModel vm)
             {
                 vm.VisibleOutput.CollectionChanged += OnOutputChanged;
+                vm.Activity.CollectionChanged += OnActivityChanged;
                 vm.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(MainViewModel.Split)) ApplySplit(); };
                 ApplySplit();
             }
@@ -131,6 +132,15 @@ public partial class MainWindow : Window
         }, DispatcherPriority.Background);
     }
 
+    private void OnActivityChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action != NotifyCollectionChangedAction.Add || Vm == null) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (Vm.Activity.Count > 0) ActivityList.ScrollIntoView(Vm.Activity.Count - 1);
+        }, DispatcherPriority.Background);
+    }
+
     private async void Explorer_DoubleTapped(object? sender, TappedEventArgs e)
     {
         if (Vm != null && ExplorerTree.SelectedItem is ExplorerNode node && !node.IsFolder)
@@ -172,7 +182,12 @@ public partial class MainWindow : Window
 
     private void Docs_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (Vm != null) DocsWindow.Open(this, Vm);
+        if (Vm != null) DocsWindow.Open(this, Vm, "start");
+    }
+
+    private void Recipes_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (Vm != null) DocsWindow.Open(this, Vm, "recipe-start");
     }
 
     private void DocsReference_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

@@ -15,7 +15,7 @@
       <Grid Margin="10,5" ColumnDefinitions="*,Auto">
         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="8,0,0,0">
           <Button Classes="outline" Content="To Kalo Script" Command="{Binding ConvertToKaloScriptCommand}" IsVisible="{Binding IsMegaloText}"
-                  ToolTip.Tip="Write this gametype in Kalo Script (if/then/else, for each, f(a, b)): a new .kscript in your mod; this file stays as it is" />
+                  ToolTip.Tip="Write this gametype in Kalo Script (if x:, for each player:, f(a, b)): a new .kscript in your mod; this file stays as it is" />
           <ToggleButton Classes="chip" Content="Settings" IsChecked="{Binding ShowSettings, Mode=OneWay}" Command="{Binding ToggleSettingsCommand}" IsVisible="{Binding IsKaloScript}"
                         ToolTip.Tip="Game settings, lobby options, player traits, map objects and constants as forms (like ReachVariantTool). Changes are written into the code." />
           <ToggleButton Classes="chip" Content="Megalo" IsChecked="{Binding ShowMegalo, Mode=OneWay}" Command="{Binding ToggleMegaloCommand}" IsVisible="{Binding IsKaloScript}"
@@ -33,6 +33,15 @@
                      ToolTip.Tip="{Binding CompileSummary}" />
         </StackPanel>
       </Grid>
+    </Border>
+
+    <!-- A file in the classic style (then / do / end): offer the Python style -->
+    <Border DockPanel.Dock="Top" Background="#1A3A5A80" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="10,4" IsVisible="{Binding IsClassicStyle}">
+      <DockPanel>
+        <Button DockPanel.Dock="Right" Classes="outline" Content="Use the Python style" Command="{Binding ConvertToPythonStyleCommand}"
+                ToolTip.Tip="Rewrite this file with indentation and colons (if x:, for each player:, def, # comments). The gametype stays exactly the same (checked)." />
+        <TextBlock Text="This script uses the older Kalo Script style (then / do / end). It still works; the Python style reads more simply." FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" />
+      </DockPanel>
     </Border>
 
     <Border DockPanel.Dock="Bottom" MaxHeight="160" BorderBrush="{StaticResource KBorder}" BorderThickness="0,1,0,0" Background="{StaticResource KPanel}"

@@ -52,7 +52,7 @@ public sealed class DocsWindow : Window
     private DocsWindow(MainViewModel vm)
     {
         _vm = vm;
-        Title = "Kalo Script documentation";
+        Title = "Kalo help";
         Width = 1120;
         Height = 800;
         MinWidth = 640;
@@ -60,7 +60,7 @@ public sealed class DocsWindow : Window
         Background = Brush("KBg");
         DataContext = vm;
 
-        _search = new TextBox { Watermark = "Search: timer, score, create_object, else...", Margin = new Thickness(8), Classes = { "compact" } };
+        _search = new TextBox { Watermark = "Search: weapon, squad, timer, score, create_object...", Margin = new Thickness(8), Classes = { "compact" } };
         _search.PropertyChanged += (_, e) => { if (e.Property == TextBox.TextProperty) Refresh(); };
         _nav = new ListBox { Background = Brushes.Transparent, ItemTemplate = new FuncDataTemplate<NavRow>((row, _) => NavCell(row)) };
         _nav.SelectionChanged += (_, _) =>
@@ -88,7 +88,7 @@ public sealed class DocsWindow : Window
         KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.F, KeyModifiers.Control), Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { _search.Focus(); _search.SelectAll(); }) });
         KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Escape), Command = new CommunityToolkit.Mvvm.Input.RelayCommand(Close) });
 
-        _sections = KaloScriptGuide.Build(vm.MegaloCatalog);
+        _sections = KaloRecipes.All().Concat(KaloScriptGuide.Build(vm.MegaloCatalog)).ToList();
         Refresh();
         // The reference gets the compiler's argument lists once the gametype compiler is up.
         if (vm.MegaloCatalog == null)
@@ -97,7 +97,7 @@ public sealed class DocsWindow : Window
                 try { await vm.EnsureMegaloCatalogAsync(); } catch { return; }
                 if (vm.MegaloCatalog == null) return;
                 string? id = Current?.Id;
-                _sections = KaloScriptGuide.Build(vm.MegaloCatalog);
+                _sections = KaloRecipes.All().Concat(KaloScriptGuide.Build(vm.MegaloCatalog)).ToList();
                 Refresh();
                 if (id != null && string.IsNullOrWhiteSpace(Query)) GoTo(id);
             });

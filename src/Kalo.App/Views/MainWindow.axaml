@@ -38,7 +38,8 @@
           <MenuItem Header="_View">
             <MenuItem Header="Project" Command="{Binding ShowExplorerCommand}" />
             <MenuItem Header="Changes" Command="{Binding ShowChangesCommand}" />
-            <MenuItem Header="Output" Command="{Binding ShowOutputCommand}" />
+            <MenuItem Header="Activity" Command="{Binding ShowActivityCommand}" />
+            <MenuItem Header="Log (raw output)" Command="{Binding ShowOutputCommand}" />
             <MenuItem Header="Problems" Command="{Binding ShowProblemsCommand}" />
           </MenuItem>
           <MenuItem Header="_Play">
@@ -51,6 +52,7 @@
             <MenuItem Header="Export the map as a Forge variant (vanilla MCC, no mods)" Command="{Binding ExportForgeVariantCommand}" />
           </MenuItem>
           <MenuItem Header="_Help">
+            <MenuItem Header="Recipes: how to do common things" Click="Recipes_Click" />
             <MenuItem Header="Kalo Script documentation" InputGesture="F1" Click="Docs_Click" />
             <MenuItem Header="Kalo Script: actions and conditions" Click="DocsReference_Click" />
           </MenuItem>
@@ -100,7 +102,7 @@
         <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
           <StackPanel Orientation="Horizontal" Spacing="5">
             <Ellipse Width="7" Height="7" Fill="{Binding HostBrush}" VerticalAlignment="Center" />
-            <TextBlock Text="{Binding HostStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+            <TextBlock Text="{Binding HostStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" ToolTip.Tip="Kalo's Engine: Bungie's editing library (ManagedBlam), which reads and writes the game files for Kalo" />
           </StackPanel>
           <StackPanel Orientation="Horizontal" Spacing="5">
             <Ellipse Width="7" Height="7" Fill="{Binding GameBrush}" VerticalAlignment="Center" />
@@ -127,7 +129,7 @@
           <Button Classes="activity" Classes.active="{Binding IsExplorer}" Command="{Binding ShowExplorerCommand}" ToolTip.Tip="Project">
             <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE8B7;" FontSize="18" />
           </Button>
-          <Button Classes="activity" Classes.active="{Binding IsChangesPanel}" Command="{Binding ShowChangesCommand}" ToolTip.Tip="Changes from vanilla">
+          <Button Classes="activity" Classes.active="{Binding IsChangesPanel}" Command="{Binding ShowChangesCommand}" ToolTip.Tip="What your mod changed (compared with the original game)">
             <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE81C;" FontSize="18" />
           </Button>
           <Button Classes="activity" Classes.active="{Binding IsGametypesPanel}" Command="{Binding ShowGametypesCommand}" ToolTip.Tip="Gametype scripts">
@@ -153,14 +155,14 @@
               <StackPanel Orientation="Horizontal">
                 <ToggleButton Classes="seg" Content="My mod" IsChecked="{Binding IsModTab, Mode=OneWay}" Command="{Binding ShowModTabCommand}" />
                 <ToggleButton Classes="seg" Content="All game files" IsChecked="{Binding IsAllFilesTab, Mode=OneWay}" Command="{Binding ShowAllFilesTabCommand}"
-                              ToolTip.Tip="Every tag of Halo Reach (advanced). Open one and save it to add it to your mod." />
+                              ToolTip.Tip="Every game file of Halo Reach (advanced; Bungie calls them tags). Open one and save it to add it to your mod." />
               </StackPanel>
             </Border>
           </Border>
           <Grid>
           <views:ModPanel IsVisible="{Binding IsModTab}" />
           <DockPanel IsVisible="{Binding IsAllFilesTab}">
-            <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Search tags (e.g. assault weapon)" Text="{Binding SearchText}" x:Name="SearchBox" />
+            <TextBox DockPanel.Dock="Top" Classes="compact" Margin="6" Watermark="Search game files (e.g. assault weapon)" Text="{Binding SearchText}" x:Name="SearchBox" />
             <Grid>
               <TreeView x:Name="ExplorerTree" ItemsSource="{Binding ExplorerRoots}" IsVisible="{Binding NotSearching}" DoubleTapped="Explorer_DoubleTapped">
                 <TreeView.Styles>
@@ -225,7 +227,7 @@
                   <DockPanel>
                     <Button DockPanel.Dock="Right" Classes="tool" Content="Revert" FontSize="11.5"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RevertChangeCommand}" CommandParameter="{Binding}" />
-                    <Button DockPanel.Dock="Right" Classes="tool" Content="Diff" FontSize="11.5" ToolTip.Tip="Compare with vanilla"
+                    <Button DockPanel.Dock="Right" Classes="tool" Content="Diff" FontSize="11.5" ToolTip.Tip="Compare with the original game file"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).CompareChangeCommand}" CommandParameter="{Binding}" />
                     <StackPanel>
                       <StackPanel Orientation="Horizontal" Spacing="6">
@@ -261,7 +263,8 @@
           <Border DockPanel.Dock="Top" Height="30" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
             <DockPanel>
               <StackPanel Orientation="Horizontal" Margin="4,0">
-                <Button Classes="tool" Content="Output" Command="{Binding ShowOutputCommand}" Classes.selected="{Binding IsOutput}" />
+                <Button Classes="tool" Content="Activity" Command="{Binding ShowActivityCommand}" Classes.selected="{Binding IsActivity}"
+                        ToolTip.Tip="What Kalo and the game did, in plain words" />
                 <Button Classes="tool" Command="{Binding ShowProblemsCommand}" Classes.selected="{Binding IsProblems}">
                   <StackPanel Orientation="Horizontal" Spacing="6">
                     <TextBlock Text="Problems" />
@@ -273,17 +276,42 @@
                         ToolTip.Tip="Every object you can place, with a 3D preview" />
                 <Button Classes="tool" Content="Prefabs" Command="{Binding ShowPrefabsCommand}" Classes.selected="{Binding IsPrefabs}"
                         ToolTip.Tip="Groups of objects saved with your mod" />
+                <Button Classes="tool" Content="Log" Command="{Binding ShowOutputCommand}" Classes.selected="{Binding IsOutput}"
+                        ToolTip.Tip="Every raw line from Kalo, the Engine helper and the game (for troubleshooting)" />
               </StackPanel>
-              <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Classes="tool" Content="Clear" Command="{Binding ClearOutputCommand}" Margin="0,0,6,0" />
+              <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Classes="tool" Content="Clear" Command="{Binding ClearOutputCommand}" Margin="0,0,6,0"
+                      IsVisible="{Binding IsOutput}" />
+              <Button DockPanel.Dock="Right" HorizontalAlignment="Right" Classes="tool" Content="Clear" Command="{Binding ClearOutputCommand}" Margin="0,0,6,0"
+                      IsVisible="{Binding IsActivity}" />
               <StackPanel DockPanel.Dock="Right" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="8" Margin="0,0,6,0" IsVisible="{Binding IsOutput}">
                 <TextBlock Text="{Binding OutputFilterSummary}" VerticalAlignment="Center" Foreground="{StaticResource KMuted}" />
                 <TextBox x:Name="OutputSearch" Width="240" Height="24" MinHeight="24" Padding="6,2" VerticalContentAlignment="Center"
-                         Text="{Binding OutputFilter}" Watermark="Search output (e.g. megalotrace)" KeyDown="OutputSearch_KeyDown"
+                         Text="{Binding OutputFilter}" Watermark="Search the log (e.g. megalotrace)" KeyDown="OutputSearch_KeyDown"
                          ToolTip.Tip="Shows only the lines containing every word typed (any case). Esc clears it." />
               </StackPanel>
             </DockPanel>
           </Border>
           <Grid>
+            <ListBox x:Name="ActivityList" ItemsSource="{Binding Activity}" IsVisible="{Binding IsActivity}" Background="Transparent">
+              <ListBox.ItemTemplate>
+                <DataTemplate DataType="vm:ActivityItem">
+                  <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Width="56" Text="{Binding Time}" Foreground="{StaticResource KFaint}" FontSize="11" VerticalAlignment="Top" Margin="0,1,0,0" />
+                    <TextBlock DockPanel.Dock="Left" Width="18" Text="✕" Foreground="{StaticResource KError}" IsVisible="{Binding IsError}" />
+                    <TextBlock DockPanel.Dock="Left" Width="18" Text="!" Foreground="{StaticResource KWarning}" IsVisible="{Binding IsWarning}" />
+                    <TextBlock DockPanel.Dock="Left" Width="18" Text="✓" Foreground="LimeGreen" IsVisible="{Binding IsOk}" />
+                    <TextBlock DockPanel.Dock="Left" Width="18" Text="·" Foreground="{StaticResource KFaint}" IsVisible="{Binding IsInfo}" />
+                    <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" FontSize="12.5" />
+                  </DockPanel>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+              <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                  <Setter Property="MinHeight" Value="20" />
+                  <Setter Property="Padding" Value="10,1" />
+                </Style>
+              </ListBox.Styles>
+            </ListBox>
             <ListBox x:Name="OutputList" ItemsSource="{Binding VisibleOutput}" IsVisible="{Binding IsOutput}" Background="Transparent">
               <ListBox.ItemTemplate>
                 <DataTemplate x:DataType="sys:String">
@@ -440,6 +468,8 @@
                   </WrapPanel>
                   <!-- Campaign markers: what they are, and a box volume's size -->
                   <StackPanel Spacing="6" IsVisible="{Binding ActiveMap.Selected.IsCampaignMarker, FallbackValue=False}">
+                    <TextBlock Text="{Binding ActiveMap.Selected.Purpose, FallbackValue=''}" TextWrapping="Wrap" FontSize="12" FontWeight="SemiBold"
+                               IsVisible="{Binding ActiveMap.Selected.HasPurpose, FallbackValue=False}" />
                     <TextBlock Text="{Binding ActiveMap.Selected.MarkerHelp, FallbackValue=''}" TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource KMuted}" />
                     <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" IsVisible="{Binding ActiveMap.Selected.IsBoxVolume, FallbackValue=False}">
                       <TextBlock Text="W" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,4,0" ToolTip.Tip="Width (along its forward direction)" />
@@ -460,6 +490,8 @@
                   <StackPanel Spacing="6">
                     <TextBlock Text="{Binding Title, FallbackValue=''}" Classes="header" Margin="0,8,0,0" />
                     <TextBlock Text="{Binding About, FallbackValue=''}" FontSize="11.5" Foreground="{StaticResource KMuted}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding PlacedBy, FallbackValue=''}" FontSize="11.5" TextWrapping="Wrap" IsVisible="{Binding HasPlacedBy, FallbackValue=False}" />
+                    <TextBlock Text="{Binding Starts, FallbackValue=''}" FontSize="11.5" TextWrapping="Wrap" IsVisible="{Binding HasStarts, FallbackValue=False}" />
                     <!-- The selected point's own character and weapon -->
                     <ContentControl Content="{Binding Point}" IsVisible="{Binding HasPoint}">
                      <ContentControl.ContentTemplate>
@@ -485,6 +517,10 @@
                     <TextBlock Text="CELLS (WHAT THE SQUAD SPAWNS)" Classes="header" Margin="0,4,0,0" IsVisible="{Binding HasCells, FallbackValue=False}" />
                     <TextBlock Text="{Binding TemplateNote, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KWarning}" TextWrapping="Wrap"
                                IsVisible="{Binding HasTemplateNote, FallbackValue=False}" />
+                    <!-- Hidden until checked in game: a detached squad spawned nothing in reach_tag_test (job 0343). -->
+                    <Button Classes="outline" Content="Use its own cells" IsVisible="False" HorizontalAlignment="Left"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.DetachSquadCommand, FallbackValue={x:Null}}"
+                            ToolTip.Tip="Detach the squad from its template: it gets a copy of the template's cells as its own, and then these cells decide what spawns (editable here)" />
                     <ItemsControl ItemsSource="{Binding Cells, FallbackValue={x:Null}}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="vm:SquadCellRow">
@@ -528,8 +564,11 @@
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <DockPanel>
+                      <Button DockPanel.Dock="Left" Classes="outline" Content="New squad here" Margin="0,0,6,0" IsVisible="False"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.NewSquadHereCommand, FallbackValue={x:Null}}"
+                              ToolTip.Tip="A new squad like this one (same team, group, zone and objective) with its own cells and one spawn point in front of the camera. Scripts place it with ai_place(name)." />
                       <Button DockPanel.Dock="Left" Classes="outline" Content="All squad fields…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.OpenSquadFieldsCommand, FallbackValue={x:Null}}"
-                              ToolTip.Tip="This squad alone in a tag editor tab: team, initial zone and objective, spawn points, everything" />
+                              ToolTip.Tip="This squad alone in a field editor tab: team, initial zone and objective, spawn points, everything" />
                       <TextBlock Text="{Binding PointsText, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KFaint}" VerticalAlignment="Center" Margin="8,0,0,0" />
                     </DockPanel>
                     <TextBlock Text="{Binding Error, FallbackValue=''}" Foreground="{StaticResource KError}" FontSize="11" TextWrapping="Wrap"
@@ -538,6 +577,26 @@
                     </DataTemplate>
                    </ContentControl.ContentTemplate>
                   </ContentControl>
+                  <!-- Campaign: lines of the mission's scripts that name the selection -->
+                  <StackPanel Spacing="4" IsVisible="{Binding ActiveMap.HasScriptUses, FallbackValue=False}">
+                    <TextBlock Text="USED BY SCRIPTS" Classes="header" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding ActiveMap.ScriptUsesText, FallbackValue=''}" FontSize="11.5" Foreground="{StaticResource KMuted}" TextWrapping="Wrap"
+                               IsVisible="{Binding ActiveMap.ScriptUsesText, Converter={x:Static StringConverters.IsNotNullOrEmpty}, FallbackValue=False}" />
+                    <ItemsControl ItemsSource="{Binding ActiveMap.ScriptUses, FallbackValue={x:Null}}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="vm:ScriptUse">
+                          <Button Classes="tool" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="4,2" Margin="0,0,0,2"
+                                  Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.OpenScriptUseCommand, FallbackValue={x:Null}}" CommandParameter="{Binding}"
+                                  ToolTip.Tip="Open the script at this line">
+                            <StackPanel Spacing="0">
+                              <TextBlock Text="{Binding Where}" FontSize="10.5" Foreground="{StaticResource KMuted}" FontFamily="{StaticResource KMono}" />
+                              <TextBlock Text="{Binding Text}" FontSize="11.5" FontFamily="{StaticResource KMono}" Foreground="{StaticResource KCode}" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                          </Button>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </StackPanel>
                   <StackPanel Spacing="8" IsVisible="{Binding ActiveMap.Selected.IsObject, FallbackValue=False}">
                   <DockPanel>
                     <TextBlock Text="Scale" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Width="46" />
@@ -623,7 +682,7 @@
               </StackPanel>
 
               <StackPanel Spacing="10" IsVisible="{Binding HasTab}">
-              <TextBlock Text="Select a field in the tag editor to see what it does." Foreground="{StaticResource KMuted}" TextWrapping="Wrap"
+              <TextBlock Text="Select a field to see what it does." Foreground="{StaticResource KMuted}" TextWrapping="Wrap"
                          IsVisible="{Binding ActiveTab.SelectedField, Converter={x:Static ObjectConverters.IsNull}, FallbackValue=True}" />
               <StackPanel Spacing="8" IsVisible="{Binding ActiveTab.SelectedField, Converter={x:Static ObjectConverters.IsNotNull}, FallbackValue=False}">
                 <TextBlock Text="{Binding ActiveTab.SelectedField.Label}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap" />
@@ -674,10 +733,10 @@
                     <Run Text="Accepts " /><Run Text="{Binding ActiveTab.SelectedField.AllowedText, FallbackValue=''}" Foreground="{StaticResource KCode}" />
                   </TextBlock>
                   <WrapPanel>
-                    <Button Classes="outline" Content="Open tag" Margin="0,0,6,6" Command="{Binding ActiveTab.OpenReferenceCommand, FallbackValue={x:Null}}" IsEnabled="{Binding ActiveTab.SelectedField.HasReferenceTarget, FallbackValue=False}" />
+                    <Button Classes="outline" Content="Open this file" Margin="0,0,6,6" Command="{Binding ActiveTab.OpenReferenceCommand, FallbackValue={x:Null}}" IsEnabled="{Binding ActiveTab.SelectedField.HasReferenceTarget, FallbackValue=False}" />
                     <Button Classes="outline" Content="Set to none" Margin="0,0,6,6" Command="{Binding ActiveTab.ClearReferenceCommand, FallbackValue={x:Null}}" />
                   </WrapPanel>
-                  <TextBox Classes="compact" Watermark="Find a tag to use" Text="{Binding ActiveTab.ReferenceQuery, FallbackValue=''}" />
+                  <TextBox Classes="compact" Watermark="Find a game file to use" Text="{Binding ActiveTab.ReferenceQuery, FallbackValue=''}" />
                   <ListBox x:Name="ReferenceList" Height="260" ItemsSource="{Binding ActiveTab.ReferenceResults, FallbackValue={x:Null}}" DoubleTapped="Reference_DoubleTapped"
                            Background="{StaticResource KBg}" BorderBrush="{StaticResource KBorder}" BorderThickness="1">
                     <ListBox.ItemTemplate>
@@ -686,7 +745,7 @@
                       </DataTemplate>
                     </ListBox.ItemTemplate>
                   </ListBox>
-                  <Button Classes="primary" Content="Use selected tag" HorizontalAlignment="Left"
+                  <Button Classes="primary" Content="Use the selected file" HorizontalAlignment="Left"
                           Command="{Binding ActiveTab.PickReferenceCommand, FallbackValue={x:Null}}" CommandParameter="{Binding #ReferenceList.SelectedItem}" />
                 </StackPanel>
               </StackPanel>

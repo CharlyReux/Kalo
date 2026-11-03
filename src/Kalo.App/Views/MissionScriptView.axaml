@@ -4,7 +4,7 @@
              xmlns:ae="using:AvaloniaEdit"
              x:Class="Kalo.App.Views.MissionScriptView"
              x:DataType="vm:MissionScriptViewModel">
-  <!-- A campaign mission script (HaloScript). Kalo checks brackets and strings; the game compiles it when the mission loads. -->
+  <!-- A campaign mission script: Kalo Script (Python style) or HaloScript. The game compiles it when the mission loads. -->
   <DockPanel>
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
       <Grid Margin="10,5" ColumnDefinitions="*,Auto">
@@ -12,11 +12,14 @@
           <ComboBox ItemsSource="{Binding Declarations}" SelectedItem="{Binding SelectedDeclaration}" PlaceholderText="Go to script…"
                     MinWidth="220" MaxWidth="320" FontSize="12" MinHeight="26"
                     ToolTip.Tip="The scripts and globals this file declares: pick one to jump to it" />
+          <Button Classes="outline" Content="{Binding ViewLabel}" Command="{Binding SwitchViewCommand}"
+                  ToolTip.Tip="Kalo Script (if x:, f(a, b), # comments) or Bungie's HaloScript ((if x ...), ; comments). Both are the same script: the file is saved as HaloScript, which the game reads." />
           <Button Classes="outline" Content="Check" Command="{Binding CheckNowCommand}"
-                  ToolTip.Tip="Check brackets and strings. The game compiles the scripts when the mission loads (Play); its errors show in Output." />
+                  ToolTip.Tip="Check the script: unknown functions, wrong number of values, names that are not in the map. The game compiles it when the mission loads (Play); its errors show in Problems." />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" ClipToBounds="True">
+          <Border Background="{StaticResource KSelection}" CornerRadius="3" Padding="6,1"><TextBlock Text="{Binding LanguageName}" FontSize="11" /></Border>
           <Ellipse Width="8" Height="8" Fill="{StaticResource KSuccess}" IsVisible="{Binding CheckOk}" />
           <TextBlock Text="{Binding Summary}" Foreground="{StaticResource KMuted}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Summary}" />
         </StackPanel>
@@ -43,8 +46,12 @@
       </ListBox>
     </Border>
 
-    <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontFamily="{StaticResource KMono}" FontSize="13"
-                   Background="{StaticResource KBg}" Foreground="{StaticResource KText}" LineNumbersForeground="{StaticResource KFaint}"
-                   HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4" />
+    <Panel>
+      <Popup x:Name="HoverPopup" PlacementTarget="{Binding #Editor}" Placement="Pointer" HorizontalOffset="14" VerticalOffset="18"
+             IsLightDismissEnabled="False" />
+      <ae:TextEditor x:Name="Editor" ShowLineNumbers="True" FontFamily="{StaticResource KMono}" FontSize="13"
+                     Background="{StaticResource KBg}" Foreground="{StaticResource KText}" LineNumbersForeground="{StaticResource KFaint}"
+                     HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" Padding="6,4" />
+    </Panel>
   </DockPanel>
 </UserControl>

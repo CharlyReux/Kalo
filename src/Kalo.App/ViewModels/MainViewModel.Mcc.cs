@@ -24,7 +24,7 @@ public partial class MainViewModel
     {
         if (Paths == null || SelectedScenario == null || IsBuildingForMcc) return;
         IsBuildingForMcc = true;
-        BottomPanel = "output";
+        BottomPanel = "activity";
         _mccBuild = new CancellationTokenSource();
         var mod = new MccMod(Paths);
         string scenario = SelectedScenario;

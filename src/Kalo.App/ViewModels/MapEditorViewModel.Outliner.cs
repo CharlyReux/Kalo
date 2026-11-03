@@ -280,7 +280,7 @@ public partial class MapEditorViewModel
         }
         catch (Exception ex)
         {
-            _main.Log("Object change marks unavailable: " + ex.Message);
+            _main.Trace("Object change marks unavailable: " + ex.Message);
         }
     }
 
@@ -434,6 +434,12 @@ public partial class MapEditorViewModel
         "boundary shape", "boundary width or radius", "boundary box length", "boundary positive height", "boundary negative height",
     };
 
+    private static readonly HashSet<string> MarkerShapeFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "extents", "forward", "up", "facing", "facing (yaw, pitch)", "roll", "point",
+        "runtime cluster", "runtime bsp", "runtime", "c", "z sink", "z bottom", "z top",
+    };
+
     private async Task LoadPropertiesAsync()
     {
         int generation = ++_propertiesGeneration;
@@ -455,6 +461,9 @@ public partial class MapEditorViewModel
                     if (HiddenProperties.Contains(name) || n.Visible == false && n.Kind != ValueKinds.Struct) continue;
                     // A spawn point's character and weapon: picked by name in the Squad section.
                     if (item.IsAiSpawnPoint && name is "character type" or "initial weapon") continue;
+                    // Campaign markers: their shape and place are edited above (size, position, facing), and an unset
+                    // link (-1, none) says nothing.
+                    if (item.IsCampaignMarker && (MarkerShapeFields.Contains(name) || n.Value is "-1" or "" or "none" or "NONE" && n.Kind != ValueKinds.Struct)) continue;
                     if (n.Kind == ValueKinds.Struct || n.Kind == ValueKinds.Element)
                     {
                         string title = n.Kind == ValueKinds.Struct ? FieldLabels.For(n.Name, n.DisplayName) : section;

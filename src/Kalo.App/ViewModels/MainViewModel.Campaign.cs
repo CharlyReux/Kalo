@@ -150,19 +150,114 @@ public partial class MainViewModel
         return Math.Abs(lx) <= v.ZoneSize.X / 2 && Math.Abs(ly) <= v.ZoneSize.Y / 2 && d.Z <= v.ZoneSize.Z && d.Z >= -v.ZoneSize.W;
     }
 
-    /// <summary>Opens a campaign mission script (.scenario_hs_source_file) in a text editor tab.</summary>
-    public async Task<MissionScriptViewModel> OpenMissionScriptAsync(string path)
+    /// <summary>Opens a campaign mission script (.scenario_hs_source_file) in a text editor tab (Kalo Script by default).</summary>
+    public async Task<MissionScriptViewModel> OpenMissionScriptAsync(string path, string? scenario = null)
     {
         path = path.Replace('/', '\\').TrimStart('\\');
         var existing = Tabs.OfType<MissionScriptViewModel>().FirstOrDefault(t => t.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
         if (existing != null) { ActiveDocument = existing; return existing; }
-        var doc = new MissionScriptViewModel(this, path);
+        var doc = new MissionScriptViewModel(this, path, scenario);
         Tabs.Add(doc);
         ActiveDocument = doc;
         doc.DiffersFromVanilla = Baseline?.IsChanged("tags\\" + path) ?? false;
         await doc.LoadAsync();
         Log($"Opened mission script {path}: {doc.Status}");
         return doc;
+    }
+
+    // ---- mission scripts: their map, declarations of the other files, the game's compile errors ----
+
+    /// <summary>
+    /// The scenario a mission script belongs to: an open map that compiles it, else the map next to its scripts folder
+    /// (levels\solo\m10\scripts\m10.hsc → levels\solo\m10\m10.scenario).
+    /// </summary>
+    public string? ScenarioOfMissionScript(string script)
+    {
+        var map = Tabs.OfType<MapEditorViewModel>().FirstOrDefault(m => m.MissionScripts.Any(s => s.Path.Equals(script, StringComparison.OrdinalIgnoreCase)));
+        if (map != null) return map.Path;
+        string? dir = System.IO.Path.GetDirectoryName(script);
+        if (dir != null && System.IO.Path.GetFileName(dir).Equals("scripts", StringComparison.OrdinalIgnoreCase)) dir = System.IO.Path.GetDirectoryName(dir);
+        if (dir == null || Paths == null) return null;
+        string candidate = System.IO.Path.Combine(dir, System.IO.Path.GetFileName(dir) + ".scenario");
+        if (File.Exists(System.IO.Path.Combine(Paths.WorkspaceTags, candidate))) return candidate;
+        var any = Directory.Exists(System.IO.Path.Combine(Paths.WorkspaceTags, dir)) ? Directory.GetFiles(System.IO.Path.Combine(Paths.WorkspaceTags, dir), "*.scenario") : Array.Empty<string>();
+        return any.Length == 1 ? System.IO.Path.GetRelativePath(Paths.WorkspaceTags, any[0]) : null;
+    }
+
+    private readonly Dictionary<string, List<Kalo.Core.Scripting.MissionDecl>> _missionDecls = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The scripts and globals a mission script file declares (cached until it is saved from Kalo).</summary>
+    public async Task<List<Kalo.Core.Scripting.MissionDecl>> MissionDeclarationsAsync(string script)
+    {
+        if (_missionDecls.TryGetValue(script, out var cached)) return cached;
+        var open = Tabs.OfType<MissionScriptViewModel>().FirstOrDefault(t => t.Path.Equals(script, StringComparison.OrdinalIgnoreCase));
+        List<Kalo.Core.Scripting.MissionDecl> list;
+        if (open != null && open.IsKaloScript) list = Kalo.Core.Scripting.MissionAssist.Declarations(open.Text, script);
+        else
+        {
+            if (Host == null) return new();
+            var r = await Host.ReadMissionScriptAsync(script);
+            list = Kalo.Core.Scripting.MissionAssist.HaloScriptDeclarations(r.Text ?? "", script);
+        }
+        _missionDecls[script] = list;
+        return list;
+    }
+
+    public void ForgetMissionDeclarations(string script)
+    {
+        _missionDecls.Remove(script);
+        _missionPython.Remove(script);
+    }
+
+    private readonly Dictionary<string, string> _missionPython = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A mission script in Kalo Script (an open tab's text, else converted once and kept).</summary>
+    public async Task<string> MissionKaloScriptAsync(string script)
+    {
+        var open = Tabs.OfType<MissionScriptViewModel>().FirstOrDefault(t => t.Path.Equals(script, StringComparison.OrdinalIgnoreCase));
+        if (open != null) return open.IsKaloScript ? open.Text : Kalo.Core.Scripting.MissionScript.ToPython(open.Text);
+        if (_missionPython.TryGetValue(script, out var cached)) return cached;
+        if (Host == null) return "";
+        var r = await Host.ReadMissionScriptAsync(script);
+        string py = await Task.Run(() => Kalo.Core.Scripting.MissionScript.ToPython(r.Text ?? ""));
+        _missionPython[script] = py;
+        return py;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex HsCompileError = new(@"design:hs: \[(?<file>[^\]\s]+) line (?<line>\d+)\] (?<msg>.+)$");
+    private readonly HashSet<string> _hsErrorsSeen = new();
+
+    /// <summary>
+    /// The game's mission script compile errors ("design:hs: [m10 line 3971] wrong number of arguments for function:
+    /// ai_place)") → Problems, at the Kalo Script line when the script is open in Kalo Script.
+    /// </summary>
+    private void OnGameScriptLine(string line)
+    {
+        var m = HsCompileError.Match(line);
+        if (!m.Success) return;
+        string key = m.Groups["file"].Value + ":" + m.Groups["line"].Value + ":" + m.Groups["msg"].Value;
+        if (!_hsErrorsSeen.Add(key)) return;
+        string file = m.Groups["file"].Value, msg = m.Groups["msg"].Value.TrimEnd(')').Trim();
+        int hsLine = int.Parse(m.Groups["line"].Value);
+        var tab = Tabs.OfType<MissionScriptViewModel>().FirstOrDefault(t => t.ScriptName.Equals(file, StringComparison.OrdinalIgnoreCase));
+        if (tab != null)
+        {
+            int at = tab.ViewLine(hsLine);
+            AddProblem("error", $"Mission script {tab.Title}, line {at}: {msg} (the game removes the script it is in)", tab.Path);
+            tab.AddGameError(at, msg);
+        }
+        else AddProblem("error", $"Mission script {file}, HaloScript line {hsLine}: {msg} (the game removes the script it is in)", file);
+    }
+
+    /// <summary>
+    /// Ctrl+click on a name in a mission script: the map opens (if it isn't) and the thing is selected and framed.
+    /// </summary>
+    public async Task<bool> ShowNameInMapAsync(string scenario, string name, string kind)
+    {
+        var map = await OpenMapAsync(scenario);
+        // A map that was just opened reads its placements first.
+        for (int i = 0; i < 200 && map.Items.Count == 0; i++) await Task.Delay(100);
+        return map.RevealName(name, kind);
     }
 }
 

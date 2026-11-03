@@ -126,7 +126,9 @@ public sealed class HostClient : IAsyncDisposable
         CallAsync<DiffTagResult>(Methods.DiffTag, new DiffTagParams { Path = path, VanillaFile = vanillaFile }, TimeSpan.FromMinutes(3));
     public Task<CreateMapResult> CreateMapAsync(CreateMapParams p) => CallAsync<CreateMapResult>(Methods.CreateMap, p, TimeSpan.FromMinutes(3));
     public Task<ScriptObjectsResult> ScriptObjectsAsync(ScriptObjectsParams p) => CallAsync<ScriptObjectsResult>(Methods.ScriptObjects, p);
+    public Task<ScenarioNamesResult> ScenarioNamesAsync(string path) => CallAsync<ScenarioNamesResult>(Methods.ScenarioNames, new TagPathParams { Path = path }, TimeSpan.FromMinutes(2));
     public Task<SquadDetail> SquadAsync(string path, int index) => CallAsync<SquadDetail>(Methods.Squad, new SquadParams { Path = path, Index = index });
+    public Task<SquadOpResult> SquadOpAsync(SquadOpParams p) => CallAsync<SquadOpResult>(Methods.SquadOp, p);
     public Task<BspBoundsResult> BspBoundsAsync(string path) => CallAsync<BspBoundsResult>(Methods.BspBounds, new TagPathParams { Path = path }, TimeSpan.FromMinutes(5));
     public Task<string> ScenarioTypeAsync(string path) => CallAsync<string>(Methods.ScenarioType, new TagPathParams { Path = path }, TimeSpan.FromMinutes(2));
     public Task<MissionScriptResult> ReadMissionScriptAsync(string path) =>

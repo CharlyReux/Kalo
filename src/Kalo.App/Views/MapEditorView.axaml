@@ -8,10 +8,18 @@
   <DockPanel>
     <!-- Toolbar -->
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1">
-      <!-- One row; scrolls sideways when the editor is narrow (split view) instead of wrapping -->
-      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-      <DockPanel Margin="10,5">
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+      <!-- What to show, then actions; the actions go to a second row when the editor is narrow (split view). -->
+      <WrapPanel Orientation="Horizontal" Margin="10,2">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,3,24,3">
+          <TextBlock Text="Show" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <ToggleButton Classes="chip" Content="Level" IsChecked="{Binding ShowGeometry}" />
+          <ToggleButton Classes="chip" Content="Scenery" IsChecked="{Binding ShowScenery}" />
+          <ToggleButton Classes="chip" Content="Items" IsChecked="{Binding ShowItems}" />
+          <ToggleButton Classes="chip" Content="Vehicles" IsChecked="{Binding ShowVehicles}" />
+          <ToggleButton Classes="chip" Content="Devices" IsChecked="{Binding ShowDevices}" />
+          <ToggleButton Classes="chip" Content="Sound/FX" IsChecked="{Binding ShowSoundAndEffects}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,3">
           <Button Classes="tool" Command="{Binding UndoCommand}" IsEnabled="{Binding CanUndo}" ToolTip.Tip="{Binding UndoText, StringFormat='{}{0} (Ctrl+Z)'}">
             <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE7A7;" />
           </Button>
@@ -29,37 +37,30 @@
                   ToolTip.Tip="Camera where the player spawns, at eye height: compare with the game" />
           <Button Classes="outline" Content="Frame all" Command="{Binding FrameAllCommand}" ToolTip.Tip="Put the camera back over the play space (Home)" />
           <Button Classes="outline" Content="Script objects" Command="{Binding AddScriptObjectsCommand}"
-                  ToolTip.Tip="Add the objects your mod lets scripts create (Use in scripts) to this map's palette, so gametypes can create them here. Nothing is placed." />
-          <Button Classes="outline" Content="Fields" Command="{Binding OpenFieldsCommand}" ToolTip.Tip="Open the scenario in the tag editor" />
+                  ToolTip.Tip="Add the objects your mod lets scripts create (Use in scripts) to the objects this map uses, so gametypes can create them here. Nothing is placed." />
+          <Button Classes="outline" Content="Fields" Command="{Binding OpenFieldsCommand}" ToolTip.Tip="Every setting of this map, in the field editor (advanced)" />
           <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S)" />
         </StackPanel>
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
-          <TextBlock Text="Show" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" Margin="0,0,8,0" />
-          <ToggleButton Classes="chip" Content="Level" IsChecked="{Binding ShowGeometry}" />
-          <ToggleButton Classes="chip" Content="Scenery" IsChecked="{Binding ShowScenery}" />
-          <ToggleButton Classes="chip" Content="Items" IsChecked="{Binding ShowItems}" />
-          <ToggleButton Classes="chip" Content="Vehicles" IsChecked="{Binding ShowVehicles}" />
-          <ToggleButton Classes="chip" Content="Devices" IsChecked="{Binding ShowDevices}" />
-          <ToggleButton Classes="chip" Content="Sound/FX" IsChecked="{Binding ShowSoundAndEffects}" />
-        </StackPanel>
-      </DockPanel>
-      </ScrollViewer>
+      </WrapPanel>
     </Border>
 
     <!-- Campaign missions: their markers, zone sets, mission scripts and cutscenes -->
     <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" IsVisible="{Binding IsCampaign}">
-      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-        <StackPanel Orientation="Horizontal" Spacing="6" Margin="10,4" VerticalAlignment="Center">
+      <!-- Groups wrap to a second row when the editor is narrow -->
+      <WrapPanel Orientation="Horizontal" Margin="10,2">
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
           <TextBlock Text="Campaign" Foreground="{StaticResource KAccentText}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0" />
           <ToggleButton Classes="chip" Content="Volumes" IsChecked="{Binding ShowVolumes}" ToolTip.Tip="Trigger volumes: areas mission scripts test (players inside...), zone set switches, kill and safe zones" />
           <ToggleButton Classes="chip" Content="AI" IsChecked="{Binding ShowAi}" ToolTip.Tip="Squad spawn points: where each AI of a squad appears (red markers)" />
           <ToggleButton Classes="chip" Content="Cutscenes" IsChecked="{Binding ShowCutscene}" ToolTip.Tip="Cutscene flags and camera points used by mission scripts" />
           <ToggleButton Classes="chip" Content="Script points" IsChecked="{Binding ShowScriptPoints}" ToolTip.Tip="Points of point sets: where scripts send AI" />
-          <Border Width="1" Height="18" Background="{StaticResource KBorder}" Margin="4,0" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
           <TextBlock Text="Zone set" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
           <ComboBox ItemsSource="{Binding ZoneSetChoices}" SelectedItem="{Binding SelectedZoneSet}" MinWidth="200" MaxWidth="320" MinHeight="24" FontSize="12"
-                    ToolTip.Tip="Show only the level pieces (bsps) a zone set loads, like Sapien's Switch zone set. Play here (Ctrl+F5) loads this zone set." />
-          <Border Width="1" Height="18" Background="{StaticResource KBorder}" Margin="4,0" />
+                    ToolTip.Tip="Show only the level pieces a zone set loads (what Sapien calls Switch zone set). Play here (Ctrl+F5) loads this zone set." />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
           <TextBlock Text="Add" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
           <Button Classes="outline" Content="Volume" Command="{Binding AddMarkerCommand}" CommandParameter="trigger volumes"
                   ToolTip.Tip="A new trigger volume (a 4 x 4 x 3 box) in front of the camera. Rename it so scripts can use it." />
@@ -67,7 +68,8 @@
                   ToolTip.Tip="A new cutscene flag (a named point for scripts) in front of the camera" />
           <Button Classes="outline" Content="Spawn point" Command="{Binding AddMarkerCommand}" CommandParameter="ai spawn points"
                   ToolTip.Tip="Another spawn point for the squad of the selected spawn point, in front of the camera" />
-          <Border Width="1" Height="18" Background="{StaticResource KBorder}" Margin="4,0" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
           <Button Classes="outline" IsEnabled="{Binding HasMissionScripts}" ToolTip.Tip="Open one of the mission's scripts (HaloScript). This map's own copies come first.">
             <Button.Content>
               <StackPanel Orientation="Horizontal" Spacing="4">
@@ -88,7 +90,7 @@
               </MenuFlyout>
             </Button.Flyout>
           </Button>
-          <Button Classes="outline" IsEnabled="{Binding HasCutscenes}" ToolTip.Tip="The mission's cutscenes (cinematic tags), opened in the tag editor">
+          <Button Classes="outline" IsEnabled="{Binding HasCutscenes}" ToolTip.Tip="The mission's cutscenes, opened in the field editor">
             <Button.Content>
               <StackPanel Orientation="Horizontal" Spacing="4">
                 <TextBlock Text="Cutscenes" />
@@ -109,7 +111,30 @@
             </Button.Flyout>
           </Button>
         </StackPanel>
-      </ScrollViewer>
+      </WrapPanel>
+    </Border>
+
+    <!-- Live game: test in the running game without restarting it -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Background="{StaticResource KPanelAlt}" IsVisible="{Binding IsGameRunning}">
+      <WrapPanel Orientation="Horizontal" Margin="10,2">
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
+          <TextBlock Text="Live game" Foreground="LimeGreen" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0"
+                     ToolTip.Tip="The game is running: these act on it right away, no restart" />
+          <Button Classes="outline" Content="Move me to the camera" Command="{Binding LiveTeleportCommand}"
+                  ToolTip.Tip="Moves your player in the game to the ground under this view's camera, facing where it looks" />
+          <Button Classes="outline" Content="Spawn this squad" Command="{Binding LiveSpawnSquadCommand}" IsVisible="{Binding IsCampaign}"
+                  ToolTip.Tip="Places the selected spawn point's squad in the game now (ai_place). Save and restart with Play for squads added or changed since the game started." />
+          <Button Classes="outline" Content="Remove all AI" Command="{Binding LiveRemoveAiCommand}" IsVisible="{Binding IsCampaign}"
+                  ToolTip.Tip="Removes every AI from the game (ai_erase_all)" />
+          <Button Classes="outline" Content="Load this zone set" Command="{Binding LiveSwitchZoneSetCommand}" IsVisible="{Binding IsCampaign}"
+                  ToolTip.Tip="Switches the game to the zone set picked in the Campaign bar (switch_zone_set): its level pieces load" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="0,2,14,2">
+          <CheckBox Content="Can't die" IsChecked="{Binding LiveInvincible}" FontSize="12" ToolTip.Tip="cheat_deathless_player" />
+          <CheckBox Content="Infinite ammo" IsChecked="{Binding LiveInfiniteAmmo}" FontSize="12" ToolTip.Tip="cheat_infinite_ammo" />
+          <TextBlock Text="{Binding LiveStatus}" Foreground="{StaticResource KMuted}" FontSize="11.5" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="420" />
+        </StackPanel>
+      </WrapPanel>
     </Border>
 
     <!-- Objects off the level geometry: removed by the game -->

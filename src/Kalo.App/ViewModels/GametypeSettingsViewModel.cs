@@ -74,8 +74,8 @@ public partial class GametypeSettingsViewModel : ObservableObject
         string text;
         try
         {
-            if (old != null) text = GametypeSettings.Replace(_script.Text, old, replacement == null ? null : GametypeSettings.Render(replacement));
-            else if (replacement != null) text = GametypeSettings.Insert(_script.Text, items, kind, GametypeSettings.Render(replacement));
+            if (old != null) text = GametypeSettings.Replace(_script.Text, old, replacement == null ? null : GametypeSettings.RenderFor(_script.Text, replacement));
+            else if (replacement != null) text = GametypeSettings.Insert(_script.Text, items, kind, GametypeSettings.RenderFor(_script.Text, replacement));
             else return null;
         }
         catch (Exception ex)

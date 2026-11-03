@@ -54,7 +54,7 @@
       </Border>
 
       <StackPanel Spacing="4">
-        <TextBlock Text="QUICK OPEN (vanilla tags)" Classes="header" />
+        <TextBlock Text="QUICK OPEN (game files)" Classes="header" />
         <ItemsControl ItemsSource="{Binding QuickOpen}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="sys:String">

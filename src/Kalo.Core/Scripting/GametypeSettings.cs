@@ -38,6 +38,8 @@ public static class GametypeSettings
 
     public static List<DeclItem> Parse(string text)
     {
+        // Python style: read through the classic form (same line numbers).
+        if (!KaloScriptStyle.IsClassic(text)) text = KaloScriptStyle.ToClassic(text).Classic;
         var errors = new List<ScriptError>();
         var toks = Lexer.Run(text.Replace("\r\n", "\n"), errors);
         var items = new List<DeclItem>();
@@ -160,9 +162,12 @@ public static class GametypeSettings
                 while (i < toks.Count && toks[i].Is("value"))
                 {
                     var v = LineOf(toks, i);
-                    var vals = SplitValues(v.Skip(1).ToList());
+                    // The Python style read as classic puts the closing end on the last row ("value 2 two end").
+                    bool closes = v.Count > 2 && v[^1].Is("end");
+                    var vals = SplitValues(v.Skip(1).Take(v.Count - (closes ? 2 : 1)).ToList());
                     item.Values.Add((vals.FirstOrDefault() ?? "", string.Join(" ", vals.Skip(1))));
                     i += v.Count;
+                    if (closes) { item.EndLine = v[0].Line; return item; }
                 }
                 if (i >= toks.Count || !toks[i].Is("end")) { i = start + 1; return null; }
                 item.EndLine = toks[i].Line;
@@ -204,9 +209,12 @@ public static class GametypeSettings
         while (i < toks.Count && toks[i].Kind != T.End && !toks[i].Is("end"))
         {
             var row = LineOf(toks, i);
+            // The Python style read as classic puts the closing end on the last row ("speed = 150 end").
+            bool closes = row.Count > 3 && row[^1].Is("end");
             if (row.Count < 3 || !row[1].Is("=") || row[0].Kind != T.Word) return false;
-            item.Rows.Add((row[0].Text, Text(row.Skip(2))));
+            item.Rows.Add((row[0].Text, Text(row.Skip(2).Take(row.Count - (closes ? 3 : 2)))));
             i += row.Count;
+            if (closes) return true;
         }
         if (i >= toks.Count || !toks[i].Is("end")) return false;
         i++;
@@ -233,6 +241,14 @@ public static class GametypeSettings
     // ---- writing ------------------------------------------------------------------------------------------
 
     /// <summary>The Kalo Script lines of a declaration.</summary>
+    /// <summary>A declaration written in the style of the script it goes into.</summary>
+    public static string RenderFor(string script, DeclItem d)
+    {
+        string classic = Render(d);
+        if (KaloScriptStyle.IsClassic(script)) return classic;
+        return KaloScriptStyle.FromClassic(classic) ?? classic;
+    }
+
     public static string Render(DeclItem d)
     {
         var sb = new StringBuilder();
@@ -312,7 +328,7 @@ public static class GametypeSettings
         else
         {
             // Before the first trigger (a line starting with for / on / do), after includes and comments at the top.
-            at = lines.FindIndex(l => Regex.IsMatch(l.TrimStart(), @"^(for\s|on\s|do\b|declare\b)"));
+            at = lines.FindIndex(l => Regex.IsMatch(l.TrimStart(), @"^(for\s|on\s|do\b|declare\b|every\s+tick\b|def\s|(global|player|team|object)\.\w+\s*:)"));
             if (at < 0) at = lines.Count;
         }
         var add = kalo.Split('\n').ToList();

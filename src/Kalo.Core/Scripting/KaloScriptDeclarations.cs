@@ -136,11 +136,24 @@ internal sealed partial class Transpiler
         _group = block;
     }
 
+    /// <summary>
+    /// At "end" tokens that finish the line: they close blocks (the Python style puts a block's end on its last line),
+    /// they are not part of the line's values.
+    /// </summary>
+    private bool TrailingEnd()
+    {
+        if (!Peek.Is("end")) return false;
+        int line = Peek.Line;
+        for (int k = _p; k < _t.Count && _t[k].Kind != T.End && _t[k].Line == line; k++)
+            if (!_t[k].Is("end")) return false;
+        return true;
+    }
+
     /// <summary>The rest of a source line as Megalo tokens (strings quoted again).</summary>
     private string Rest(int line)
     {
         var parts = new List<string>();
-        while (Peek.Kind != T.End && Peek.Kind != T.Raw && Peek.Line == line)
+        while (Peek.Kind != T.End && Peek.Kind != T.Raw && Peek.Line == line && !TrailingEnd())
         {
             var t = Next();
             if (t.Kind == T.Op && t.Text == "-" && Peek.Kind == T.Number && Peek.Line == line) { parts.Add("-" + Next().Text); continue; }
@@ -160,7 +173,7 @@ internal sealed partial class Transpiler
     private List<string> UntilEquals(int line)
     {
         var parts = new List<string>();
-        while (Peek.Kind != T.End && Peek.Line == line && !Peek.Is("="))
+        while (Peek.Kind != T.End && Peek.Line == line && !Peek.Is("=") && !TrailingEnd())
         {
             var t = Next();
             parts.Add(t.Kind == T.String ? "\"" + t.Text + "\"" : t.Text);
@@ -199,7 +212,7 @@ internal sealed partial class Transpiler
                 }
                 if (head.Count < 3) throw new ParseError(t, "write option NAME \"Title\" \"Description\" = default");
                 var def = new List<string>();
-                while (Peek.Line == t.Line && !Peek.Is("range") && Peek.Kind != T.End)
+                while (Peek.Line == t.Line && !Peek.Is("range") && Peek.Kind != T.End && !TrailingEnd())
                 {
                     var d = Next();
                     if (d.Kind == T.Op && d.Text == "-" && Peek.Kind == T.Number) def.Add("-" + Next().Text);

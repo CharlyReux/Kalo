@@ -70,7 +70,39 @@ public partial class TagEditorViewModel : DocumentViewModel
     }
 
     public FieldViewModel? SelectedField => SelectedItem as FieldViewModel;
-    public bool ShowLabeled { get => !ShowRaw; set => ShowRaw = !value; }
+    public bool ShowLabeled
+    {
+        get => !ShowRaw && !ShowSimple;
+        set
+        {
+            if (value) { ShowSimple = false; ShowRaw = false; }
+            OnPropertyChanged(nameof(ShowLabeled));
+        }
+    }
+
+    // ---- Simple view: the fields most people change, with plain names -----------------------------------
+    /// <summary>Weapons, projectiles, damage, vehicles and characters have a Simple view; others show all fields.</summary>
+    public SimpleView? Simple => IsScoped ? null : SimpleViews.For(Group);
+    public bool HasSimpleView => Simple != null;
+    [ObservableProperty] private bool _showSimple;
+    public string SimpleIntro => Simple?.Intro ?? "";
+    public SimpleField? SimpleFor(FieldViewModel f) => ShowSimple ? Simple?.For(f.Path) : null;
+
+    partial void OnShowSimpleChanged(bool value)
+    {
+        if (value && ShowRaw) ShowRaw = false;
+        OnPropertyChanged(nameof(ShowLabeled));
+        foreach (var f in AllFields()) f.RefreshMode();
+        if (!value) CollapseToDefault();
+        ApplyFilter();
+    }
+
+    /// <summary>Back to all fields: the first level of structs open, like when the file was opened.</summary>
+    private void CollapseToDefault()
+    {
+        foreach (var f in AllFields()) f.IsExpanded = false;
+        foreach (var f in Fields.Where(f => f.Kind == ValueKinds.Struct)) f.IsExpanded = true;
+    }
 
     public TagEditorViewModel(MainViewModel main, string path) : base(path)
     {
@@ -112,6 +144,10 @@ public partial class TagEditorViewModel : DocumentViewModel
         // Open the first level of structs so the important fields are visible.
         foreach (var f in Fields.Where(f => f.Kind == ValueKinds.Struct)) f.IsExpanded = true;
         IsLoading = false;
+        if (HasSimpleView && !ShowRaw) _showSimple = true;
+        OnPropertyChanged(nameof(ShowSimple));
+        OnPropertyChanged(nameof(ShowLabeled));
+        foreach (var f in AllFields()) f.RefreshMode();
         Status = $"{doc.FieldCount:N0} fields · loaded in {doc.LoadMs} ms" + (IsScoped ? $" · only {ScopeLabel} ({ScopeBlock}[{ScopeIndex}])" : "");
         ApplyFilter();
     }
@@ -193,6 +229,7 @@ public partial class TagEditorViewModel : DocumentViewModel
     }
     partial void OnShowRawChanged(bool value)
     {
+        if (value && ShowSimple) { _showSimple = false; OnPropertyChanged(nameof(ShowSimple)); CollapseToDefault(); }
         OnPropertyChanged(nameof(ShowLabeled));
         foreach (var f in AllFields()) f.RefreshMode();
         ApplyFilter();
@@ -212,7 +249,7 @@ public partial class TagEditorViewModel : DocumentViewModel
 
     public async Task CommitAsync(FieldViewModel field, string value)
     {
-        if (_main.Host == null) { field.Reject("The Blam Host is not running."); return; }
+        if (_main.Host == null) { field.Reject("The Engine is not running."); return; }
         try
         {
             SetFieldResult result = await _main.Host.SetFieldAsync(Path, field.Path, value);
@@ -306,6 +343,18 @@ public partial class TagEditorViewModel : DocumentViewModel
         foreach (var c in f.Children) anyChild |= Apply(c, q);
 
         bool modeOk = ShowRaw || !f.IsInternal;
+        if (ShowSimple && Simple != null)
+        {
+            // Simple: only the listed fields (and what holds them), opened.
+            bool listed = !f.IsContainer && !f.IsExplanation && Simple.For(f.Path) != null;
+            bool hit = listed && (q.Length == 0 || f.DisplayText.Contains(q, StringComparison.OrdinalIgnoreCase) || f.RawName.Contains(q, StringComparison.OrdinalIgnoreCase))
+                && (!ChangedOnly || f.IsDirty);
+            bool show = hit || anyChild;
+            f.IsVisible = show;
+            if (anyChild) f.IsExpanded = true;
+            if (hit) _matches++;
+            return show;
+        }
         bool matches = q.Length == 0
             || f.Label.Contains(q, StringComparison.OrdinalIgnoreCase)
             || f.RawName.Contains(q, StringComparison.OrdinalIgnoreCase);

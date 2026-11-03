@@ -547,10 +547,10 @@ public partial class MainViewModel
         string header = $"; {name.Trim()} — made with Kalo from the \"{template.Label}\" template\r\n\r\n";
         if (kaloScript)
         {
-            header = $"-- title: {name.Trim()}\r\n-- Made with Kalo from the \"{template.Label}\" template. Kalo Script: if/then/else, for each, f(a, b), x += 1.\r\n\r\n";
+            header = $"# title: {name.Trim()}\r\n# Made with Kalo from the \"{template.Label}\" template. Kalo Script: if x:, for each player:, f(a, b), x += 1.\r\n\r\n";
             text = template.Path.EndsWith(@"simple\slayer\2.txt", StringComparison.OrdinalIgnoreCase)
                 ? KaloScriptStarter
-                : Kalo.Core.Scripting.KaloScript.FromMegalo(text);
+                : PythonStyle(Kalo.Core.Scripting.KaloScript.FromMegalo(text));
         }
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
         var unicode = Encoding.Unicode;
@@ -563,6 +563,10 @@ public partial class MainViewModel
         _ = AutoCaptureAsync();
         return await OpenScriptAsync(rel);
     }
+
+    /// <summary>Kalo Script in the Python style (the classic text when it can't be rewritten).</summary>
+    public static string PythonStyle(string classic) => Kalo.Core.Scripting.KaloScriptStyle.FromClassic(classic) is { } py
+        && Kalo.Core.Scripting.KaloScript.Transpile(py).Megalo == Kalo.Core.Scripting.KaloScript.Transpile(classic).Megalo ? py : classic;
 
     /// <summary>The Kalo Script starter (points per kill, a streak bonus, a message).</summary>
     public static string KaloScriptStarter => Kalo.Core.Scripting.KaloScript.Starter;
