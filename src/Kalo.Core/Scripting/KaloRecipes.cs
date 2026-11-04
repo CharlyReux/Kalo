@@ -72,7 +72,7 @@ for each player:
             P("1. My mod › New map › Campaign mission: a full copy of a Reach mission with its own copy of the mission scripts. Open it."),
             P("2. Turn on AI in the Campaign bar. In the object list, AI squads holds the squads by group; select a squad's spawn point."),
             P("3. The Squad section (right) says what spawns: each spawn point's own Character and Weapon, and the squad's cells. Pick an Elite in Character, for example. Save."),
-            P("4. Squads made from a squad template spawn what the template says, whatever their cells show: change each spawn point's own character instead."),
+            P("4. Squads made from a squad template spawn what the template says, whatever their cells show: change each spawn point's own character, or click Use its own cells to edit the cells instead."),
             P("5. Play here (Ctrl+F5) near the squad, or Play (F5) for the whole mission. While the game runs, Spawn this squad (Live game bar) places it right away."),
             Tip("Used by scripts (right panel) lists the script lines that name the squad: when it is placed (ai_place) and what it does."),
         });

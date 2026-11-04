@@ -517,8 +517,7 @@
                     <TextBlock Text="CELLS (WHAT THE SQUAD SPAWNS)" Classes="header" Margin="0,4,0,0" IsVisible="{Binding HasCells, FallbackValue=False}" />
                     <TextBlock Text="{Binding TemplateNote, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KWarning}" TextWrapping="Wrap"
                                IsVisible="{Binding HasTemplateNote, FallbackValue=False}" />
-                    <!-- Hidden until checked in game: a detached squad spawned nothing in reach_tag_test (job 0343). -->
-                    <Button Classes="outline" Content="Use its own cells" IsVisible="False" HorizontalAlignment="Left"
+                    <Button Classes="outline" Content="Use its own cells" IsVisible="{Binding IsTemplated, FallbackValue=False}" HorizontalAlignment="Left"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.DetachSquadCommand, FallbackValue={x:Null}}"
                             ToolTip.Tip="Detach the squad from its template: it gets a copy of the template's cells as its own, and then these cells decide what spawns (editable here)" />
                     <ItemsControl ItemsSource="{Binding Cells, FallbackValue={x:Null}}">
@@ -564,7 +563,7 @@
                       </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <DockPanel>
-                      <Button DockPanel.Dock="Left" Classes="outline" Content="New squad here" Margin="0,0,6,0" IsVisible="False"
+                      <Button DockPanel.Dock="Left" Classes="outline" Content="New squad here" Margin="0,0,6,0"
                               Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.NewSquadHereCommand, FallbackValue={x:Null}}"
                               ToolTip.Tip="A new squad like this one (same team, group, zone and objective) with its own cells and one spawn point in front of the camera. Scripts place it with ai_place(name)." />
                       <Button DockPanel.Dock="Left" Classes="outline" Content="All squad fields…" Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.OpenSquadFieldsCommand, FallbackValue={x:Null}}"

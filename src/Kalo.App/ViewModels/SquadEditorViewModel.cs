@@ -34,7 +34,7 @@ public partial class SquadEditorViewModel : ObservableObject
         // Checked in reach_tag_test (m10 copy, barn_skirm_init): with its templated cell set to an Elite the game still
         // spawned a Skirmisher; with the spawn point's own character set to an Elite it spawned an Elite.
         TemplateNote = IsTemplated
-            ? $"Made from the squad template {d.Template}: the game spawns what the template says, so these cells (a copy of it) are shown for reference only. To change what spawns, set each spawn point's own character and weapon above."
+            ? $"Made from the squad template {d.Template}: the game spawns what the template says, so these cells (a copy of it) are shown for reference only. To change what spawns, set each spawn point's own character and weapon above, or give the squad its own cells (Use its own cells)."
             : string.IsNullOrEmpty(d.Template) ? "" : $"Template {d.Template}.";
         foreach (var c in d.Cells ?? new()) Cells.Add(new SquadCellRow(this, c));
         var p = point is int i ? d.SpawnPoints?.FirstOrDefault(s => s.Index == i) : null;

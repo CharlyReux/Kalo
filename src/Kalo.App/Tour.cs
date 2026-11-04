@@ -2068,7 +2068,7 @@ public sealed class Tour
         Say($"squad fields opened in {clock.ElapsedMilliseconds} ms");
         if (Check(tab is { IsScoped: true } && tab.Fields.Count > 0, $"squad fields tab: {tab?.Title} · {tab?.Status}"))
         {
-            Check(tab!.AllFields().Any(f => f.RawName == "template" && f.Value == "sq_camp_skirmisher_nr_1"), "it shows the squad's own fields (template sq_camp_skirmisher_nr_1)");
+            if (!viaDetach) Check(tab!.AllFields().Any(f => f.RawName == "template" && f.Value == "sq_camp_skirmisher_nr_1"), "it shows the squad's own fields (template sq_camp_skirmisher_nr_1)");
             Check(tab.AllFields().Count() < 3000, $"{tab.AllFields().Count()} rows, not the whole scenario");
             await Pause(1200);
             Say($"root rows visible {tab.Fields.Count(f => f.IsVisible)}/{tab.Fields.Count}: {string.Join(", ", tab.Fields.Take(12).Select(f => f.Label))}");
@@ -2076,7 +2076,7 @@ public sealed class Tour
             tab.Filter = "character";
             await Pause(2000);
             Say("filter: " + tab.Status + $"; root rows visible {tab.Fields.Count(f => f.IsVisible)}: {string.Join(", ", tab.Fields.Where(f => f.IsVisible).Select(f => f.Label + (f.IsExpanded ? "+" : "")))}");
-            Check(tab.Fields.Any(f => f.IsVisible && f.RawName == "templated"), "the templated cells show (character matches under them)");
+            if (!viaDetach) Check(tab.Fields.Any(f => f.IsVisible && f.RawName == "templated"), "the templated cells show (character matches under them)");
             Shot("squads-fields-filter");
             await _vm.CloseTabCommand.ExecuteAsync(tab);
         }

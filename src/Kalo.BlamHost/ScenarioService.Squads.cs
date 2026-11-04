@@ -181,6 +181,12 @@ namespace Kalo.BlamHost
                 while (templated.Elements.Count > 0) templated.RemoveElement(templated.Elements.Count - 1);
             }
             SetText(tag.SelectField(s + "StringId:template"), "");
+            // The resolved template (a hash, e.g. -1577240502 for sq_camp_skirmisher_nr_1) stays set otherwise, and the
+            // game then places nothing: a squad without a template has -1 here.
+            var squads = (TagFieldBlock)tag.SelectField("Block:squads");
+            foreach (TagField f in squads.Elements[index].Fields)
+                if (string.Equals(f.FieldName, "squad template index", StringComparison.OrdinalIgnoreCase) && f is TagFieldElementInteger)
+                    ((TagFieldElementInteger)f).Data = -1;
             return copied;
         }
 
