@@ -64,6 +64,10 @@ namespace Kalo.Protocol
         public const string Squad = "squad";
         /// <summary>Squad tools: detach a squad from its template, or a new squad like the selected one.</summary>
         public const string SquadOp = "squadOp";
+        /// <summary>Some campaign categories read again.</summary>
+        public const string Categories = "categories";
+        public const string LevelPieces = "levelPieces";
+        public const string HideLevelPieces = "hideLevelPieces";
         public const string ScenarioNames = "scenarioNames";
     }
 
@@ -435,6 +439,8 @@ namespace Kalo.Protocol
         public const string Detach = "detach";
         /// <summary>A copy of the squad (team, group, zone, objective), with its own cells and one spawn point at Position.</summary>
         public const string New = "new";
+        /// <summary>A squad from scratch (no other squad needed, e.g. in an empty mission): team covenant, one cell of one AI (Character, Weapon), one spawn point at Position.</summary>
+        public const string Create = "create";
     }
 
     public sealed class SquadOpParams
@@ -446,6 +452,9 @@ namespace Kalo.Protocol
         public string Name { get; set; }
         /// <summary>New: x, y, z and facing (degrees) of its spawn point.</summary>
         public float[] Position { get; set; }
+        /// <summary>Create: character and weapon palette indexes (-1: the first character, the character's own weapon).</summary>
+        public int Character { get; set; } = -1;
+        public int Weapon { get; set; } = -1;
     }
 
     public sealed class SquadOpResult
@@ -665,6 +674,76 @@ namespace Kalo.Protocol
         public string Path { get; set; }
         /// <summary>For restore: the snapshot to put back.</summary>
         public int Id { get; set; }
+        /// <summary>Snapshot only these blocks (null: every block a map edit can touch). Campaign squads are big: a spawn point edit keeps just them.</summary>
+        public List<string> Blocks { get; set; }
+    }
+
+    /// <summary>Level pieces (instanced geometry: buildings, rocks, crates...) near a point, or the hidden ones.</summary>
+    public sealed class LevelPiecesParams
+    {
+        public string Path { get; set; }
+        public float[] Point { get; set; }
+        public float Radius { get; set; } = 1.5f;
+        /// <summary>Only these bsps (indices into the map's structure bsps); null = all.</summary>
+        public List<int> Bsps { get; set; }
+        public bool HiddenOnly { get; set; }
+        public int Max { get; set; } = 40;
+    }
+
+    public sealed class LevelPiece
+    {
+        public int Bsp { get; set; }
+        public int Index { get; set; }
+        public string Name { get; set; }
+        /// <summary>The building or set it belongs to (e.g. m10_030_spadehorn_barn), and how many pieces it has.</summary>
+        public string Group { get; set; }
+        public int GroupCount { get; set; }
+        public bool Hidden { get; set; }
+        public float Distance { get; set; }
+        public float Size { get; set; }
+        public float[] Center { get; set; }
+    }
+
+    public sealed class LevelPiecesResult
+    {
+        public List<LevelPiece> Pieces { get; set; }
+        public int Total { get; set; }
+        public long Ms { get; set; }
+    }
+
+    public sealed class HideLevelPiecesParams
+    {
+        public string Path { get; set; }
+        public int Bsp { get; set; }
+        public List<int> Indices { get; set; }
+        /// <summary>Every piece of this group too.</summary>
+        public string Group { get; set; }
+        /// <summary>Show: every hidden piece of the bsp.</summary>
+        public bool AllHidden { get; set; }
+        public bool Hide { get; set; }
+    }
+
+    public sealed class HideLevelPiecesResult
+    {
+        /// <summary>The map's own copy of the bsp.</summary>
+        public string Bsp { get; set; }
+        /// <summary>True when the bsp was copied now (the map then points at the copy: unsaved).</summary>
+        public bool Copied { get; set; }
+        public int Changed { get; set; }
+        public long Ms { get; set; }
+    }
+
+    /// <summary>Some placement categories read again (after an undo that touched only them), and the squad list.</summary>
+    public sealed class CategoriesParams
+    {
+        public string Path { get; set; }
+        public List<string> Names { get; set; }
+    }
+
+    public sealed class CategoriesResult
+    {
+        public List<PlacementCategory> Categories { get; set; }
+        public List<SquadSummary> Squads { get; set; }
     }
 
     public sealed class SnapshotResult

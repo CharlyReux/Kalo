@@ -106,6 +106,12 @@ namespace Kalo.BlamHost
                 case Methods.Squad:
                     var sq = Params<SquadParams>(r);
                     return scenarios.Squad(sq.Path, sq.Index);
+                case Methods.Categories:
+                    return scenarios.Categories(Params<CategoriesParams>(r));
+                case Methods.LevelPieces:
+                    return scenarios.LevelPieces(Params<LevelPiecesParams>(r));
+                case Methods.HideLevelPieces:
+                    return scenarios.HideLevelPieces(Params<HideLevelPiecesParams>(r));
                 case Methods.SquadOp:
                     return scenarios.SquadOp(Params<SquadOpParams>(r));
                 case Methods.BspBounds:

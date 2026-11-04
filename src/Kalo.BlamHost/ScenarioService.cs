@@ -311,9 +311,8 @@ namespace Kalo.BlamHost
             TagFile tag = _tags.GetOrOpen(p.NewPath);
             var result = new CreateMapResult { Path = p.NewPath };
             TrySet(() => ((TagFieldElementInteger)tag.SelectField("LongInteger:map id")).Data = p.MapId);
-            if (p.Empty && ScenarioType(tag) == "solo")
-                throw new InvalidOperationException("Campaign missions are copied whole: their scripts refer to the mission's objects, squads and volumes by name.");
-            if (p.Empty)
+            bool emptyMission = p.Empty && ScenarioType(tag) == "solo";
+            if (p.Empty && !emptyMission)
             {
                 foreach (string[] k in Kinds)
                 {
@@ -338,6 +337,7 @@ namespace Kalo.BlamHost
             if (p.Barebone) MakeBarebone(tag, result);
             result.Type = ScenarioType(tag);
             if (result.Type == "solo") result.Scripts = CopyMissionScripts(tag, p.Template, p.NewPath);
+            if (emptyMission) EmptyMission(tag, p.Template, p.NewPath, result);
             DetachTemplateResources(tag, p.NewPath);
             tag.Save();
             result.Ms = sw.ElapsedMilliseconds;
@@ -724,7 +724,7 @@ namespace Kalo.BlamHost
             TagFile tag = _tags.GetOrOpen(p.Path);
             var blocks = new List<KeyValuePair<string, byte[]>>();
             int bytes = 0;
-            foreach (string name in SnapshotBlocks())
+            foreach (string name in p.Blocks ?? SnapshotBlocks().ToList())
             {
                 var block = tag.SelectField("Block:" + name) as TagFieldBlock;
                 if (block == null) continue;

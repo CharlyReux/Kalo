@@ -31,6 +31,7 @@ public partial class SquadEditorViewModel : ObservableObject
         if (!string.IsNullOrEmpty(d.Zone)) starts.Add("uses the zone " + d.Zone + " (where they can go)");
         Starts = starts.Count == 0 ? "" : "Once placed, it " + string.Join(" and ", starts) + ".";
         IsTemplated = d.CellsKind == "templated";
+        Template = d.Template ?? "";
         // Checked in reach_tag_test (m10 copy, barn_skirm_init): with its templated cell set to an Elite the game still
         // spawned a Skirmisher; with the spawn point's own character set to an Elite it spawned an Elite.
         TemplateNote = IsTemplated
@@ -58,6 +59,10 @@ public partial class SquadEditorViewModel : ObservableObject
     partial void OnPlacedByChanged(string value) => OnPropertyChanged(nameof(HasPlacedBy));
     public string PointsText { get; }
     public bool IsTemplated { get; }
+    /// <summary>The squad template's name (its file is ai\squad_templates\&lt;name&gt;.squad_template), or "".</summary>
+    public string Template { get; }
+    public bool HasTemplate => Template.Length > 0;
+    public string TemplateButton => "Open template " + Template;
     public string TemplateNote { get; }
     public bool HasTemplateNote => TemplateNote.Length > 0;
     public IReadOnlyList<string> Characters { get; }

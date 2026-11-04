@@ -108,10 +108,26 @@ namespace Kalo.BlamHost
             return d;
         }
 
+        public CategoriesResult Categories(CategoriesParams p)
+        {
+            TagFile tag = _tags.GetOrOpen(p.Path);
+            var result = new CategoriesResult { Categories = new List<PlacementCategory>() };
+            foreach (string name in p.Names ?? new List<string>())
+            {
+                var c = CampaignCategory(tag, name);
+                if (c != null) result.Categories.Add(c);
+            }
+            var squads = new ScenarioPlacements();
+            AddSquads(tag, squads);
+            result.Squads = squads.Squads;
+            return result;
+        }
+
         public SquadOpResult SquadOp(SquadOpParams p)
         {
             TagFile tag = _tags.GetOrOpen(p.Path);
             var squads = tag.SelectField("Block:squads") as TagFieldBlock;
+            if (p.Op == SquadOps.Create) return CreateSquad(tag, squads, p);
             if (squads == null || p.Index < 0 || p.Index >= squads.Elements.Count) throw new ArgumentOutOfRangeException("index", "No squad " + p.Index);
             switch (p.Op)
             {
@@ -155,6 +171,81 @@ namespace Kalo.BlamHost
                 default:
                     throw new ArgumentException("Unknown squad op " + p.Op);
             }
+        }
+
+        private SquadOpResult CreateSquad(TagFile tag, TagFieldBlock squads, SquadOpParams p)
+        {
+            if (squads == null) throw new InvalidOperationException("This map has no squads block (not a campaign mission?).");
+            if (squads.Elements.Count >= squads.MaximumElementCount) throw new InvalidOperationException("No room for more squads in this map.");
+            if (Count(tag, "Block:character palette") == 0) throw new InvalidOperationException("This map has no characters in its character palette.");
+            squads.AddElement();
+            int i = squads.Elements.Count - 1;
+            string s = "Block:squads[" + i + "]/";
+            var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (int k = 0; k < i; k++) taken.Add(Text(tag, "Block:squads[" + k + "]/String:name"));
+            string b = string.IsNullOrWhiteSpace(p.Name) ? "squad" : p.Name.Trim().Replace(' ', '_');
+            string name = b;
+            for (int n = 2; taken.Contains(name); n++) name = b + "_" + n;
+            SetText(tag.SelectField(s + "String:name"), name);
+            TrySet(() => ((TagFieldEnum)tag.SelectField(s + "ShortEnum:team")).Value = 3); // covenant
+            foreach (string f in new[] { "ShortBlockIndex:parent", "ShortBlockIndex:initial zone", "ShortBlockIndex:initial objective", "ShortBlockIndex:editor folder" })
+                TrySet(() => ((TagFieldBlockIndex)tag.SelectField(s + f)).Value = -1);
+            // One designer cell: one AI of the character, with the weapon.
+            var cells = (TagFieldBlock)tag.SelectField(s + "Struct:designer[0]/Block:cells");
+            cells.AddElement();
+            string c = s + "Struct:designer[0]/Block:cells[0]/";
+            TrySet(() => SetText(tag.SelectField(c + "StringId:name"), "cell"));
+            ((TagFieldElementInteger)tag.SelectField(c + "ShortInteger:normal diff count")).Data = 1;
+            ((TagFieldBlock)tag.SelectField(c + "Block:character type")).AddElement();
+            int character = p.Character;
+            if (character < 0)
+            {
+                // An Elite if the mission has one (a clear enemy to start with), else its first character.
+                var palette = PaletteList(tag, "Block:character palette", "Reference:reference");
+                character = Math.Max(0, palette.FindIndex(x => (x ?? "").EndsWith(@"elite\ai\elite.character", StringComparison.OrdinalIgnoreCase)));
+            }
+            ((TagFieldBlockIndex)tag.SelectField(c + "Block:character type[0]/ShortBlockIndex:character type")).Value = character;
+            TrySet(() => ((TagFieldElementInteger)tag.SelectField(c + "Block:character type[0]/ShortInteger:chance")).Data = 1);
+            if (p.Weapon >= 0)
+            {
+                ((TagFieldBlock)tag.SelectField(c + "Block:initial weapon")).AddElement();
+                ((TagFieldBlockIndex)tag.SelectField(c + "Block:initial weapon[0]/ShortBlockIndex:weapon type")).Value = p.Weapon;
+                TrySet(() => ((TagFieldElementInteger)tag.SelectField(c + "Block:initial weapon[0]/ShortInteger:chance")).Data = 1);
+            }
+            // One spawn point using that cell, no overrides.
+            var points = (TagFieldBlock)tag.SelectField(s + "Block:spawn points");
+            points.AddElement();
+            string e = s + "Block:spawn points[0]/";
+            TrySet(() => SetText(tag.SelectField(e + "StringId:name"), name + "_1"));
+            TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:character type")).Value = -1);
+            TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:initial weapon")).Value = -1);
+            foreach (string f in new[] { "ShortBlockIndex:initial secondary weapon", "ShortBlockIndex:initial equipment", "ShortBlockIndex:vehicle type", "ShortBlockIndex:reference frame", "ShortBlockIndex:point set" })
+                TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + f)).Value = -1);
+            int flat = FlatIndex(tag, CampaignCategories.AiSpawnPoints, s + "Block:spawn points", 0);
+            if (p.Position != null && p.Position.Length >= 3)
+                CampaignSet(tag, new SetPlacementParams
+                {
+                    Category = CampaignCategories.AiSpawnPoints, Index = flat,
+                    Position = new[] { p.Position[0], p.Position[1], p.Position[2] },
+                    Rotation = p.Position.Length > 3 ? new[] { p.Position[3], 0f } : null,
+                });
+            // Its level piece: the smallest bsp whose world bounds hold the point.
+            if (p.Position != null && p.Position.Length >= 3)
+            {
+                var bounds = BspBounds(p.Path).Bounds;
+                int best = -1; double bestVolume = double.MaxValue;
+                for (int k = 0; k < bounds.Count; k++)
+                {
+                    var bb = bounds[k];
+                    if (bb == null || p.Position[0] < bb[0] || p.Position[0] > bb[1] || p.Position[1] < bb[2] || p.Position[1] > bb[3] || p.Position[2] < bb[4] || p.Position[2] > bb[5]) continue;
+                    double v = (double)(bb[1] - bb[0]) * (bb[3] - bb[2]) * (bb[5] - bb[4]);
+                    if (v < bestVolume) { bestVolume = v; best = k; }
+                }
+                if (best >= 0) TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:structure bsp")).Value = best);
+            }
+            var after = new ScenarioPlacements();
+            AddSquads(tag, after);
+            return new SquadOpResult { Index = i, Name = name, SpawnPoint = flat, Squads = after.Squads, Category = CampaignCategory(tag, CampaignCategories.AiSpawnPoints) };
         }
 
         /// <summary>

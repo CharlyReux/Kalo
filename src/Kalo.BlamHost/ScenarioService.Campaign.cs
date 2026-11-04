@@ -819,6 +819,82 @@ namespace Kalo.BlamHost
             };
         }
 
+        /// <summary>
+        /// An empty campaign mission: the level, its zone sets, player starts, objects and markers stay; the AI (squads,
+        /// groups, patrols, objectives, cues), the cutscenes and the mission's own scripts go, replaced by one starter
+        /// script. Trigger volumes, cutscene flags and point sets stay: without scripts nothing uses them, and removing
+        /// volumes would break the scenario's precomputed volume data (mopp code, zone set switches, kill zones).
+        /// </summary>
+        private void EmptyMission(TagFile tag, string template, string newPath, CreateMapResult result)
+        {
+            foreach (string block in new[] { "squad patrols", "actual cues", "full cues", "quick cues", "mission scenes", "ai objectives", "squads", "squad groups", "cinematics" })
+            {
+                var b = tag.SelectField("Block:" + block) as TagFieldBlock;
+                if (b == null) continue;
+                result.Removed += b.Elements.Count;
+                b.RemoveAllElements();
+            }
+            // Scenery that spawns AI (turrets...) pointed at squads.
+            for (int i = 0, n = Count(tag, "Block:scenery"); i < n; i++)
+                TrySet(() => ((TagFieldBlockIndex)tag.SelectField("Block:scenery[" + i + "]/Struct:scenery data[0]/ShortBlockIndex:ai spawning squad")).Value = -1);
+
+            // Scripts: the mission's own files go; one starter file named after the map takes their place.
+            string name = Path.GetFileNameWithoutExtension(newPath);
+            string newDir = (Path.GetDirectoryName(newPath.Replace('/', '\\')) ?? "") + "\\";
+            string starter = newDir + "scripts\\" + name + ".scenario_hs_source_file";
+            string first = null;
+            var res = tag.SelectField("Block:scenario resources") as TagFieldBlock;
+            for (int r = 0; res != null && r < res.Elements.Count; r++)
+            {
+                var src = tag.SelectField("Block:scenario resources[" + r + "]/Block:script source") as TagFieldBlock;
+                for (int i = src == null ? -1 : src.Elements.Count - 1; i >= 0; i--)
+                {
+                    var field = tag.SelectField("Block:scenario resources[" + r + "]/Block:script source[" + i + "]/Reference:reference") as TagFieldReference;
+                    string s = field == null ? null : TagService.ValueOf(field);
+                    if (string.IsNullOrEmpty(s) || !s.StartsWith(newDir, StringComparison.OrdinalIgnoreCase)) continue;
+                    // The mission's main script (m10 for m10) is the one to start from.
+                    if (first == null || string.Equals(Path.GetFileNameWithoutExtension(s), Path.GetFileNameWithoutExtension(template), StringComparison.OrdinalIgnoreCase)) first = s;
+                    src.RemoveElement(i);
+                }
+            }
+            if (first == null) throw new InvalidOperationException("The mission has no script of its own to start from.");
+            // The starter is a copy of one of the mission's script files (so it is a valid script source tag), with new text.
+            string firstFull = _tags.FullPath(first), starterFull = _tags.FullPath(starter);
+            Directory.CreateDirectory(Path.GetDirectoryName(starterFull));
+            if (!string.Equals(firstFull, starterFull, StringComparison.OrdinalIgnoreCase)) File.Copy(firstFull, starterFull, true);
+            foreach (string old in result.Scripts ?? new List<string>())
+                if (!string.Equals(old, starter, StringComparison.OrdinalIgnoreCase)) TryDelete(_tags.FullPath(old));
+            var src0 = tag.SelectField("Block:scenario resources[0]/Block:script source") as TagFieldBlock;
+            if (src0 == null) throw new InvalidOperationException("The mission has no script source block.");
+            src0.AddElement();
+            ((TagFieldReference)tag.SelectField("Block:scenario resources[0]/Block:script source[" + (src0.Elements.Count - 1) + "]/Reference:reference")).Path = TagService.TagPathOf(starter);
+            using (var s = new TagFile(TagService.TagPathOf(starter)))
+            {
+                var data = s.SelectField("Data:source") as TagFieldData;
+                byte[] text = Encoding.UTF8.GetBytes(StarterScript(name).Replace("\n", "\r\n"));
+                MethodInfo set = data == null ? null : data.GetType().GetMethod("SetData", new[] { typeof(byte[]) });
+                if (set == null) throw new InvalidOperationException("ManagedBlam cannot write the starter script.");
+                set.Invoke(data, new object[] { text.Concat(new byte[] { 0 }).ToArray() });
+                TrySet(() => SetText(s.SelectField("String:name"), name));
+                s.Save();
+            }
+            result.Scripts = new List<string> { starter };
+        }
+
+        private static void TryDelete(string file)
+        {
+            try { if (File.Exists(file)) File.Delete(file); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
+
+        /// <summary>The script an empty mission starts with (HaloScript; Kalo shows it in Kalo Script).</summary>
+        private static string StarterScript(string name) =>
+            "; " + name + ": your mission's script. Kalo shows it in Kalo Script (Mission scripts in the Campaign bar).\n" +
+            "; A startup script runs once when the mission starts.\n" +
+            "\n" +
+            "(script startup mission_start\n" +
+            "    (print \"mission started\")\n" +
+            ")\n";
+
         public MissionScriptResult WriteMissionScript(MissionScriptParams p)
         {
             var sw = Stopwatch.StartNew();

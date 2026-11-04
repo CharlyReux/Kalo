@@ -43,6 +43,9 @@
             <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapCampaign}" FontSize="12">
               <TextBlock TextWrapping="Wrap" Text="Campaign mission: a full copy of a Reach mission (objects, squads, trigger volumes, cutscenes) with its own copy of the mission scripts, to change." />
             </RadioButton>
+            <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapEmptyCampaign}" FontSize="12">
+              <TextBlock TextWrapping="Wrap" Text="Empty campaign mission: a Reach mission's level, zone sets, player starts and objects, with no AI, no cutscenes and no mission scripts: one starter script to write your own mission." />
+            </RadioButton>
             <StackPanel Spacing="4" IsVisible="{Binding NeedsBaseLevel}">
               <TextBlock Text="{Binding NewMapLevelLabel}" Foreground="{StaticResource KMuted}" FontSize="11.5" />
               <ComboBox ItemsSource="{Binding BaseLevels}" SelectedItem="{Binding NewMapBase}" HorizontalAlignment="Stretch" FontSize="12">

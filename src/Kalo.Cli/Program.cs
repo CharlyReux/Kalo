@@ -356,6 +356,11 @@ switch (command)
         Console.WriteLine($"{new FileInfo(target).Length} bytes -> {target}");
         break;
     }
+    case "bsp-scale":
+        // bsp-scale <scenario> <bsp index> <name part> <scale>: probe. The scenario gets its own copy of that level piece
+        // (next to it), and the instanced geometry whose name contains the part is scaled (0.001: hidden).
+        await BspScale(argsList[1], int.Parse(argsList[2]), argsList[3], argsList[4]);
+        break;
     case "elements":
         // elements <tag> <block> [name part]: the elements of one block (e.g. squads) whose name contains the part, in full.
         await Elements(argsList[1], argsList[2], argsList.ElementAtOrDefault(3));
@@ -714,6 +719,36 @@ async Task CampaignProbe(string template, string scenario)
     await host.CloseTagAsync(scenario);
     var re = await host.GetPlacementsAsync(scenario);
     Check("the saved copy has kalo_probe_wh", re.Categories!.First(c => c.Name == "vehicles").Items!.Any(p => p.Name == "kalo_probe_wh"));
+}
+
+async Task BspScale(string scenario, int index, string part, string scale)
+{
+    await using var host = await HostClient.StartAsync(paths, line => Console.Error.WriteLine("  host> " + line));
+    var el = await host.ReadElementAsync(scenario, "structure bsps", index);
+    string bsp = el.Fields.First(f => f.Name == "structure bsp").Value ?? "";
+    string dir = Path.GetDirectoryName(scenario)!;
+    string copy = Path.Combine(dir, Path.GetFileName(bsp));
+    if (!bsp.Equals(copy, StringComparison.OrdinalIgnoreCase))
+    {
+        File.Copy(Path.Combine(paths.WorkspaceTags, bsp), Path.Combine(paths.WorkspaceTags, copy), true);
+        await host.SetFieldAsync(scenario, $"Block:structure bsps[{index}]/Reference:structure bsp", copy);
+        await host.SaveTagAsync(scenario);
+        Console.WriteLine($"{scenario}: level piece {index} is now its own copy {copy}");
+    }
+    int n = 0;
+    for (int i = 0; ; i++)
+    {
+        TagDocument inst;
+        try { inst = await host.ReadElementAsync(copy, "instanced geometry instances", i); }
+        catch (HostException) { Console.WriteLine($"# {i} instances"); break; }
+        string name = inst.Fields.FirstOrDefault(f => f.Name == "name")?.Value ?? "";
+        if (!name.Contains(part, StringComparison.OrdinalIgnoreCase)) continue;
+        await host.SetFieldAsync(copy, $"Block:instanced geometry instances[{i}]/Real:scale", scale);
+        n++;
+        if (n <= 20) Console.WriteLine($"[{i}] {name} scale {scale}");
+    }
+    await host.SaveTagAsync(copy);
+    Console.WriteLine($"{n} instances scaled to {scale} in {copy}");
 }
 
 async Task Elements(string tag, string block, string? part)

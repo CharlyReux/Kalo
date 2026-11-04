@@ -21,10 +21,19 @@ public partial class MapEditorViewModel
     [ObservableProperty] private bool _showAi = true;
     [ObservableProperty] private bool _showCutscene = true;
     [ObservableProperty] private bool _showScriptPoints;
-    partial void OnShowVolumesChanged(bool value) => ApplyFilter();
-    partial void OnShowAiChanged(bool value) => ApplyFilter();
-    partial void OnShowCutsceneChanged(bool value) => ApplyFilter();
-    partial void OnShowScriptPointsChanged(bool value) => ApplyFilter();
+    partial void OnShowVolumesChanged(bool value) => _ = ApplyFilterShownAsync(value ? "Showing volumes…" : "Hiding volumes…");
+    partial void OnShowAiChanged(bool value) => _ = ApplyFilterShownAsync(value ? "Showing AI…" : "Hiding AI…");
+    partial void OnShowCutsceneChanged(bool value) => _ = ApplyFilterShownAsync(value ? "Showing cutscene markers…" : "Hiding cutscene markers…");
+    partial void OnShowScriptPointsChanged(bool value) => _ = ApplyFilterShownAsync(value ? "Showing script points…" : "Hiding script points…");
+
+    /// <summary>The object list of a whole mission takes a moment to rebuild: say so first, then rebuild.</summary>
+    private async Task ApplyFilterShownAsync(string text)
+    {
+        using var busy = Busy(text);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Render);
+        await Task.Delay(30);
+        ApplyFilter();
+    }
 
     public ObservableCollection<ZoneSetChoice> ZoneSetChoices { get; } = new();
     [ObservableProperty] private ZoneSetChoice? _selectedZoneSet;
@@ -99,7 +108,7 @@ public partial class MapEditorViewModel
     private async Task AddMarker(string? category)
     {
         if (category == null) return;
-        using var edit = await EditAsync("add " + category);
+        using var edit = await EditAsync("add " + category, BlockOf(category) != null ? new List<string> { category } : null);
         Vector3 at = PlacementPointProvider?.Invoke() ?? CursorPoint ?? Selected?.Position ?? Bsp?.Center ?? Vector3.Zero;
         at += new Vector3(0, 0, 0.1f);
         if (category is CampaignCategories.AiSpawnPoints or CampaignCategories.ScriptPoints)
@@ -184,6 +193,20 @@ public partial class MapEditorViewModel
 
     // ---- squad tools ----------------------------------------------------------------------------------
 
+    /// <summary>The selected squad's template in the field editor (ai\squad_templates\&lt;name&gt;.squad_template).</summary>
+    [RelayCommand]
+    private async Task OpenSquadTemplate()
+    {
+        if (SquadEditor is not { HasTemplate: true } squad || _main.Paths == null) return;
+        string tag = $@"ai\squad_templates\{squad.Template}.squad_template";
+        if (!File.Exists(System.IO.Path.Combine(_main.Paths.WorkspaceTags, tag)))
+        {
+            _main.AddProblem("warning", $"Squad template {squad.Template}: no file {tag}.", Path);
+            return;
+        }
+        await _main.OpenTagAsync(tag);
+    }
+
     /// <summary>
     /// The selected squad gets its own cells (a copy of its template's) and loses its template: its cells then decide
     /// what spawns, and can be edited here.
@@ -192,7 +215,7 @@ public partial class MapEditorViewModel
     private async Task DetachSquad()
     {
         if (_main.Host == null || SquadEditor is not { IsTemplated: true } squad) return;
-        using var edit = await EditAsync("detach squad from its template");
+        using var edit = await EditAsync("detach squad from its template", new List<string> { CampaignCategories.AiSpawnPoints });
         try
         {
             var r = await _main.Host.SquadOpAsync(new SquadOpParams { Path = Path, Op = SquadOps.Detach, Index = squad.Index });
@@ -207,12 +230,40 @@ public partial class MapEditorViewModel
         }
     }
 
+    /// <summary>
+    /// A squad from scratch, in front of the camera: one Elite (or the mission's first character), team covenant, its own
+    /// cell. For empty missions, which have no squad to copy. Change what it spawns in the Squad section.
+    /// </summary>
+    [RelayCommand]
+    private async Task AddSquad()
+    {
+        if (_main.Host == null) return;
+        using var edit = await EditAsync("add squad", new List<string> { CampaignCategories.AiSpawnPoints });
+        Vector3 at = PlacementPointProvider?.Invoke() ?? CursorPoint ?? Vector3.Zero;
+        at += new Vector3(0, 0, 0.1f);
+        try
+        {
+            var r = await _main.Host.SquadOpAsync(new SquadOpParams { Path = Path, Op = SquadOps.Create, Name = "squad", Position = new[] { at.X, at.Y, at.Z } });
+            if (r.Squads != null) _squads = r.Squads;
+            if (r.Category != null) ReplaceCategory(r.Category);
+            IsDirty = true;
+            ShowAi = true;
+            Selected = Items.FirstOrDefault(i => i.Category == CampaignCategories.AiSpawnPoints && i.Index == r.SpawnPoint);
+            Status = $"New squad {r.Name}: one AI at this point. Change what it spawns in the Squad section; scripts place it with ai_place({r.Name}).";
+            _main.Log($"{Title}: new squad {r.Name}. A script places it with ai_place({r.Name}); the Live game bar's Spawn this squad places it in a running game.");
+        }
+        catch (HostException ex)
+        {
+            _main.AddProblem("error", "Add squad: " + ex.Message, Path);
+        }
+    }
+
     /// <summary>A new squad like the selected one (team, group, zone, objective), with its own cells and one spawn point in front of the camera.</summary>
     [RelayCommand]
     private async Task NewSquadHere()
     {
         if (_main.Host == null || SquadEditor is not { } squad) return;
-        using var edit = await EditAsync("new squad");
+        using var edit = await EditAsync("new squad", new List<string> { CampaignCategories.AiSpawnPoints });
         Vector3 at = PlacementPointProvider?.Invoke() ?? CursorPoint ?? Selected?.Position ?? Vector3.Zero;
         at += new Vector3(0, 0, 0.1f);
         try
@@ -358,7 +409,7 @@ public partial class MapEditorViewModel
     public async Task<string?> SetSquadFieldAsync(string fieldPath, string value, string what)
     {
         if (_main.Host == null) return "The Engine is not running.";
-        using var edit = await EditAsync(what);
+        using var edit = await EditAsync(what, new List<string> { CampaignCategories.AiSpawnPoints });
         try
         {
             await _main.Host.SetFieldAsync(Path, fieldPath, value);
@@ -395,7 +446,7 @@ public partial class MapEditorViewModel
         var size = item.VolumeSizeFromText();
         if (size == null) return;
         if (Math.Abs(size[0] - item.ZoneSize.X) < 1e-4 && Math.Abs(size[1] - item.ZoneSize.Y) < 1e-4 && Math.Abs(size[2] - (item.ZoneSize.Z + item.ZoneSize.W)) < 1e-4) return;
-        using var edit = await EditAsync("resize volume");
+        using var edit = await EditAsync("resize volume", new List<string> { CampaignCategories.TriggerVolumes });
         try
         {
             var p = await _main.Host.SetPlacementAsync(new SetPlacementParams { Path = Path, Category = item.Category, Index = item.Index, Size = size });

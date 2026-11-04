@@ -68,6 +68,15 @@
                   ToolTip.Tip="A new cutscene flag (a named point for scripts) in front of the camera" />
           <Button Classes="outline" Content="Spawn point" Command="{Binding AddMarkerCommand}" CommandParameter="ai spawn points"
                   ToolTip.Tip="Another spawn point for the squad of the selected spawn point, in front of the camera" />
+          <Button Classes="outline" Content="Squad" Command="{Binding AddSquadCommand}"
+                  ToolTip.Tip="A new squad in front of the camera: one AI (an Elite when the mission has one), team covenant. Change what it spawns in the Squad section; a script places it with ai_place(name)." />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
+          <TextBlock Text="Level pieces" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+          <Button Classes="outline" Content="Here" Command="{Binding FindLevelPiecesCommand}"
+                  ToolTip.Tip="The level's own pieces (buildings, rocks, pipes, crates) at the center of the view: aim at one, click, then Hide it or its whole building" />
+          <Button Classes="outline" Content="Hidden" Command="{Binding HiddenLevelPiecesCommand}"
+                  ToolTip.Tip="Every level piece hidden in this map, to show them again" />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
           <Button Classes="outline" IsEnabled="{Binding HasMissionScripts}" ToolTip.Tip="Open one of the mission's scripts (HaloScript). This map's own copies come first.">
@@ -145,6 +154,11 @@
     <!-- Status line -->
     <Border DockPanel.Dock="Bottom" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,1,0,0" Height="24">
       <StackPanel Orientation="Horizontal" Spacing="14" Margin="10,0" VerticalAlignment="Center">
+        <!-- Working: what the map is doing (an edit, an undo, reading the map), so a slow step doesn't look like a dead button -->
+        <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsBusy}" VerticalAlignment="Center">
+          <ProgressBar IsIndeterminate="True" Width="60" Height="4" MinHeight="4" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding BusyText}" FontSize="11.5" Foreground="{StaticResource KAccentText}" />
+        </StackPanel>
         <TextBlock Text="{Binding GeometryStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" />
         <TextBlock Text="{Binding RendererStatus}" FontSize="11.5" Foreground="{StaticResource KFaint}" />
         <TextBlock Text="{Binding ChangesText}" FontSize="11.5" Foreground="{StaticResource KWarning}" />
@@ -301,6 +315,41 @@
         </Border>
         <TextBlock Text="{Binding TextureStatus}" IsVisible="{Binding TextureStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                    HorizontalAlignment="Right" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+        <!-- Level pieces: the level's own buildings, rocks, crates (Campaign bar › Level pieces) -->
+        <Border Background="#E6232427" BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="6" Padding="8,6"
+                Width="360" HorizontalAlignment="Right" IsVisible="{Binding ShowLevelPieces}">
+          <DockPanel>
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,4">
+              <Button DockPanel.Dock="Right" Classes="tool" Padding="6,2" Command="{Binding CloseLevelPiecesCommand}" ToolTip.Tip="Close">
+                <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE8BB;" FontSize="10" />
+              </Button>
+              <TextBlock Text="{Binding LevelPiecesTitle}" FontWeight="SemiBold" FontSize="12" TextWrapping="Wrap" VerticalAlignment="Center" />
+            </DockPanel>
+            <TextBlock DockPanel.Dock="Bottom" FontSize="10.5" Foreground="{StaticResource KFaint}" TextWrapping="Wrap" Margin="0,4,0,0"
+                       Text="Hidden pieces are gone in the game (they are shrunk to nothing in this map's own copy of the level; the original level is untouched). Ctrl+Z does not undo this: use Show. Their baked shadows stay." />
+            <Button DockPanel.Dock="Bottom" Classes="outline" Content="Show them all" Command="{Binding ShowAllPiecesCommand}" HorizontalAlignment="Left" Margin="0,4,0,0"
+                    IsVisible="{Binding CanShowAllPieces}" />
+            <ScrollViewer MaxHeight="360" HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding LevelPieces}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate DataType="vm:LevelPieceRow">
+                    <DockPanel Margin="0,2" Opacity="{Binding Opacity}">
+                      <Button DockPanel.Dock="Right" Classes="outline" Content="{Binding GroupText}" IsVisible="{Binding HasGroup}" Margin="4,0,0,0" FontSize="11"
+                              Command="{Binding $parent[UserControl].((vm:MapEditorViewModel)DataContext).ToggleGroupCommand}" CommandParameter="{Binding}"
+                              ToolTip.Tip="{Binding GroupTip}" />
+                      <Button DockPanel.Dock="Right" Classes="outline" Content="{Binding ToggleText}" Margin="4,0,0,0" FontSize="11"
+                              Command="{Binding $parent[UserControl].((vm:MapEditorViewModel)DataContext).TogglePieceCommand}" CommandParameter="{Binding}" />
+                      <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                        <TextBlock Text="{Binding Detail}" FontSize="10.5" Foreground="{StaticResource KFaint}" TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DockPanel>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
       </StackPanel>
     </Grid>
   </DockPanel>

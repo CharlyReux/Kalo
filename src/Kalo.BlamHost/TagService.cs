@@ -333,7 +333,7 @@ namespace Kalo.BlamHost
             return tag;
         }
 
-        private static string Normalize(string path)
+        internal static string Normalize(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("Empty tag path");
             string p = path.Replace('/', '\\').Trim().TrimStart('\\');

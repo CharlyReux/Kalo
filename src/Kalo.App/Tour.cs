@@ -53,6 +53,11 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("mission", StringComparer.OrdinalIgnoreCase) == true) await Section("mission", MissionKaloScript);
                 if (AppArgs.Current.TourSections?.Contains("squad-tools", StringComparer.OrdinalIgnoreCase) == true) await Section("squad-tools", SquadTools);
                 if (AppArgs.Current.TourSections?.Contains("live-mission", StringComparer.OrdinalIgnoreCase) == true) await Section("live-mission", LiveMission);
+                if (AppArgs.Current.TourSections?.Contains("campaign-perf", StringComparer.OrdinalIgnoreCase) == true) await Section("campaign-perf", CampaignPerf);
+                if (AppArgs.Current.TourSections?.Contains("empty-mission", StringComparer.OrdinalIgnoreCase) == true) await Section("empty-mission", EmptyMission);
+                if (AppArgs.Current.TourSections?.Contains("barn-view", StringComparer.OrdinalIgnoreCase) == true) await Section("barn-view", BarnView);
+                if (AppArgs.Current.TourSections?.Contains("tutorial", StringComparer.OrdinalIgnoreCase) == true) await Section("tutorial", TutorialMission);
+                if (AppArgs.Current.TourSections?.Contains("level-pieces", StringComparer.OrdinalIgnoreCase) == true) await Section("level-pieces", LevelPiecesTest);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -2155,6 +2160,253 @@ public sealed class Tour
             File.Delete(scenarioFile + ".kalo_tour_bak");
             Say("the test map is back as it was (templated squad)");
         }
+    }
+
+    /// <summary>
+    /// Help › Recipes › Tutorial: make a small mission, done by the tour on m10 (levels\mods\_kalo_tour\tutorial): empty
+    /// mission, Add › Squad at the barn, Add › Volume renamed tv_start_fight, the first start moved into it, the
+    /// tutorial's script. The runner then plays it (--play-map) and looks for the script's prints and the Elite.
+    /// </summary>
+    /// <summary>Level pieces on the tutorial map (run the tutorial section first): find, hide a building, show it again.</summary>
+    private async Task LevelPiecesTest()
+    {
+        const string path = @"levels\mods\_kalo_tour\tutorial\tutorial.scenario";
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        // In front of the barn's garage door (m10_030 instance 147), looking at it.
+        Vector3 door = new(138.94f, 58.89f, -1.13f), facing = Vector3.Normalize(new Vector3(0.965f, -0.262f, 0));
+        map.LookFrom(door + facing * 7 + new Vector3(0, 0, 1.5f), MathF.Atan2(-facing.Y, -facing.X) * 180 / MathF.PI, -5);
+        await Pause(2000);
+        var sw = Stopwatch.StartNew();
+        await map.FindLevelPiecesCommand.ExecuteAsync(null);
+        Say($"Here: {map.LevelPieces.Count} rows in {sw.ElapsedMilliseconds} ms: {map.LevelPiecesTitle}");
+        foreach (var row in map.LevelPieces.Take(6)) Say($"  {row.Name} · {row.Detail} · {row.GroupText}");
+        if (!Check(map.LevelPieces.Count > 0 && map.ShowLevelPieces, "pieces where the view is aimed")) return;
+        Shot("level-pieces-here");
+
+        var target = map.LevelPieces.FirstOrDefault(r => r.HasGroup && r.Piece.GroupCount < 3000) ?? map.LevelPieces[0];
+        int version = map.GeometryVersion;
+        sw.Restart();
+        if (target.HasGroup)
+        {
+            await map.ToggleGroupCommand.ExecuteAsync(target);
+            Say($"hide group {target.Piece.Group}: {sw.ElapsedMilliseconds} ms; {map.Status}");
+            Check(target.Hidden && map.IsDirty, "the building is hidden (the map points at its own copy: unsaved)");
+            Check(File.Exists(System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour\tutorial\m10_030.scenario_structure_bsp")) || target.Piece.Bsp != 2,
+                "the map has its own copy of the bsp");
+            await map.HiddenLevelPiecesCommand.ExecuteAsync(null);
+            Check(map.LevelPieces.Count == 1 && map.LevelPieces[0].IsWholeGroup && map.LevelPieces[0].Hidden, $"Hidden lists the building as one row: {map.LevelPieces.FirstOrDefault()?.Name} · {map.LevelPieces.FirstOrDefault()?.Detail}");
+            var geo = DateTime.UtcNow.AddMinutes(4);
+            while (map.GeometryVersion == version && DateTime.UtcNow < geo) await Task.Delay(500);
+            Check(map.GeometryVersion != version, $"the 3D view read the level again ({sw.ElapsedMilliseconds} ms after Hide): {map.GeometryStatus}");
+            await Pause(1500);
+            Shot("level-pieces-hidden");
+            sw.Restart();
+            await map.ShowAllPiecesCommand.ExecuteAsync(null);
+            Say($"show all: {sw.ElapsedMilliseconds} ms; {map.Status}");
+            await map.HiddenLevelPiecesCommand.ExecuteAsync(null);
+            Check(map.LevelPieces.Count == 0, "Show them all: nothing hidden any more");
+        }
+
+        await map.FindLevelPiecesCommand.ExecuteAsync(null);
+        var one = map.LevelPieces.First();
+        await map.TogglePieceCommand.ExecuteAsync(one);
+        Check(one.Hidden && one.ToggleText == "Show", "one piece hidden: " + one.Name);
+        await map.HiddenLevelPiecesCommand.ExecuteAsync(null);
+        Check(map.LevelPieces.Count == 1, "Hidden lists it");
+        await map.TogglePieceCommand.ExecuteAsync(map.LevelPieces[0]);
+        await map.HiddenLevelPiecesCommand.ExecuteAsync(null);
+        Check(map.LevelPieces.Count == 0, "Show: nothing hidden any more");
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+    }
+
+    private async Task TutorialMission()
+    {
+        const string path = @"levels\mods\_kalo_tour\tutorial\tutorial.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour\tutorial");
+        if (Directory.Exists(folder)) Directory.Delete(folder, true);
+        var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = @"levels\solo\m10\m10.scenario", NewPath = path, Empty = true, MapId = 7992 });
+        Check(r.Type == "solo", "step 1: empty campaign mission on m10");
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        Check(map.SelectedZoneSet?.Bsps?.Contains(2) == true, "step 2: a zone set with bsp 2: " + map.SelectedZoneSet?.Label);
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while ((map.Bsp == null) && DateTime.UtcNow < until) await Task.Delay(500);
+        map.LookFrom(new Vector3(134.03f, 35.20f, 3.0f), 0, -60);
+        await Pause(2000);
+        await map.AddSquadCommand.ExecuteAsync(null);
+        Check(map.Squads.Count == 1 && map.Squads[0].Name == "squad", "step 3: Add › Squad made squad");
+        map.LookFrom(new Vector3(146f, 26f, 3.0f), 0, -60);
+        await Pause(1500);
+        await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.TriggerVolumes);
+        var volume = map.Selected;
+        if (!Check(volume is { IsVolume: true }, "step 4: Add › Volume")) return;
+        await map.RenameAsync(volume!, "tv_start_fight");
+        volume = map.Items.FirstOrDefault(i => i.IsVolume && i.PlacedName == "tv_start_fight");
+        Check(volume != null, "renamed tv_start_fight");
+        var start = map.Items.FirstOrDefault(i => i.Category == StartLocations.Category);
+        if (!Check(start != null, "step 5: the start locations are in the object list")) return;
+        map.SetSelection(new[] { start! });
+        map.MoveLocal(start!, volume!.Position - new Vector3(0, 0, 1.2f)); // the box stands on the ground; its middle is 1.5 up
+        await map.CommitMoveAsync(start!);
+        Check(Vector3.Distance(map.Items.First(i => i.Category == StartLocations.Category).Position, volume.Position) < 1.5f, "the first start is in the volume");
+        await map.SaveCommand.ExecuteAsync(null);
+        var own = map.MissionScripts.First(m => m.IsOwn);
+        var doc = await _vm.OpenMissionScriptAsync(own.Path, map.Path);
+        var recipe = Kalo.Core.Scripting.KaloRecipes.All().First(x => x.Id == "recipe-small-mission");
+        string code = recipe.Blocks.First(b => b.Kind == Kalo.Core.Scripting.GuideKind.Code).Text;
+        doc.Text = code.Replace("\r\n", "\n") + "\n";
+        doc.Check();
+        Check(doc.CheckOk && doc.Messages.Count == 0, "step 6: the tutorial's script checks clean: " + doc.Summary);
+        // For the runner: a print once the fight starts (the player stands in the volume at the start).
+        doc.Text = doc.Text.Replace("    ai_place(squad)\n", "    ai_place(squad)\n    print(\"fight started\")\n");
+        await doc.SaveDocumentAsync();
+        var back = await _vm.Host.ReadMissionScriptAsync(own.Path);
+        Check(back.Text?.Contains("(game_won)") == true && back.Text.Contains("(volume_test_players tv_start_fight)"), "saved as HaloScript");
+        Shot("tutorial-map");
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+    }
+
+    /// <summary>Play here on the empty m10 mission, looking at the barn (the runner screenshots the game): for level geometry probes.</summary>
+    private async Task BarnView()
+    {
+        const string path = @"levels\mods\_kalo_tour\emptym\emptym.scenario";
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        // Stand 7 units in front of the barn's garage door (an instanced geometry piece of bsp 2), facing it.
+        var bspRef = (await _vm.Host!.ReadElementAsync(path, "structure bsps", 2)).Fields.First(f => f.Name == "structure bsp").Value!;
+        Vector3 doorAt = new(127.34f, 40.17f, 0f), facing = new(1, 0, 0);
+        for (int i = 0; i < 400; i++)
+        {
+            var inst = await _vm.Host.ReadElementAsync(bspRef, "instanced geometry instances", i);
+            if (inst.Fields.FirstOrDefault(f => f.Name == "name")?.Value?.StartsWith("kiva_garagedoor_14") != true) continue;
+            float[] P(string n) => (inst.Fields.First(f => f.Name == n).Value ?? "0,0,0").Split(',').Select(x => float.Parse(x.Trim(), System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            var pos = P("position"); var fw = P("forward");
+            doorAt = new Vector3(pos[0], pos[1], pos[2]);
+            facing = Vector3.Normalize(new Vector3(fw[0], fw[1], 0));
+            Say($"garage door {i} at {doorAt}, forward {facing}");
+            break;
+        }
+        // Try both sides: the side with floor under it.
+        var eye = doorAt + facing * 7 + new Vector3(0, 0, 1.5f);
+        float yaw = MathF.Atan2(-facing.Y, -facing.X) * 180 / MathF.PI;
+        map.LookFrom(eye, yaw, -5);
+        await Pause(1500);
+        if (map.PlayFromCheck?.Invoke() != null)
+        {
+            eye = doorAt - facing * 7 + new Vector3(0, 0, 1.5f);
+            yaw = MathF.Atan2(facing.Y, facing.X) * 180 / MathF.PI;
+            map.LookFrom(eye, yaw, -5);
+        }
+        await Pause(3000);
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _vm.Game!.Loaded += () => loaded.TrySetResult();
+        await map.PlayFromCameraCommand.ExecuteAsync(null);
+        var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(5)));
+        Check(done == loaded.Task, "the mission loaded");
+        Say($"holding the game for {_hold:F0} s");
+        await Task.Delay(TimeSpan.FromSeconds(_hold));
+        _vm.StopGameCommand.Execute(null);
+        await Pause(3000);
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+    }
+
+    /// <summary>
+    /// Empty campaign mission on m10 (levels\mods\_kalo_tour\emptym, outside the mod): no squads, one starter script;
+    /// a squad added from scratch at the barn and a starter script that places it. The runner then plays it
+    /// (--play-map) and looks for "mission started" and "squad placed" in the game output.
+    /// </summary>
+    private async Task EmptyMission()
+    {
+        const string path = @"levels\mods\_kalo_tour\emptym\emptym.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour\emptym");
+        if (Directory.Exists(folder)) Directory.Delete(folder, true);
+        var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = @"levels\solo\m10\m10.scenario", NewPath = path, Empty = true, MapId = 7991 });
+        Check(r.Type == "solo" && r.Scripts?.Count == 1 && r.Scripts[0].EndsWith(@"scripts\emptym.scenario_hs_source_file"), $"empty mission made in {r.Ms} ms: {r.Removed} AI and cutscene entries removed, scripts {string.Join(", ", r.Scripts ?? new())}");
+        Check(Directory.GetFiles(System.IO.Path.Combine(folder, "scripts")).Length == 1, "only the starter script file is next to it");
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        Check(map.IsCampaign && map.Squads.Count == 0 && !map.Items.Any(i => i.IsAiSpawnPoint), $"no squads ({map.Squads.Count}), {map.Items.Count(i => i.IsVolume)} trigger volumes, {map.ZoneSetChoices.Count - 1} zone sets kept");
+        var own = map.MissionScripts.Where(m => m.IsOwn).ToList();
+        Check(own.Count == 1 && own[0].Name == "emptym", "one script of its own: " + string.Join(", ", own.Select(m => m.Name)));
+        // A squad from scratch at m10's barn (where barn_skirm_init stands).
+        map.LookFrom(new Vector3(134.03f, 35.20f, 3.0f), 0, -60);
+        await Pause(2000);
+        await map.AddSquadCommand.ExecuteAsync(null);
+        var until = DateTime.UtcNow.AddSeconds(30);
+        while (DateTime.UtcNow < until && map.SquadEditor?.Name != "squad") await Task.Delay(200);
+        var sq = map.SquadEditor;
+        Check(map.Squads.Count == 1 && sq is { Name: "squad", IsTemplated: false, Cells.Count: 1 }, $"Add › Squad: {sq?.Name}, {sq?.Cells.Count} cell, {sq?.Cells.FirstOrDefault()?.Characters.FirstOrDefault()?.Options.ElementAtOrDefault(sq.Cells[0].Characters[0].SelectedIndex)}");
+        await map.SaveCommand.ExecuteAsync(null);
+        // The starter script, in Kalo Script, then a version that places the squad.
+        var doc = await _vm.OpenMissionScriptAsync(own[0].Path, map.Path);
+        Check(doc.IsKaloScript && doc.Text.Contains("startup mission_start:"), "the starter script opens in Kalo Script: " + doc.Text.Replace("\n", " | "));
+        doc.Text = "# Tour: the squad placed at the start.\nstartup mission_start:\n    print(\"mission started\")\n    ai_place(squad)\n    sleep(30)\n    if ai_living_count(squad) > 0:\n        print(\"squad placed\")\n";
+        doc.Check();
+        Check(doc.CheckOk, "the mission script checks clean (squad is a name of the map): " + doc.Summary);
+        await doc.SaveDocumentAsync();
+        var back = await _vm.Host.ReadMissionScriptAsync(own[0].Path);
+        Check(back.Text != null && back.Text.Contains("(ai_place squad)"), "saved as HaloScript");
+        await Pause(800);
+        Shot("empty-mission");
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+    }
+
+    /// <summary>Timings of everyday campaign edits on the m10 copy (nothing saved): layer chips, add / duplicate / delete a spawn point, undo, redo.</summary>
+    private async Task CampaignPerf()
+    {
+        const string probe = @"levels\mods\_kalo_tour\cprobe\cprobe.scenario";
+        var map = await _vm.OpenMapAsync(probe);
+        _vm.ActiveDocument = map;
+        await Pause(3000);
+        async Task<long> Ui(Action a)
+        {
+            var sw = Stopwatch.StartNew();
+            a();
+            await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+            return sw.ElapsedMilliseconds;
+        }
+        Say($"perf: {map.Items.Count} items");
+        Say($"perf: Volumes off {await Ui(() => map.ShowVolumes = false)} ms, on {await Ui(() => map.ShowVolumes = true)} ms");
+        Say($"perf: AI off {await Ui(() => map.ShowAi = false)} ms, on {await Ui(() => map.ShowAi = true)} ms");
+        var pt = map.Items.First(i => i.IsAiSpawnPoint);
+        Say($"perf: select a spawn point {await Ui(() => map.SetSelection(new[] { pt }))} ms");
+        int before = map.Items.Count;
+        var sw = Stopwatch.StartNew();
+        await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.AiSpawnPoints);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+        Say($"perf: add spawn point {sw.ElapsedMilliseconds} ms ({before} → {map.Items.Count}, selected {map.Selected?.Display})");
+        sw.Restart();
+        await map.DuplicateSelectedCommand.ExecuteAsync(null);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+        Say($"perf: duplicate {sw.ElapsedMilliseconds} ms ({map.Items.Count})");
+        sw.Restart();
+        await map.DeleteSelectedCommand.ExecuteAsync(null);
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+        Say($"perf: delete {sw.ElapsedMilliseconds} ms ({map.Items.Count})");
+        sw.Restart();
+        await map.UndoAsync();
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+        Say($"perf: undo {sw.ElapsedMilliseconds} ms ({map.Items.Count}) {map.Status}");
+        Check(map.Items.Count == before + 2, $"undo brought the deleted spawn point back ({map.Items.Count})");
+        sw.Restart();
+        await map.RedoAsync();
+        await Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() => { }, Avalonia.Threading.DispatcherPriority.Background);
+        Say($"perf: redo {sw.ElapsedMilliseconds} ms ({map.Items.Count}) {map.Status}");
+        Check(map.Items.Count == before + 1, $"redo deleted it again ({map.Items.Count})");
+        await map.UndoAsync(); await map.UndoAsync(); await map.UndoAsync();
+        Check(map.Items.Count == before, $"three more undos: back to the start ({map.Items.Count} of {before})");
+        foreach (string l in _vm.OutputLines.Where(l => l.Contains("undo step")).TakeLast(6)) Say(l);
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
     }
 
     /// <summary>

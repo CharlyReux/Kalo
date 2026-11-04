@@ -517,6 +517,9 @@
                     <TextBlock Text="CELLS (WHAT THE SQUAD SPAWNS)" Classes="header" Margin="0,4,0,0" IsVisible="{Binding HasCells, FallbackValue=False}" />
                     <TextBlock Text="{Binding TemplateNote, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KWarning}" TextWrapping="Wrap"
                                IsVisible="{Binding HasTemplateNote, FallbackValue=False}" />
+                    <Button Classes="outline" Content="{Binding TemplateButton, FallbackValue=''}" IsVisible="{Binding HasTemplate, FallbackValue=False}" HorizontalAlignment="Left"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.OpenSquadTemplateCommand, FallbackValue={x:Null}}"
+                            ToolTip.Tip="Open the squad template in the field editor. It is shared: every squad (in every mission of your mod) made from it changes. Save keeps a copy in your mod." />
                     <Button Classes="outline" Content="Use its own cells" IsVisible="{Binding IsTemplated, FallbackValue=False}" HorizontalAlignment="Left"
                             Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ActiveMap.DetachSquadCommand, FallbackValue={x:Null}}"
                             ToolTip.Tip="Detach the squad from its template: it gets a copy of the template's cells as its own, and then these cells decide what spawns (editable here)" />

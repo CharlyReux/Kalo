@@ -276,7 +276,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task CommitSelectionAsync()
     {
-        using var edit = await EditAsync("move");
+        using var edit = await EditAsync("move", CampaignScope(_selection));
         foreach (var item in _selection.ToList()) await CommitMoveAsync(item);
     }
 
@@ -362,6 +362,7 @@ public partial class MapEditorViewModel : DocumentViewModel
                 return;
             }
         }
+        using var busy = Busy("Reading the map…");
         try
         {
             var data = await _main.Host!.GetPlacementsAsync(Path);
@@ -555,7 +556,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task CommitMoveAsync(PlacementItem item)
     {
-        using var edit = await EditAsync("move");
+        using var edit = await EditAsync("move", CampaignScope(new[] { item }));
         if (_main.Host == null) return;
         try
         {
@@ -578,7 +579,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     public async Task RotateSelectedAsync(float degrees)
     {
-        using var edit = await EditAsync("turn");
+        using var edit = await EditAsync("turn", CampaignScope(_selection));
         foreach (var item in _selection.ToList())
         {
             item.SetRotationLocal(item.Yaw + degrees, item.Pitch, item.Roll);
@@ -593,7 +594,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     [RelayCommand]
     private async Task DuplicateSelected()
     {
-        using var edit = await EditAsync("duplicate");
+        using var edit = await EditAsync("duplicate", CampaignScope(_selection));
         if (_selection.Count == 0) return;
         float offset = Math.Max(0.5f, _selection.Max(i => i.PickRadius) * 2f);
         foreach (var k in SelectionKeys())
@@ -603,7 +604,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     [RelayCommand]
     private async Task DeleteSelected()
     {
-        using var edit = await EditAsync("delete");
+        using var edit = await EditAsync("delete", CampaignScope(_selection));
         if (_selection.Count == 0) return;
         foreach (var k in SelectionKeys())
             await RunOpAsync(new PlacementOpParams { Path = Path, Category = k.Category, Op = PlacementOps.Remove, Index = k.Index }, k.Category);

@@ -399,16 +399,19 @@ public partial class MainViewModel
     [ObservableProperty] private string? _newMapBase;
     /// <summary>New map starting point: "barebone" (a platform and spawns), "empty" (a Reach level, spawns only) or "full".</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(NewMapEmpty), nameof(NewMapFull), nameof(NewMapBarebone), nameof(NewMapCampaign), nameof(NeedsBaseLevel), nameof(BaseLevels), nameof(NewMapLevelLabel))]
+    [NotifyPropertyChangedFor(nameof(NewMapEmpty), nameof(NewMapFull), nameof(NewMapBarebone), nameof(NewMapCampaign), nameof(NewMapEmptyCampaign), nameof(NeedsBaseLevel), nameof(BaseLevels), nameof(NewMapLevelLabel))]
     private string _newMapKind = "barebone";
     public bool NewMapCampaign { get => NewMapKind == "campaign"; set { if (value) NewMapKind = "campaign"; } }
-    public string NewMapLevelLabel => NewMapCampaign ? "Mission to copy (m05 Noble Actual … m70 The Pillar of Autumn)" : "Level to build on";
+    /// <summary>An empty campaign mission: a mission's level and zone sets with no AI, no cutscenes and a starter script.</summary>
+    public bool NewMapEmptyCampaign { get => NewMapKind == "emptycampaign"; set { if (value) NewMapKind = "emptycampaign"; } }
+    private bool IsCampaignKind => NewMapKind is "campaign" or "emptycampaign";
+    public string NewMapLevelLabel => IsCampaignKind ? "Mission to copy (m05 Noble Actual … m70 The Pillar of Autumn)" : "Level to build on";
     partial void OnNewMapKindChanged(string value)
     {
         // The level list follows the kind (campaign missions or multiplayer levels).
         var levels = BaseLevels.ToList();
         if (NewMapBase == null || !levels.Contains(NewMapBase))
-            NewMapBase = value == "campaign" ? levels.FirstOrDefault(s => s.EndsWith(@"\m10")) ?? levels.FirstOrDefault()
+            NewMapBase = value is "campaign" or "emptycampaign" ? levels.FirstOrDefault(s => s.EndsWith(@"\m10")) ?? levels.FirstOrDefault()
                                              : levels.FirstOrDefault(s => s.EndsWith("20_sword_slayer")) ?? levels.FirstOrDefault();
     }
     public bool NewMapBarebone { get => NewMapKind == "barebone"; set { if (value) NewMapKind = "barebone"; } }
@@ -417,7 +420,7 @@ public partial class MainViewModel
     public bool NeedsBaseLevel => NewMapKind != "barebone";
 
     /// <summary>Reach levels a new map can start from: multiplayer levels, or campaign missions for a campaign map.</summary>
-    public IEnumerable<string> BaseLevels => Scenarios.Where(s => s.StartsWith(NewMapCampaign ? @"levels\solo\" : @"levels\multi\", StringComparison.OrdinalIgnoreCase));
+    public IEnumerable<string> BaseLevels => Scenarios.Where(s => s.StartsWith(IsCampaignKind ? @"levels\solo\" : @"levels\multi\", StringComparison.OrdinalIgnoreCase));
 
     [RelayCommand]
     private void OpenNewMapForm()
@@ -436,7 +439,7 @@ public partial class MainViewModel
     {
         var map = NewMapBarebone
             ? await CreateMapAsync(NewMapName, BareboneMap.Template[..^".scenario".Length], empty: true, barebone: true)
-            : await CreateMapAsync(NewMapName, NewMapBase, NewMapEmpty && !NewMapCampaign);
+            : await CreateMapAsync(NewMapName, NewMapBase, NewMapEmpty || NewMapEmptyCampaign);
         if (map != null) { IsNewMapOpen = false; NewMapName = ""; }
     }
 
@@ -470,7 +473,10 @@ public partial class MainViewModel
             var r = await Host.CreateMapAsync(new CreateMapParams { Template = baseScenario + ".scenario", NewPath = path, Empty = empty, MapId = mapId, Barebone = barebone });
             ModProjects.UpdateActive(m => m.MapTemplates[path] = baseScenario + ".scenario");
             RememberScenarioType(path[..^".scenario".Length], r.Type);
-            if (r.Type == "solo")
+            if (r.Type == "solo" && empty)
+                Log($"New empty campaign map {path} on the {System.IO.Path.GetFileName(baseScenario)} level: its zone sets, player starts and objects, no AI ({r.Removed} squads, objectives and cutscene entries removed), and one starter script to write your mission in: "
+                    + string.Join(", ", (r.Scripts ?? new()).Select(System.IO.Path.GetFileNameWithoutExtension)) + ". Help › Recipes › Tutorial: make a small mission shows how.");
+            else if (r.Type == "solo")
                 Log($"New campaign map {path}: a full copy of the {System.IO.Path.GetFileName(baseScenario)} mission, with its own copy of {r.Scripts?.Count ?? 0} mission script(s): "
                     + string.Join(", ", (r.Scripts ?? new()).Select(System.IO.Path.GetFileNameWithoutExtension)) + ".");
             else Log(barebone

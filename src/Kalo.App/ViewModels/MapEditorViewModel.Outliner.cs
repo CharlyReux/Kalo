@@ -497,7 +497,7 @@ public partial class MapEditorViewModel
         if (_main.Host == null || item.Category == Kalo.Protocol.StartLocations.Category) return;
         name = (name ?? "").Trim();
         if (name == (item.PlacedName ?? "")) return;
-        using var edit = await EditAsync("rename");
+        using var edit = await EditAsync("rename", CampaignScope(new[] { item }));
         try
         {
             var r = await _main.Host.PlacementOpAsync(new PlacementOpParams { Path = Path, Category = item.Category, Op = PlacementOps.Rename, Index = item.Index, Tag = name });
@@ -548,8 +548,8 @@ public partial class MapEditorViewModel
 
     public async Task<string?> SetPropertyAsync(PropertyRow row, string value)
     {
-        using var edit = await EditAsync("change property");
         var item = Selected;
+        using var edit = await EditAsync("change property", item == null ? null : CampaignScope(new[] { item }));
         if (_main.Host == null || item == null) return "No object.";
         try
         {

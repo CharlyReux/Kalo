@@ -117,7 +117,10 @@ public sealed class HostClient : IAsyncDisposable
         CallAsync<ObjectInfoResult>(Methods.ObjectInfo, new TagListParams { Tags = tags.ToList() }, TimeSpan.FromMinutes(2));
     public Task<ShaderInfoResult> ShaderInfoAsync(IEnumerable<string> shaders) =>
         CallAsync<ShaderInfoResult>(Methods.ShaderInfo, new TagListParams { Tags = shaders.ToList() }, TimeSpan.FromMinutes(5));
-    public Task<SnapshotResult> SnapshotAsync(string path) => CallAsync<SnapshotResult>(Methods.Snapshot, new SnapshotParams { Path = path });
+    public Task<SnapshotResult> SnapshotAsync(string path, List<string>? blocks = null) => CallAsync<SnapshotResult>(Methods.Snapshot, new SnapshotParams { Path = path, Blocks = blocks });
+    public Task<LevelPiecesResult> LevelPiecesAsync(LevelPiecesParams p) => CallAsync<LevelPiecesResult>(Methods.LevelPieces, p, TimeSpan.FromMinutes(3));
+    public Task<HideLevelPiecesResult> HideLevelPiecesAsync(HideLevelPiecesParams p) => CallAsync<HideLevelPiecesResult>(Methods.HideLevelPieces, p, TimeSpan.FromMinutes(3));
+    public Task<CategoriesResult> CategoriesAsync(string path, List<string> names) => CallAsync<CategoriesResult>(Methods.Categories, new CategoriesParams { Path = path, Names = names });
     public Task<SnapshotResult> RestoreAsync(string path, int id) => CallAsync<SnapshotResult>(Methods.Restore, new SnapshotParams { Path = path, Id = id });
     public Task<MakeVariantResult> MakeVariantAsync(MakeVariantParams p) => CallAsync<MakeVariantResult>(Methods.MakeVariant, p, TimeSpan.FromMinutes(2));
     public Task<ExportLevelMeshResult> ExportLevelMeshAsync(string scenario, string outputFile, IReadOnlyList<int>? bsps = null) =>

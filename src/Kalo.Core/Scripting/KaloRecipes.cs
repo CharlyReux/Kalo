@@ -93,6 +93,58 @@ dormant barn_skirm_init_start:
             Tip("Add a trigger volume (Add › Volume in the Campaign bar), rename it, then wait for players in it: sleep_until(volume_test_players(my_volume))."),
         });
 
+        yield return new("recipe-small-mission", G, "Tutorial: make a small mission", new[]
+        {
+            P("A mission of your own on a Reach level: walk into an area, an Elite appears, defeat it and the mission is won. About 15 minutes. It uses an empty campaign mission: the level, its zone sets, player starts and objects, with no AI, no cutscenes and one starter script."),
+            H("1. Create the mission"),
+            P("My mod › New map › Empty campaign mission. Name it (e.g. barn_fight), pick the level m10 (Winter Contingency) and click Create map. Kalo opens it; the Activity panel says what was kept."),
+            H("2. Find a place for the fight"),
+            P("In the Campaign bar, pick a zone set in Zone set: the view shows only the level pieces it loads (the mission switches zone sets as the player moves). Fly with ZQSD (WASD on QWERTY), right-drag to look, Shift for speed. The barn of m10 is a good spot: pick a zone set whose list shows bsp 2."),
+            H("3. Place the enemy"),
+            P("Look at the ground where the enemy should stand and click Add › Squad (Campaign bar). Kalo adds a squad named squad with one Elite and a spawn point there, and selects it."),
+            P("In the Squad section (right): change the Character or Weapon of its cell, or the count. Add › Spawn point adds another place for the squad's AI. Save (Ctrl+S)."),
+            H("4. Add the trigger"),
+            P("Look where the player should start the fight and click Add › Volume: a 4 x 4 x 3 box. In the panel on the right, type its Name: tv_start_fight, and its size (W, L, H) if it needs to be bigger. Save."),
+            H("5. Move the start"),
+            P("Show the start points: in the object list, Start locations. Select the first one and move it near your volume (drag it, or type its position). Save. Play (F5) starts the mission there."),
+            H("6. Write the mission script"),
+            P("Campaign bar › Mission scripts › your map's script (first in the list). It opens in Kalo Script. Replace the starter with:"),
+            Code(@"
+# barn_fight: walk into the barn, beat the Elite, win.
+startup mission_start:
+    print(""mission started"")
+    game_save()
+    sleep_until(volume_test_players(tv_start_fight), 1)
+    ai_place(squad)
+    sleep_until(ai_living_count(squad) == 0, 1)
+    print(""mission complete"")
+    game_won()
+"),
+            P("startup: runs once when the mission starts. sleep_until waits for its condition (checked every tick with 1). ai_place makes the squad appear at its spawn points. game_won ends the mission as won."),
+            P("Hover any word for its help; Check finds unknown names (a volume or squad that isn't in the map) and wrong values. Save writes it as HaloScript."),
+            H("7. Play it"),
+            P("Pick your map in the Play list (top) and press Play (F5). The mission loads (about 2 minutes for m10), you start at your start point; walk into the volume and fight. If the game can't compile the script, Problems says which line."),
+            Tip("While it runs, the Live game bar helps: Spawn this squad places the selected squad again, Can't die, Move me to the camera."),
+            H("Next steps"),
+            P("More squads (Add › Squad, then ai_place(squad_2)), checkpoints (game_save()), a second fight after the first (another volume and sleep_until), allies (set a squad's team to human in All squad fields…)."),
+            P("Change the place itself: Level pieces › Here hides a building or rock of the level (see the recipe Remove a building or rock from a level), and the Objects panel adds scenery from any mission."),
+        });
+
+        yield return new("recipe-level-pieces", G, "Remove a building or rock from a level", new[]
+        {
+            P("A Reach level is ground (its terrain and big walls) plus thousands of level pieces: buildings, rocks, pipes, crates, fences, each placed in the level. Kalo can hide level pieces in your map; the ground itself stays."),
+            H("1. Find the piece"),
+            P("Open your map (a copy of a level: My mod › New map). In the Campaign bar, pick a zone set, then aim the center of the view at the building or rock and click Level pieces › Here. A list opens on the right: the pieces there, nearest first, with the building they belong to (e.g. spadehorn_barn)."),
+            H("2. Hide it"),
+            P("Hide removes that one piece. Hide all N removes every piece of its building (a whole barn is about 1,500 pieces: walls, roof, shelves...). The 3D view reads the level again (a minute or two on big levels) and shows the result."),
+            P("The first time, Kalo copies that part of the level (its bsp) into your map's folder: the original level and other maps keep the piece. Save the map (Ctrl+S) to keep the change."),
+            H("3. Bring it back"),
+            P("Level pieces › Hidden lists every hidden piece: Show brings one back, Show them all brings back all of them. Ctrl+Z does not undo hiding."),
+            Tip("Hidden pieces are gone in the game (they are shrunk to nothing). Their baked shadows and lighting stay on the ground, and AI may still avoid where they were."),
+            H("Pieces from other levels"),
+            P("Level pieces can't be copied to another level: their shapes are stored inside their own level. To bring things from another mission, use objects instead: the Objects panel (bottom) lists every object of the game, scenery included (crates, barriers, trees, Covenant props, the Forge pieces); drag one onto the map view, or select it and click Add."),
+        });
+
         yield return new("recipe-live", G, "Test things while the game runs", new[]
         {
             P("While the game runs, the map tab shows a Live game bar: it acts on the running game, no restart."),
