@@ -52,6 +52,7 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("squads", StringComparer.OrdinalIgnoreCase) == true) await Section("squads", Squads);
                 if (AppArgs.Current.TourSections?.Contains("mission", StringComparer.OrdinalIgnoreCase) == true) await Section("mission", MissionKaloScript);
                 if (AppArgs.Current.TourSections?.Contains("squad-tools", StringComparer.OrdinalIgnoreCase) == true) await Section("squad-tools", SquadTools);
+                if (AppArgs.Current.TourSections?.Contains("live-mission", StringComparer.OrdinalIgnoreCase) == true) await Section("live-mission", LiveMission);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -2153,6 +2154,98 @@ public sealed class Tour
             File.Copy(scenarioFile + ".kalo_tour_bak", scenarioFile, true);
             File.Delete(scenarioFile + ".kalo_tour_bak");
             Say("the test map is back as it was (templated squad)");
+        }
+    }
+
+    /// <summary>
+    /// In game on the m10 copy: New squad here (an Elite cell), saved, Play here next to it, then the Live game bar:
+    /// spawn the new squad (probe: alive, shielded), move to the camera, load the zone set, remove all AI (probe: gone).
+    /// The test map is put back from a copy at the end.
+    /// </summary>
+    private async Task LiveMission()
+    {
+        const string probe = @"levels\mods\_kalo_tour\cprobe\cprobe.scenario";
+        string file = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, probe);
+        if (!Check(File.Exists(file), "the campaign probe map exists")) return;
+        File.Copy(file, file + ".kalo_tour_bak", true);
+        try
+        {
+            var map = await _vm.OpenMapAsync(probe);
+            _vm.ActiveDocument = map;
+            var pt = map.Items.FirstOrDefault(i => i.IsAiSpawnPoint && map.Squads.FirstOrDefault(q => q.Index == MapEditorViewModel.SquadOf(i))?.Name == "barn_skirm_init");
+            if (!Check(pt != null, "a spawn point of barn_skirm_init")) return;
+            map.SetSelection(new[] { pt! });
+            var until = DateTime.UtcNow.AddSeconds(30);
+            while (DateTime.UtcNow < until && map.SquadEditor?.Name != "barn_skirm_init") await Task.Delay(200);
+            // The new squad's point goes where the camera looks: 3 units in front of barn_skirm_init's point.
+            double yaw = pt!.Yaw * Math.PI / 180;
+            var dir = new Vector3((float)Math.Cos(yaw), (float)Math.Sin(yaw), 0);
+            map.LookFrom(pt.Position + new Vector3(0, 0, 1.2f), pt.Yaw, -40);
+            await Pause(1500);
+            await map.NewSquadHereCommand.ExecuteAsync(null);
+            until = DateTime.UtcNow.AddSeconds(30);
+            while (DateTime.UtcNow < until && map.SquadEditor?.Name.StartsWith("barn_skirm_init_new") != true) await Task.Delay(200);
+            var sq = map.SquadEditor;
+            if (!Check(sq is { IsTemplated: false, Cells.Count: > 0 } && sq.Name.StartsWith("barn_skirm_init_new"), "new squad: " + sq?.Name)) return;
+            string name = sq!.Name;
+            int elite = sq.Characters.ToList().IndexOf("elite");
+            sq.Cells[0].Characters[0].SelectedIndex = elite;
+            await Pause(2500);
+            var back = await _vm.Host!.SquadAsync(map.Path, sq.Index);
+            Check(back.Cells[0].Characters[0].Palette == elite, "its cell spawns an Elite");
+            // Play here loads the zone set picked in the Campaign bar: one with the barn's bsp (2).
+            map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+            await Pause(2000);
+            await map.SaveCommand.ExecuteAsync(null);
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            await _vm.PlayFromAsync(map, pt.Position - dir * 2 + new Vector3(0, 0, 0.3f), pt.Yaw);
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(5)));
+            if (!Check(done == loaded.Task, "the mission loaded")) return;
+            await Task.Delay(8000);
+            Check(map.IsGameRunning, "the Live game bar shows");
+            var newPoint = map.Items.FirstOrDefault(i => i.IsAiSpawnPoint && map.Squads.FirstOrDefault(q => q.Index == MapEditorViewModel.SquadOf(i))?.Name == name);
+            if (newPoint != null) map.SetSelection(new[] { newPoint });
+            await Pause(1000);
+            await map.LiveSpawnSquadCommand.ExecuteAsync(null);
+            Check(map.LiveStatus.StartsWith("Placed squad " + name), "Spawn this squad: " + map.LiveStatus);
+            await _vm.Game.RunConsoleAsync(new[] { "ai_disregard (players) true" }, TimeSpan.FromSeconds(10));
+            await Task.Delay(2000);
+            await _vm.Game.RunConsoleAsync(new[]
+            {
+                $"(if (> (ai_living_count {name}) 0) (print \"kalo probe: new squad alive\") (print \"kalo probe: new squad not alive\"))",
+                $"(if (> (object_get_shield (ai_get_object {name})) 0) (print \"kalo probe: new squad shielded\") (print \"kalo probe: new squad no shield\"))",
+            }, TimeSpan.FromSeconds(20));
+            await Task.Delay(2500);
+            Check(_vm.OutputLines.Any(l => l.Contains("kalo probe: new squad alive")), "the new squad is in the game");
+            Check(_vm.OutputLines.Any(l => l.Contains("kalo probe: new squad shielded")), "as an Elite (shielded)");
+            Shot("live-mission-squad");
+            map.LookFrom(pt.Position + dir * 4 + new Vector3(0, 0, 1.5f), pt.Yaw + 180, -10);
+            await Pause(1000);
+            await map.LiveTeleportCommand.ExecuteAsync(null);
+            Check(map.LiveStatus.StartsWith("Moved the player"), "Move me to the camera: " + map.LiveStatus);
+            await map.LiveSwitchZoneSetCommand.ExecuteAsync(null);
+            Check(map.LiveStatus.StartsWith("Switched the game"), "Load this zone set: " + map.LiveStatus);
+            await Task.Delay(3000);
+            await map.LiveRemoveAiCommand.ExecuteAsync(null);
+            await Task.Delay(1500);
+            await _vm.Game.RunConsoleAsync(new[] { $"(if (> (ai_living_count {name}) 0) (print \"kalo probe: still alive\") (print \"kalo probe: all removed\"))" }, TimeSpan.FromSeconds(20));
+            await Task.Delay(2500);
+            Check(_vm.OutputLines.Any(l => l.Contains("kalo probe: all removed")), "Remove all AI removed it");
+            foreach (string l in _vm.OutputLines.Where(l => l.Contains("kalo probe", StringComparison.Ordinal)).TakeLast(6)) Say("game: " + l);
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Pause(3000);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+            await Task.Delay(1000);
+            File.Copy(file + ".kalo_tour_bak", file, true);
+            File.Delete(file + ".kalo_tour_bak");
+            Say("the test map is back as it was");
         }
     }
 
