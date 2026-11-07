@@ -81,6 +81,20 @@ for each player:
             P("4. Save the map and the gametype, then Play (F5)."),
             Tip("Teleport: give the exit object a Megalo label (inspector › Properties › megalo label) and type that label in the box. Megalo has no real teleport: Kalo attaches the player to the exit and lets go."),
             Tip("The code is plain Kalo Script in the gametype, under a comment that names the zone: change it there for anything the list doesn't offer."),
+            H("In a campaign mission"),
+            P("Missions use trigger volumes instead (Add › Volume in the Campaign bar). Select one: When the player enters offers Spawn a squad, Checkpoint, Teleport the player to a flag, Kill zone and Win the mission. Add to mission script writes it into the mission's own script (it opens); save the map and the script, then Play."),
+            Tip("Teleport needs a flag where the player should arrive: Add › Flag, then name it. Volumes named like zone_set:... switch zone sets for the engine: scripts can't use them, add a volume of your own."),
+        });
+
+        yield return new("recipe-new-weapon", G, "Make a new weapon, change its look, use it in maps and missions", new[]
+        {
+            P("A new weapon starts from an existing one and gets its own files, so the original stays as it is."),
+            H("Steps"),
+            P("1. All game files: open a weapon (e.g. magnum). Change what you like (Each shot, Magazine size...), then New weapon from this… and give it a name. Kalo copies the weapon with its own bullet and damage files into your mod and opens the copy."),
+            P("2. Look › Paint…: click a material; every surface, including what the player holds, takes it. Look › Looks like…: double-click another weapon to take its model (stats, sounds and animations stay yours)."),
+            P("3. Use it › Place in map: in front of the camera of the map tab you opened last (a multiplayer map or a campaign mission). Use it › Add to map palette: in a mission, squads can then carry it (Squad section › Weapon)."),
+            P("4. Gametypes: Use in scripts… gives it a name for create_object and biped_give_weapon."),
+            Tip("Paint and Looks like work on vehicles, crates and scenery too. A game file painted from its tab becomes a painted copy in your mod; your mod's own files are painted in place."),
         });
 
         yield return new("recipe-mission-ai", G, "Change which enemies a mission spawns", new[]

@@ -482,6 +482,23 @@
                       <TextBox Grid.Column="5" Classes="compact mono" views:NumberDrag.Step="0.25" views:NumberDrag.Minimum="0.05"
                                Text="{Binding ActiveMap.Selected.VolumeHeight, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
                     </Grid>
+                    <!-- Trigger volumes: Kalo writes the mission script code -->
+                    <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,4,0,0"
+                            IsVisible="{Binding ActiveMap.Selected.IsVolume, FallbackValue=False}">
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="When the player enters" FontSize="11.5" FontWeight="SemiBold" />
+                        <ComboBox ItemsSource="{Binding ActiveMap.VolumeActionChoices, FallbackValue={x:Null}}" SelectedItem="{Binding ActiveMap.VolumeAction, FallbackValue={x:Null}}"
+                                  PlaceholderText="Pick what happens…" HorizontalAlignment="Stretch" FontSize="12" MinHeight="24" />
+                        <DockPanel IsVisible="{Binding ActiveMap.VolumeActionHasParam, FallbackValue=False}">
+                          <TextBlock Text="{Binding ActiveMap.VolumeParamLabel, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                          <ComboBox ItemsSource="{Binding ActiveMap.VolumeParamChoices, FallbackValue={x:Null}}" SelectedItem="{Binding ActiveMap.VolumeParam, FallbackValue={x:Null}}"
+                                    HorizontalAlignment="Stretch" FontSize="12" MinHeight="24" />
+                        </DockPanel>
+                        <Button Classes="outline" Content="Add to mission script" Command="{Binding ActiveMap.AddVolumeTriggerCommand, FallbackValue={x:Null}}" HorizontalAlignment="Left"
+                                ToolTip.Tip="Writes the code into the mission's own script (it opens), and names the volume if it has no name" />
+                        <TextBlock Text="{Binding ActiveMap.VolumeTriggerStatus, FallbackValue=''}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KMuted}" />
+                      </StackPanel>
+                    </Border>
                   </StackPanel>
                   <!-- Campaign AI: the squad of the selected spawn point(s): what spawns -->
                   <ContentControl Content="{Binding ActiveMap.SquadEditor, FallbackValue={x:Null}}" IsVisible="{Binding ActiveMap.HasSquadEditor, FallbackValue=False}">

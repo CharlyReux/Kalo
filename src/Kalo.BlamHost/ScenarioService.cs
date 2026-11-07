@@ -1149,6 +1149,30 @@ namespace Kalo.BlamHost
             using (var o = new TagFile(TagService.TagPathOf(p.Object)))
             {
                 ((TagFieldReference)Find(o.Fields, "model", 3)).Path = TagService.TagPathOf(newModel);
+                // Weapons: what the player holds is drawn with the first person models: paint them too (most are the
+                // world render model itself; others get a painted copy of their own).
+                var fp = o.SelectField("Struct:player interface[0]/Block:first person") as TagFieldBlock;
+                var painted = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [renderPath] = newRender };
+                for (int i = 0; fp != null && i < fp.Elements.Count; i++)
+                {
+                    var fpModel = o.SelectField("Struct:player interface[0]/Block:first person[" + i + "]/Reference:first person model") as TagFieldReference;
+                    if (fpModel?.Path == null) continue;
+                    string fpPath = fpModel.Path.RelativePathWithExtension;
+                    if (!painted.TryGetValue(fpPath, out string fpNew))
+                    {
+                        fpNew = Path.Combine(dir, name + "_fp" + painted.Count + ".render_model");
+                        _tags.CloseIfOpen(fpNew);
+                        using (var r = new TagFile(TagService.TagPathOf(fpPath)))
+                        {
+                            var materials = r.SelectField("Block:materials") as TagFieldBlock;
+                            for (int k = 0; materials != null && k < materials.Elements.Count; k++)
+                                if (r.SelectField("Block:materials[" + k + "]/Reference:render method") is TagFieldReference rm) rm.Path = TagService.TagPathOf(p.Shader);
+                            r.SaveAs(TagService.TagPathOf(fpNew));
+                        }
+                        painted[fpPath] = fpNew;
+                    }
+                    fpModel.Path = TagService.TagPathOf(fpNew);
+                }
                 o.SaveAs(TagService.TagPathOf(p.NewObject));
             }
             _objectInfo.Remove(p.NewObject);

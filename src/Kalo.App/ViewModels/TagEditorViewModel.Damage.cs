@@ -236,3 +236,29 @@ public partial class ShotInfo : ObservableObject
         UpdateSummary();
     }
 }
+
+/// <summary>New weapon from this one, and the Use it buttons (place it in a map, add it to a map's palette).</summary>
+public partial class TagEditorViewModel
+{
+    public bool IsWeapon => Group == "weapon" && !IsScoped;
+    /// <summary>Weapons, vehicles, scenery, crates...: files a map can place.</summary>
+    public bool IsPlaceable => !IsScoped && MapEditorViewModel.CategoryFor(Path) != null;
+    [ObservableProperty] private string _useStatus = "";
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private async Task PlaceInMap()
+    {
+        if (IsDirty) { UseStatus = "Save first: maps use the file as it is on disk."; return; }
+        string? map = _main.LastMap?.Title;
+        UseStatus = await _main.PlaceInLastMapAsync(Path) is { } why ? why : $"Placed in {map} in front of its camera. Save the map to keep it.";
+    }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private async Task AddToMapPalette()
+    {
+        if (IsDirty) { UseStatus = "Save first: maps use the file as it is on disk."; return; }
+        string? map = _main.LastMap?.Title;
+        UseStatus = await _main.AddToLastMapPaletteAsync(Path) is { } why ? why
+            : $"Added to {map}'s palette: its squads can carry it (Squad section › Weapon) and it is listed for placing. Save the map to keep it.";
+    }
+}

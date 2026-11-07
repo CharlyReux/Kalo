@@ -271,7 +271,7 @@
                 Padding="8" Width="300" MaxHeight="460" VerticalAlignment="Top">
           <DockPanel>
             <TextBlock DockPanel.Dock="Top" Text="MATERIALS" Classes="header" Margin="0,0,0,2" />
-            <TextBlock DockPanel.Dock="Top" Text="Select blocks, then click a material. Kalo saves a painted copy of each piece in your mod."
+            <TextBlock DockPanel.Dock="Top" Text="Select objects (blocks, crates, scenery, weapons...), then click a material. Kalo saves a painted copy of each in your mod."
                        TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KMuted}" Margin="0,0,0,6" />
             <ScrollViewer>
               <ItemsControl ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).Materials}">

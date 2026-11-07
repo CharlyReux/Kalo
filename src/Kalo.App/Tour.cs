@@ -62,6 +62,9 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("loadouts", StringComparer.OrdinalIgnoreCase) == true) await Section("loadouts", LoadoutsSection);
                 if (AppArgs.Current.TourSections?.Contains("templates", StringComparer.OrdinalIgnoreCase) == true) await Section("templates", TemplatesSection);
                 if (AppArgs.Current.TourSections?.Contains("zones-play", StringComparer.OrdinalIgnoreCase) == true) await Section("zones-play", ZonesPlay);
+                if (AppArgs.Current.TourSections?.Contains("volumes-play", StringComparer.OrdinalIgnoreCase) == true) await Section("volumes-play", VolumesPlay);
+                if (AppArgs.Current.TourSections?.Contains("new-weapon", StringComparer.OrdinalIgnoreCase) == true) await Section("new-weapon", NewWeapon);
+                if (AppArgs.Current.TourSections?.Contains("weapon-play", StringComparer.OrdinalIgnoreCase) == true) await Section("weapon-play", WeaponPlay);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -2517,6 +2520,283 @@ public sealed class Tour
         Check(back.Text?.Contains("(game_won)") == true && back.Text.Contains("(volume_test_players tv_start_fight)"), "saved as HaloScript");
         Shot("tutorial-map");
         foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+    }
+
+    /// <summary>Runs <paramref name="body"/> in a throwaway mod (Kalo tour mod); the mod is deleted and the previous one restored.</summary>
+    private async Task InTourModAsync(Func<Task> body)
+    {
+        var projects = _vm.ModProjects!;
+        foreach (var old in projects.List().Where(x => x.Name == TourMod).ToList())
+        {
+            if (projects.ActiveName == old.Name) await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            projects.Delete(old);
+        }
+        _vm.RefreshProjects();
+        string? previous = projects.ActiveName;
+        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
+        File.WriteAllText(marker, previous ?? "");
+        _vm.NewModName = TourMod;
+        await _vm.CreateModCommand.ExecuteAsync(null);
+        try { await body(); }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+            await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            var p = projects.Find(TourMod);
+            if (p != null) projects.Delete(p);
+            _vm.RefreshProjects();
+            if (previous != null)
+            {
+                await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == previous));
+                Check(projects.ActiveName == previous, $"'{previous}' is active again");
+            }
+            try { File.Delete(marker); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// New weapon from this one: the magnum with an unsaved damage of 50 becomes hand_cannon with its own bullet and damage
+    /// files; the magnum keeps 17.5. Then Add to map palette on a campaign mission: a new squad's weapon list offers it.
+    /// </summary>
+    private Task NewWeapon() => InTourModAsync(async () =>
+    {
+        const string magnum = @"objects\weapons\pistol\magnum\magnum.weapon";
+        const string magnumDamage = @"objects\weapons\pistol\magnum\projectiles\magnum_bullet.damage_effect";
+        var tab = await _vm.OpenTagAsync(magnum);
+        for (int i = 0; i < 50 && tab?.Shot == null; i++) await Task.Delay(100);
+        if (!Check(tab?.Shot != null && tab.IsWeapon, "the magnum shows Each shot and New weapon from this")) return;
+        tab!.Shot!.Damage = "50";
+        await Task.Delay(500);
+        string? error = await _vm.NewWeaponFromAsync(tab, "Hand Cannon");
+        if (!Check(error == null, "New weapon from this: hand_cannon" + (error != null ? ": " + error : ""))) return;
+        const string folder = @"objects\mods\kalo_tour_mod\hand_cannon";
+        string Tags(string rel) => System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, rel);
+        Check(File.Exists(Tags(folder + @"\hand_cannon.weapon")) && File.Exists(Tags(folder + @"\hand_cannon_bullet.projectile"))
+              && Directory.GetFiles(Tags(folder), "*.damage_effect").Length >= 1, "the weapon, its bullet and its damage file are in the mod: " + string.Join(", ", Directory.GetFiles(Tags(folder)).Select(System.IO.Path.GetFileName)));
+        var copy = _vm.Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.EndsWith("hand_cannon.weapon"));
+        for (int i = 0; i < 50 && copy?.Shot == null; i++) await Task.Delay(100);
+        Check(copy?.Shot?.Projectile.EndsWith("hand_cannon_bullet.projectile") == true && copy.Shot.Damage == "50",
+            $"the new weapon fires its own bullet with the edited damage ({copy?.Shot?.Files}, {copy?.Shot?.Damage})");
+        var orig = await _vm.Host!.OpenTagAsync(magnumDamage);
+        Check(TagEditorViewModel.Find(orig.Fields, "damage lower bound")?.Value == "17.5", "the magnum's own damage file still says 17.5");
+        await _vm.Host.CloseTagAsync(magnumDamage);
+        Shot("new-weapon");
+
+        // Look › Paint: the mod's own weapon is painted in place, world and first person models.
+        await _vm.EnsureMaterialsAsync();
+        var material = _vm.Materials.FirstOrDefault(m => m.Name.Contains("metal", StringComparison.OrdinalIgnoreCase)) ?? _vm.Materials.First();
+        Check(copy!.IsModObject && copy.IsPlaceable, "the new weapon offers Look (painted in place: it is the mod's own)");
+        await copy.PaintWithCommand.ExecuteAsync(material);
+        Say("look: " + copy.LookStatus);
+        copy = _vm.Tabs.OfType<TagEditorViewModel>().First(t => t.Path.EndsWith("hand_cannon.weapon"));
+        string Ref(TagEditorViewModel t, string raw, int nth = 0) => t.AllFields().Where(f => f.IsReference && f.RawName == raw).Skip(nth).FirstOrDefault()?.Value ?? "";
+        Check(Ref(copy, "model").StartsWith(folder + @"\hand_cannon.model"), "its model is now the painted copy: " + Ref(copy, "model"));
+        Check(Ref(copy, "first person model").StartsWith(folder) && Ref(copy, "first person model", 1).StartsWith(folder),
+            "what the player holds is painted too (first person models): " + Ref(copy, "first person model"));
+        Check(File.Exists(Tags(folder + @"\hand_cannon.render_model")), "the painted render model is in the mod");
+        await Pause(400);
+        Shot("painted-weapon");
+
+        // Look › Looks like: the DMR's models (unsaved, then saved).
+        copy.ToggleLooksLikeCommand.Execute(null);
+        copy.LooksLikeQuery = "dmr weapon";
+        string? dmr = copy.LooksLikeResults.FirstOrDefault(r => r.EndsWith(@"\dmr.weapon"));
+        Check(dmr != null, "Looks like lists the DMR: " + string.Join(", ", copy.LooksLikeResults.Take(4)));
+        if (dmr != null)
+        {
+            await copy.LooksLikeCommand.ExecuteAsync(dmr);
+            Say("look: " + copy.LookStatus);
+            Check(Ref(copy, "model").Contains(@"\dmr\") && Ref(copy, "first person model").Contains(@"\dmr\") && copy.IsDirty, "it takes the DMR's model and first person models: " + Ref(copy, "model"));
+            await copy.SaveCommand.ExecuteAsync(null);
+        }
+
+        // Paint a game weapon: a painted copy goes into the mod, the game's file stays.
+        var ar = await _vm.OpenTagAsync(@"objects\weapons\rifle\assault_rifle\assault_rifle.weapon");
+        Check(ar != null && !ar.IsModObject, "the assault rifle is a game file");
+        await ar!.PaintWithCommand.ExecuteAsync(material);
+        var painted = _vm.Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.Contains(@"\mods\kalo_tour_mod\assault_rifle_"));
+        Check(painted != null && Ref(painted, "model").Contains(@"\mods\kalo_tour_mod\"), "painting it made a painted copy in the mod: " + painted?.Path);
+        var arAgain = await _vm.Host.OpenTagAsync(@"objects\weapons\rifle\assault_rifle\assault_rifle.weapon");
+        Check(TagEditorViewModel.Find(arAgain.Fields, "object/model")?.Value?.Contains(@"\mods\") != true, "the game's assault rifle keeps its own model");
+
+        // Campaign: the tour's empty m10 mission (volumes-play makes it) gets a squad, then the weapon in its palette.
+        const string mission = @"levels\mods\_kalo_tour\volumes\volumes.scenario";
+        if (!File.Exists(Tags(mission))) { Say("no tour mission (run volumes-play first): campaign palette part skipped"); return; }
+        _vm.RememberScenarioType(mission[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(mission);
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        await map.AddSquadCommand.ExecuteAsync(null);
+        _vm.ActiveDocument = copy;
+        await copy!.AddToMapPaletteCommand.ExecuteAsync(null);
+        Say("use: " + copy.UseStatus);
+        var squad = await _vm.Host.SquadAsync(map.Path, map.Squads.Count - 1);
+        Check(squad.Weapons?.Any(w => w.EndsWith("hand_cannon.weapon")) == true, "the mission's squads can now pick hand_cannon: " + string.Join(", ", (squad.Weapons ?? new()).Select(System.IO.Path.GetFileNameWithoutExtension)));
+        map.IsDirty = false;
+    });
+
+    /// <summary>
+    /// A new, painted weapon in game: hand_cannon (from the magnum, painted) placed by Use it › Place in map in an empty m10
+    /// mission (a stock magnum next to it as the control), named kalo_hc; the game is asked whether both exist.
+    /// </summary>
+    private Task WeaponPlay() => InTourModAsync(async () =>
+    {
+        // A campaign mission: placed objects exist there by name (on multiplayer maps the game respawns weapons itself, nameless).
+        var map = await _vm.CreateMapAsync("Weapon Test", @"levels\solo\m10\m10", empty: true);
+        if (!Check(map != null && map.IsCampaign, "created an empty campaign mission on m10")) return;
+        map!.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        var start = map.Items.First(i => i.Category == StartLocations.Category);
+        var tab = await _vm.OpenTagAsync(@"objects\weapons\pistol\magnum\magnum.weapon");
+        if (!Check(await _vm.NewWeaponFromAsync(tab!, "Hand Cannon") == null, "made hand_cannon")) return;
+        var hc = _vm.Tabs.OfType<TagEditorViewModel>().First(t => t.Path.EndsWith("hand_cannon.weapon"));
+        await _vm.EnsureMaterialsAsync();
+        await hc.PaintWithCommand.ExecuteAsync(_vm.Materials.FirstOrDefault(m => m.Name.Contains("metal", StringComparison.OrdinalIgnoreCase)) ?? _vm.Materials.First());
+        hc = _vm.Tabs.OfType<TagEditorViewModel>().First(t => t.Path.EndsWith("hand_cannon.weapon"));
+        // Place it at the first start location: Use it › Place in map puts it in front of the map's camera.
+        map.LookFrom(start.Position + new Vector3(-2, 0, 1.6f), 0, -35);
+        await Pause(1500);
+        await hc.PlaceInMapCommand.ExecuteAsync(null);
+        Say("use: " + hc.UseStatus);
+        var placed = map.Items.FirstOrDefault(i => i.Tag.EndsWith("hand_cannon.weapon"));
+        if (!Check(placed != null, "Place in map put hand_cannon on the map")) return;
+        await map.RenameAsync(placed!, "kalo_hc");
+        await map.SaveCommand.ExecuteAsync(null);
+
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _vm.Game!.Loaded += () => loaded.TrySetResult();
+        var probes = new List<string>();
+        _vm.Game.Output += line => { if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..]); };
+        await _vm.PlayCommand.ExecuteAsync(null);
+        var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+        if (!Check(done == loaded.Task, "the game loaded the map with the painted weapon")) return;
+        bool ran = false;
+        for (int round = 1; round <= 10; round++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(8));
+            // A name the game doesn't know makes the command fail; -1 means no player yet.
+            ran = await _vm.Game.RunConsoleAsync(new[]
+            {
+                $"(if (< (objects_distance_to_object (players) kalo_hc) 0) (print \"kalo probe: r{round} no player\") (print \"kalo probe: r{round} measured\"))",
+                $"(if (< (objects_distance_to_object (players) kalo_hc) 30) (print \"kalo probe: r{round} weapon near\") (print \"kalo probe: r{round} weapon far\"))",
+                $"(if (> (list_count (players)) 0) (print \"kalo probe: r{round} has players\") (print \"kalo probe: r{round} no players\"))",
+            }, TimeSpan.FromSeconds(10));
+            lock (probes) if (probes.Any(p => p.Contains("measured"))) break;
+        }
+        for (int i = 0; i < 20; i++) { lock (probes) if (probes.Any(p => p.Contains("measured"))) break; await Task.Delay(1000); }
+        lock (probes) foreach (var p in probes.Distinct()) Say(p);
+        Check(ran, "the game knows the object kalo_hc (the probe ran)");
+        lock (probes) Check(probes.Any(p => p.Contains("measured")), "the painted weapon exists in the running mission (the game measures the distance to it)");
+        Check(_vm.IsGameRunning, "the game is still running (no crash)");
+        _vm.StopGameCommand.Execute(null);
+        await Pause(3000);
+    });
+
+    /// <summary>
+    /// Campaign volumes in game: an empty m10 mission (levels\mods\_kalo_tour\volumes, outside the mod), an unnamed volume
+    /// around the player's start with Checkpoint and Teleport to a flag (fl_exit) from the inspector, a control flag inside
+    /// the volume. Played: the game is asked how far the player is from each flag.
+    /// </summary>
+    private async Task VolumesPlay()
+    {
+        const string path = @"levels\mods\_kalo_tour\volumes\volumes.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour\volumes");
+        if (Directory.Exists(folder)) Directory.Delete(folder, true);
+        var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = @"levels\solo\m10\m10.scenario", NewPath = path, Empty = true, MapId = 7993 });
+        Check(r.Type == "solo", "empty campaign mission on m10");
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        try
+        {
+            // The exit flag where the tutorial's squad stands; the volume and a control flag where its volume is.
+            map.LookFrom(new Vector3(134.03f, 35.20f, 3.0f), 0, -60);
+            await Pause(1500);
+            await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.CutsceneFlags);
+            if (!Check(map.Selected is { Category: CampaignCategories.CutsceneFlags }, "Add › Flag")) return;
+            await map.RenameAsync(map.Selected!, "fl_exit");
+            map.LookFrom(new Vector3(146f, 26f, 3.0f), 0, -60);
+            await Pause(1500);
+            await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.CutsceneFlags);
+            await map.RenameAsync(map.Selected!, "fl_control");
+            var exitFlag = map.Items.First(i => i.PlacedName == "fl_exit");
+            Say($"fl_exit at {exitFlag.Position}, fl_control at {map.Selected!.Position}, {Vector3.Distance(exitFlag.Position, map.Selected.Position):F1} apart");
+            await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.TriggerVolumes);
+            var volume = map.Selected;
+            if (!Check(volume is { IsVolume: true }, "Add › Volume (left unnamed)")) return;
+            var start = map.Items.First(i => i.Category == StartLocations.Category);
+            map.MoveLocal(start, volume!.Position - new Vector3(0, 0, 1.2f));
+            await map.CommitMoveAsync(start);
+            map.SetSelection(new[] { volume });
+
+            map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.VolumeAction.Checkpoint);
+            await map.AddVolumeTriggerCommand.ExecuteAsync(null);
+            Say("volume: " + map.VolumeTriggerStatus);
+            int volumeIndex = volume.Index;
+            volume = map.Items.FirstOrDefault(i => i.IsVolume && i.Index == volumeIndex);
+            Check(!string.IsNullOrEmpty(volume?.PlacedName), "the volume has a script name: " + volume?.PlacedName);
+            map.SetSelection(new[] { volume! });
+            map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.VolumeAction.TeleportToFlag);
+            Check(map.VolumeParamChoices.Contains("fl_exit"), "the flag list offers fl_exit: " + string.Join(", ", map.VolumeParamChoices));
+            map.VolumeParam = "fl_exit";
+            await map.AddVolumeTriggerCommand.ExecuteAsync(null);
+            Say("volume: " + map.VolumeTriggerStatus);
+            var doc = _vm.Tabs.OfType<MissionScriptViewModel>().FirstOrDefault();
+            Check(doc != null && doc.Text.Contains("object_teleport(player_get(0), fl_exit)") && doc.Text.Contains("game_save()"), "both actions are in the mission script");
+            Check(doc?.CheckOk == true, "the mission script checks clean: " + doc?.Summary);
+            if (doc != null) await doc.SaveDocumentAsync();
+            await map.SaveCommand.ExecuteAsync(null);
+            _vm.ActiveDocument = map;
+            await Pause(500);
+            Shot("volume-map");
+
+            string name = path[..^".scenario".Length];
+            if (!_vm.Scenarios.Contains(name, StringComparer.OrdinalIgnoreCase)) _vm.Scenarios.Insert(0, name);
+            _vm.SelectedScenario = _vm.Scenarios.First(s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            var probes = new List<string>();
+            _vm.Game.Output += line => { if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..]); };
+            await _vm.PlayCommand.ExecuteAsync(null);
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            if (!Check(done == loaded.Task, "the mission loaded")) return;
+            static string[] Probe(int round, string flag) => new[]
+            {
+                $"(if (< (objects_distance_to_flag (players) {flag}) 0) (print \"kalo probe: r{round} no player for {flag}\") (print \"kalo probe: r{round} measured {flag}\"))",
+                $"(if (< (objects_distance_to_flag (players) {flag}) 2.5) (print \"kalo probe: r{round} near {flag}\") (print \"kalo probe: r{round} far from {flag}\"))",
+                $"(if (< (objects_distance_to_flag (players) {flag}) 6) (print \"kalo probe: r{round} {flag} under 6\") (print \"kalo probe: r{round} {flag} over 6\"))",
+                $"(if (< (objects_distance_to_flag (players) {flag}) 15) (print \"kalo probe: r{round} {flag} under 15\") (print \"kalo probe: r{round} {flag} over 15\"))",
+            };
+            bool Has(string s) { lock (probes) return probes.Contains("kalo probe: " + s); }
+            var measured = new List<int>();
+            for (int round = 1; round <= 12 && measured.Count < 2; round++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(8));
+                await _vm.Game.RunConsoleAsync(Probe(round, "fl_exit").Concat(Probe(round, "fl_control")).ToArray(), TimeSpan.FromSeconds(10));
+                for (int k = 1; k <= round; k++) if (!measured.Contains(k) && Has($"r{k} measured fl_exit") && Has($"r{k} measured fl_control")) measured.Add(k);
+            }
+            for (int i = 0; i < 20 && measured.Count == 0; i++) await Task.Delay(1000);
+            lock (probes) foreach (var p in probes.Distinct()) Say(p);
+            if (Check(measured.Count > 0, $"the game measured the player (rounds {string.Join(", ", measured)})"))
+            {
+                int k = measured[^1];
+                // The player lands next to the flag (a few units: the flag stands on uneven ground); the flags are 17 units apart.
+                Check(Has($"r{k} fl_exit under 6"), "the volume teleported the player to fl_exit (within 6 units)");
+                Check(Has($"r{k} fl_control over 15"), "the player left the volume (over 15 units from the control flag)");
+            }
+            _vm.StopGameCommand.Execute(null);
+            await Pause(3000);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+        }
     }
 
     /// <summary>Play here on the empty m10 mission, looking at the barn (the runner screenshots the game): for level geometry probes.</summary>

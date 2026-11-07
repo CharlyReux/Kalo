@@ -114,6 +114,20 @@ switch (command)
         Console.WriteLine(tr.Succeeded ? "transpiles" : "errors: " + string.Join("; ", tr.Errors));
         break;
     }
+    case "volume-trigger":
+    {
+        // volume-trigger: each campaign volume action added (twice) to a tiny mission script, turned into HaloScript by Kalo's converter.
+        string start = "startup mission_start:\n    print(\"start\")\n";
+        foreach (var c in VolumeTriggers.Choices)
+        {
+            string param = c.Param == "squad" ? "squad_1" : c.Param == "flag" ? "fl_exit" : "";
+            string text = VolumeTriggers.AddTo(VolumeTriggers.AddTo(start, "tv_room", c.Action, param), "tv_room", c.Action, param);
+            var r = MissionScript.ToHaloScript(text);
+            Console.WriteLine($"== {c.Action}: {(r.Errors.Count == 0 ? "ok" : string.Join("; ", r.Errors))}, {System.Text.RegularExpressions.Regex.Matches(text, "Written by Kalo").Count} block(s)");
+            Console.WriteLine(r.HaloScript.Trim());
+        }
+        break;
+    }
     case "zone-trigger":
     {
         // zone-trigger <in.kscript> <out-folder>: adds each zone action to the script and saves one file per action (then kscript-compile them).

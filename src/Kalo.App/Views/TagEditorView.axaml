@@ -42,11 +42,62 @@
                     Command="{Binding RemoveScriptNameCommand}" ToolTip.ShowOnDisabled="True" ToolTip.Tip="{Binding RemoveScriptNameTip}" />
             <Button Classes="outline" Content="Use in scripts…" IsVisible="{Binding ShowUseInScripts}" Click="UseInScripts_Click"
                     ToolTip.Tip="Let gametype scripts create this object: create_object(&quot;name&quot;, at ...)" />
+            <Button Classes="outline" Content="New weapon from this…" Click="NewWeapon_Click" IsVisible="{Binding IsWeapon}"
+                    ToolTip.Tip="A new weapon in your mod, made from this one (with your edits), with its own bullet and damage files: change its damage without changing this weapon." />
             <Button Classes="outline" Content="Save as new…" Click="SaveAsNew_Click"
                     ToolTip.Tip="Save this file, with your edits, as a new file in your mod (e.g. a new object based on this one). This file itself is not changed." />
             <Button Classes="primary" Content="Save" Command="{Binding SaveCommand}" IsEnabled="{Binding IsDirty}" ToolTip.Tip="Save (Ctrl+S). A running game reloads it." />
           </StackPanel>
       </WrapPanel>
+    </Border>
+
+    <!-- Objects: use it in a map (multiplayer or campaign) -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="12,4" IsVisible="{Binding IsPlaceable}">
+      <WrapPanel Orientation="Horizontal">
+        <TextBlock Text="Use it" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+        <Button Classes="outline" Content="Place in map" Command="{Binding PlaceInMapCommand}" Margin="0,2,6,2"
+                ToolTip.Tip="Places it in front of the camera of the map tab you opened last (multiplayer map or campaign mission)" />
+        <Button Classes="outline" Content="Add to map palette" Command="{Binding AddToMapPaletteCommand}" Margin="0,2,6,2"
+                ToolTip.Tip="Adds it to that map's palette without placing it: in a mission, squads can then carry it (Squad section › Weapon)" />
+        <TextBlock Text="{Binding UseStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="520" />
+      </WrapPanel>
+    </Border>
+
+    <!-- Objects: their look (paint, or another object's model) -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="12,4" IsVisible="{Binding IsPlaceable}">
+      <StackPanel Spacing="4">
+        <WrapPanel Orientation="Horizontal">
+          <TextBlock Text="Look" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
+          <ToggleButton Classes="outline" Content="Paint…" IsChecked="{Binding IsPaintOpen, Mode=OneWay}" Command="{Binding TogglePaintCommand}" Margin="0,2,6,2"
+                        ToolTip.Tip="Paint every surface with one of Reach's materials. Your mod's own objects are painted in place; the game's get a painted copy in your mod." />
+          <ToggleButton Classes="outline" Content="Looks like…" IsChecked="{Binding IsLooksLikeOpen, Mode=OneWay}" Command="{Binding ToggleLooksLikeCommand}" Margin="0,2,6,2"
+                        ToolTip.Tip="Take the model of another object of the same kind (a weapon for a weapon...). Everything else stays: stats, sounds, animations." />
+          <TextBlock Text="{Binding LookStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="620" />
+        </WrapPanel>
+        <ScrollViewer IsVisible="{Binding IsPaintOpen}" MaxHeight="220">
+          <ItemsControl ItemsSource="{Binding Main.Materials}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate DataType="vm:MaterialChoice">
+                <Button Padding="2" Margin="0,0,4,4" Background="Transparent" BorderThickness="0" ToolTip.Tip="{Binding Shader}"
+                        Command="{Binding $parent[UserControl].((vm:TagEditorViewModel)DataContext).PaintWithCommand}" CommandParameter="{Binding}">
+                  <StackPanel Width="56" Spacing="2">
+                    <Image Source="{Binding Swatch}" Width="56" Height="56" Stretch="UniformToFill" />
+                    <TextBlock Text="{Binding Name}" FontSize="9.5" TextTrimming="CharacterEllipsis" Foreground="{StaticResource KMuted}" />
+                  </StackPanel>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+        <DockPanel IsVisible="{Binding IsLooksLikeOpen}">
+          <TextBox DockPanel.Dock="Top" Classes="compact" Watermark="Search (e.g. dmr, rocket, crate)" Text="{Binding LooksLikeQuery}" Width="320" HorizontalAlignment="Left" Margin="0,0,0,4" />
+          <ListBox ItemsSource="{Binding LooksLikeResults}" MaxHeight="180" FontSize="12" DoubleTapped="LooksLike_DoubleTapped"
+                   ToolTip.Tip="Double-click the object to look like" />
+        </DockPanel>
+      </StackPanel>
     </Border>
 
     <!-- Simple view: what it shows and where the rest is -->

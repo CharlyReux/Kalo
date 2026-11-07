@@ -59,6 +59,28 @@ public partial class TagEditorView : UserControl
         if (!string.IsNullOrWhiteSpace(name)) await main.SaveTagAsNewAsync(tab, name);
     }
 
+    private async void LooksLike_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)
+    {
+        if (DataContext is Kalo.App.ViewModels.TagEditorViewModel tab && sender is ListBox { SelectedItem: string other })
+            await tab.LooksLikeCommand.ExecuteAsync(other);
+    }
+
+    private async void NewWeapon_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not Kalo.App.ViewModels.TagEditorViewModel tab || TopLevel.GetTopLevel(this) is not Window owner) return;
+        string current = System.IO.Path.GetFileNameWithoutExtension(tab.Path);
+        string label = "Name of the new weapon. It goes into your mod with its own bullet and damage files (your edits here come with it); " +
+                       current + " stays as it is. Then: Place in map, Add to map palette (squads), or Use in scripts (gametypes).";
+        string? name = current + "_custom", error = null;
+        while (true)
+        {
+            name = await Dialogs.PromptAsync(owner, "New weapon from this one", error == null ? label : label + "\n\n" + error, name ?? "");
+            if (string.IsNullOrWhiteSpace(name)) return;
+            error = await tab.Main.NewWeaponFromAsync(tab, name.Trim());
+            if (error == null) return;
+        }
+    }
+
     /// <summary>Each shot box: Enter commits the number (focus moves away, which pushes the text).</summary>
     private void ShotBox_KeyDown(object? sender, KeyEventArgs e)
     {

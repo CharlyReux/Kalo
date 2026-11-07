@@ -144,7 +144,9 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   shows only the sizes that shape uses; zones are drawn in the view. Under it, "When a player enters" (message, kill, weapon,
   points, speed boost, teleport to another object) and Add to gametype write the Kalo Script into the gametype picked for
   Play (or a new one from Slayer) and give the object a Megalo label if it has none. Teleport attaches the player to the
-  exit object and detaches it there (checked in game: --tour-sections zones-play). Name an object (inspector "Name", or F2 /
+  exit object and detaches it there (checked in game: --tour-sections zones-play).
+  Campaign trigger volumes have "When the player enters" too (spawn a squad, checkpoint, teleport to a flag, kill zone, win),
+  written into the mission's own script (checked in game: volumes-play). Name an object (inspector "Name", or F2 /
   Rename in the object list) to find it again, e.g. "red_goal". Drag any number box left/right to change it
   (Shift: fine, Ctrl: coarse).
 - Campaign missions: New map › "Campaign mission" copies a Reach mission (m05 … m70_bonus) into your mod whole:

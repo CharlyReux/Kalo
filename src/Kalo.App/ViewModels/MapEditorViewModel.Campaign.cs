@@ -385,6 +385,9 @@ public partial class MapEditorViewModel
     partial void OnSquadEditorChanged(SquadEditorViewModel? value) => OnPropertyChanged(nameof(HasSquadEditor));
     private int _squadGeneration;
 
+    /// <summary>The weapon and character palettes changed (a weapon added from its tag tab): the Squad section reads them again.</summary>
+    public Task RefreshSquadPalettesAsync() => LoadSquadAsync();
+
     private async Task LoadSquadAsync()
     {
         int generation = ++_squadGeneration;
