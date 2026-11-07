@@ -49,6 +49,7 @@ namespace Kalo.BlamHost
                 SpawnPoints = new List<SquadPoint>(),
                 Characters = PaletteList(tag, "Block:character palette", "Reference:reference"),
                 Weapons = PaletteList(tag, "Block:weapon palette", "Reference:name"),
+                Vehicles = PaletteList(tag, "Block:vehicle palette", "Reference:name"),
             };
             int team = SafeValue(() => Convert.ToInt32(((TagFieldEnum)tag.SelectField(s + "ShortEnum:team")).Value), -1);
             // Where it starts: its initial zone and objective (by name), for the squad's plain summary.
@@ -89,6 +90,15 @@ namespace Kalo.BlamHost
                     Characters = Choices(tag, e + "Block:character type", "character type"),
                     Weapons = Choices(tag, e + "Block:initial weapon", "weapon type"),
                 });
+                // Its vehicle (a vehicle palette index): the field's exact type name varies, find it by name.
+                var cellBlock = tag.SelectField(cells) as TagFieldBlock;
+                if (cellBlock != null)
+                    foreach (TagField f in cellBlock.Elements[c].Fields)
+                        if (string.Equals(f.FieldName, "vehicle type", StringComparison.OrdinalIgnoreCase))
+                        {
+                            d.Cells[d.Cells.Count - 1].VehiclePath = e + f.FieldPath.Substring(f.FieldPath.LastIndexOf('/') + 1);
+                            d.Cells[d.Cells.Count - 1].Vehicle = Int(f);
+                        }
             }
             for (int j = 0, n = Count(tag, s + "Block:spawn points"); j < n; j++)
             {

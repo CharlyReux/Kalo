@@ -65,6 +65,8 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("volumes-play", StringComparer.OrdinalIgnoreCase) == true) await Section("volumes-play", VolumesPlay);
                 if (AppArgs.Current.TourSections?.Contains("new-weapon", StringComparer.OrdinalIgnoreCase) == true) await Section("new-weapon", NewWeapon);
                 if (AppArgs.Current.TourSections?.Contains("weapon-play", StringComparer.OrdinalIgnoreCase) == true) await Section("weapon-play", WeaponPlay);
+                if (AppArgs.Current.TourSections?.Contains("ai-play", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-play", AiPlay);
+                if (AppArgs.Current.TourSections?.Contains("attach-units", StringComparer.OrdinalIgnoreCase) == true) await Section("attach-units", AttachUnits);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -1366,14 +1368,18 @@ public sealed class Tour
     private async Task ZonesPlay()
     {
         var projects = _vm.ModProjects!;
+        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
+        // An interrupted run left the tour mod active and the user's mod aside: the marker names it.
+        string? interrupted = File.Exists(marker) ? File.ReadAllText(marker).Trim() : null;
         foreach (var old in projects.List().Where(x => x.Name == TourMod).ToList())
         {
             if (projects.ActiveName == old.Name) await _vm.SwitchProjectCommand.ExecuteAsync(null);
             projects.Delete(old);
         }
         _vm.RefreshProjects();
+        if (projects.ActiveName == null && !string.IsNullOrEmpty(interrupted) && projects.Find(interrupted) != null)
+            await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == interrupted));
         string? previous = projects.ActiveName;
-        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
         File.WriteAllText(marker, previous ?? "");
         _vm.NewModName = TourMod;
         await _vm.CreateModCommand.ExecuteAsync(null);
@@ -2526,14 +2532,18 @@ public sealed class Tour
     private async Task InTourModAsync(Func<Task> body)
     {
         var projects = _vm.ModProjects!;
+        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
+        // An interrupted run left the tour mod active and the user's mod aside: the marker names it.
+        string? interrupted = File.Exists(marker) ? File.ReadAllText(marker).Trim() : null;
         foreach (var old in projects.List().Where(x => x.Name == TourMod).ToList())
         {
             if (projects.ActiveName == old.Name) await _vm.SwitchProjectCommand.ExecuteAsync(null);
             projects.Delete(old);
         }
         _vm.RefreshProjects();
+        if (projects.ActiveName == null && !string.IsNullOrEmpty(interrupted) && projects.Find(interrupted) != null)
+            await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == interrupted));
         string? previous = projects.ActiveName;
-        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
         File.WriteAllText(marker, previous ?? "");
         _vm.NewModName = TourMod;
         await _vm.CreateModCommand.ExecuteAsync(null);
@@ -2690,6 +2700,248 @@ public sealed class Tour
         Check(ran, "the game knows the object kalo_hc (the probe ran)");
         lock (probes) Check(probes.Any(p => p.Contains("measured")), "the painted weapon exists in the running mission (the game measures the distance to it)");
         Check(_vm.IsGameRunning, "the game is still running (no crash)");
+        _vm.StopGameCommand.Execute(null);
+        await Pause(3000);
+    });
+
+    /// <summary>
+    /// Campaign AI in game, on an empty m10 mission (levels\mods\_kalo_tour\aiplay): squad_walker patrols a 2-point path
+    /// (Patrol panel), squad_rider's cell spawns in a ghost (Squad section › Vehicle, the ghost added with Use it › Add to map
+    /// palette); a volume around the start spawns both. Flags at the path's points let the game measure where the patrol is.
+    /// </summary>
+    private async Task AiPlay()
+    {
+        const string path = @"levels\mods\_kalo_tour\aiplay\aiplay.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour\aiplay");
+        if (Directory.Exists(folder)) Directory.Delete(folder, true);
+        var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = @"levels\solo\m10\m10.scenario", NewPath = path, Empty = true, MapId = 7994 });
+        Check(r.Type == "solo", "empty campaign mission on m10");
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        try
+        {
+            async Task Look(float x, float y) { map.LookFrom(new Vector3(x, y, 3.0f), 0, -60); await Pause(1200); }
+            // The walker and its path: p0 where it spawns, p1 some 15 units away; a flag on each point to measure.
+            await Look(134.03f, 35.20f);
+            await map.AddSquadCommand.ExecuteAsync(null);
+            var walkerPoint = map.Selected;
+            await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.CutsceneFlags);
+            await map.RenameAsync(map.Selected!, "fl_p0");
+            map.SetSelection(new[] { walkerPoint! });
+            await Pause(500);
+            string walker = map.PatrolSquad ?? "";
+            Check(walker.Length > 0 && map.ShowPatrol, "selecting the squad's spawn point shows Patrol for " + walker);
+            await map.NewPatrolPathCommand.ExecuteAsync(null);
+            Say("patrol: " + map.PatrolStatus);
+            await Look(140f, 29f);
+            await map.AddPatrolPointCommand.ExecuteAsync(null);
+            Say("patrol: " + map.PatrolStatus);
+            string set = map.PatrolPath ?? "";
+            var pts = map.Items.Where(i => i.Category == CampaignCategories.ScriptPoints && i.Label == "point set " + set).ToList();
+            Check(set.StartsWith("ps_path") && pts.Count == 2 && pts.Select(p => p.PlacedName).SequenceEqual(new[] { "p0", "p1" }), $"New path here + Add point here: {set} with {string.Join(", ", pts.Select(p => p.PlacedName))}");
+            await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.CutsceneFlags);
+            await map.RenameAsync(map.Selected!, "fl_p1");
+            map.PatrolSquad = walker;
+            map.PatrolPath = set;
+            await map.AddPatrolCommand.ExecuteAsync(null);
+            Say("patrol: " + map.PatrolStatus);
+
+            // The rider: a squad whose cell spawns in a ghost.
+            var ghost = await _vm.OpenTagAsync(@"objects\vehicles\covenant\ghost\ghost.vehicle");
+            await ghost!.AddToMapPaletteCommand.ExecuteAsync(null);
+            _vm.ActiveDocument = map;
+            await Look(141f, 31f);
+            await map.AddSquadCommand.ExecuteAsync(null);
+            for (int i = 0; i < 50 && map.SquadEditor == null; i++) await Task.Delay(100);
+            var cell = map.SquadEditor?.Cells.FirstOrDefault();
+            string rider = map.SquadEditor?.Name ?? "";
+            int ghostChoice = cell?.VehicleChoices.ToList().FindIndex(v => v == "ghost") ?? -1;
+            Check(cell is { HasVehicleField: true } && ghostChoice > 0, $"the Squad section offers Vehicle: {string.Join(", ", cell?.VehicleChoices ?? new List<string>())}");
+            if (cell != null && ghostChoice > 0) cell.Vehicle = ghostChoice;
+            await Task.Delay(800);
+            var detail = await _vm.Host.SquadAsync(map.Path, map.Squads.Count - 1);
+            Check(detail.Cells?.FirstOrDefault()?.Vehicle == ghostChoice - 1, $"{rider}'s cell spawns in the ghost (vehicle {detail.Cells?.FirstOrDefault()?.Vehicle})");
+            // Control: a squad on foot next to it.
+            await Look(143f, 33f);
+            await map.AddSquadCommand.ExecuteAsync(null);
+            for (int i = 0; i < 50 && map.SquadEditor?.Name == rider; i++) await Task.Delay(100);
+            string footer = map.SquadEditor?.Name ?? "";
+            Say($"squads: walker {walker}, rider {rider}, control {footer}");
+
+            // The volume around the start spawns both squads.
+            await Look(146f, 26f);
+            await map.AddMarkerCommand.ExecuteAsync(CampaignCategories.TriggerVolumes);
+            var volume = map.Selected!;
+            var start = map.Items.First(i => i.Category == StartLocations.Category);
+            map.MoveLocal(start, volume.Position - new Vector3(0, 0, 1.2f));
+            await map.CommitMoveAsync(start);
+            map.SetSelection(new[] { map.Items.First(i => i.IsVolume && i.Index == volume.Index) });
+            foreach (string squad in new[] { walker, rider, footer })
+            {
+                map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.VolumeAction.SpawnSquad);
+                map.VolumeParam = squad;
+                await map.AddVolumeTriggerCommand.ExecuteAsync(null);
+            }
+            if (Environment.GetEnvironmentVariable("KALO_AI_ZONE") == "1")
+                foreach (var sq in map.Squads.Where(s => s.Name == walker || s.Name == rider))
+                    Say("zone: " + (await _vm.Host.SetFieldAsync(map.Path, $"Block:squads[{sq.Index}]/ShortBlockIndex:initial zone", "3")).Value);
+            var doc = _vm.Tabs.OfType<MissionScriptViewModel>().FirstOrDefault();
+            Check(doc != null && doc.Text.Contains($"ai_place({walker})") && doc.Text.Contains($"ai_place({rider})") && doc.Text.Contains($"cs_go_to({set}/p1)"),
+                "the mission script places both squads and has the patrol");
+            Check(doc?.CheckOk == true, "it checks clean: " + doc?.Summary);
+            if (doc != null) await doc.SaveDocumentAsync();
+            foreach (var t in _vm.Tabs.OfType<TagEditorViewModel>().ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+            await map.SaveCommand.ExecuteAsync(null);
+            _vm.ActiveDocument = map;
+            Shot("ai-map");
+
+            string name = path[..^".scenario".Length];
+            if (!_vm.Scenarios.Contains(name, StringComparer.OrdinalIgnoreCase)) _vm.Scenarios.Insert(0, name);
+            _vm.SelectedScenario = _vm.Scenarios.First(s => s.Equals(name, StringComparison.OrdinalIgnoreCase));
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            var probes = new List<string>();
+            if (Environment.GetEnvironmentVariable("KALO_GAME_LOG") == "1")
+                _vm.Game.Output += line => { if (System.Text.RegularExpressions.Regex.IsMatch(line, @"ai|ai:|ERROR|actor|pathfind|squad|cs_", System.Text.RegularExpressions.RegexOptions.IgnoreCase) && !line.Contains("kalo probe")) Say("game: " + (line.Length > 220 ? line[..220] : line)); };
+            _vm.Game.Output += line => { if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..]); };
+            await _vm.PlayCommand.ExecuteAsync(null);
+            if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "the mission loaded")) return;
+            Say($"play: insertion {_vm.SelectedInsertion?.Label}; view zone set {map.SelectedZoneSet?.Name} (bsps {string.Join(",", map.SelectedZoneSet?.Bsps ?? new List<int>())})");
+            if (Environment.GetEnvironmentVariable("KALO_AI_ZS") == "1" && map.SelectedZoneSet is { Name.Length: > 0 } zs)
+                Say("switch: " + await _vm.Game.RunConsoleAsync(new[] { "switch_zone_set " + zs.Name }, TimeSpan.FromSeconds(10)));
+            // The AI ignore the player (so the patrol isn't aborted by an alert) and the player can't die.
+            await _vm.Game.RunConsoleAsync(Environment.GetEnvironmentVariable("KALO_AI_SEE") == "1" ? new[] { "(set cheat_deathless_player true)" } : new[] { "(ai_disregard (players) true)", "(set cheat_deathless_player true)" }, TimeSpan.FromSeconds(10));
+            for (int round = 1; round <= 16; round++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4));
+                // Experiment: once the rider is placed (round 4), order it into its vehicle; does it stay in?
+                if (round == 4 && Environment.GetEnvironmentVariable("KALO_AI_CMDS") is { Length: > 0 } cmds)
+                    foreach (string c in cmds.Split(";;").Select(x => x.Replace("{walker}", walker).Replace("{rider}", rider)))
+                        Say($"cmd {(await _vm.Game.RunConsoleAsync(new[] { c }, TimeSpan.FromSeconds(10)) ? "ok" : "failed")}: {c}");
+                if (round == 4 && Environment.GetEnvironmentVariable("KALO_AI_ENTER") == "1")
+                    Say("enter: " + await _vm.Game.RunConsoleAsync(new[] { $"(ai_vehicle_enter_immediate {rider} (ai_vehicle_get_from_squad {rider} 0))" }, TimeSpan.FromSeconds(10)));
+                await _vm.Game.RunConsoleAsync(new[]
+                {
+                    $"(if (< (objects_distance_to_flag (ai_actors {walker}) fl_p0) 0) (print \"kalo probe: r{round} walker missing\") (print \"kalo probe: r{round} walker there\"))",
+                    $"(if (< (objects_distance_to_flag (ai_actors {walker}) fl_p0) 3) (print \"kalo probe: r{round} walker at p0\") (print \"kalo probe: r{round} walker not at p0\"))",
+                    $"(if (< (objects_distance_to_flag (ai_actors {walker}) fl_p1) 3) (print \"kalo probe: r{round} walker at p1\") (print \"kalo probe: r{round} walker not at p1\"))",
+                    $"(if (> (ai_in_vehicle_count {rider}) 0) (print \"kalo probe: r{round} rider in a vehicle\") (print \"kalo probe: r{round} rider on foot\"))",
+                    $"(if (> (ai_living_count {rider}) 0) (print \"kalo probe: r{round} rider alive\") (print \"kalo probe: r{round} rider none\"))",
+                    $"(if (> (ai_living_count {footer}) 0) (print \"kalo probe: r{round} control on foot alive\") (print \"kalo probe: r{round} control on foot none\"))",
+                    $"(if (ai_enabled) (print \"kalo probe: r{round} ai enabled\") (print \"kalo probe: r{round} ai disabled\"))",
+                    $"(if (cs_command_script_running {walker} {Kalo.Core.Scripting.PatrolScripts.CommandScript(walker)}) (print \"kalo probe: r{round} patrol script running\") (print \"kalo probe: r{round} patrol script not running\"))",
+                    $"(if (> (ai_combat_status {walker}) 2) (print \"kalo probe: r{round} walker alerted\") (print \"kalo probe: r{round} walker calm\"))",
+                    $"(if (> (ai_vehicle_get_squad_count {rider}) 0) (print \"kalo probe: r{round} rider squad has a vehicle\") (print \"kalo probe: r{round} rider squad has no vehicle\"))",
+                }, TimeSpan.FromSeconds(10));
+            }
+            for (int i = 0; i < 20; i++) { lock (probes) if (probes.Any(p => p.Contains("r16"))) break; await Task.Delay(1000); }
+            List<string> got;
+            lock (probes) got = probes.Distinct().ToList();
+            foreach (var p in got.Where(p => !p.Contains(" not at ") && !p.Contains("walker there"))) Say(p);
+            bool Seen(string what) => got.Any(p => p.EndsWith(what));
+            Check(Seen("walker there"), "the walker squad is in the game");
+            Check(Seen("patrol script running"), "the patrol command script runs on the walker");
+            Check(Seen("rider alive") && Seen("rider squad has a vehicle"), "the rider squad spawned with its ghost");
+            // reach_tag_test plays from tags: Bungie's levels ship without pathfinding data (tool.exe generates it only when it
+            // builds the .map), so AI stand still here: walking the path and boarding are for the built map (Play in MCC).
+            Say($"movement (needs a built map): walker reached p1: {Seen("walker at p1")}, rider in its vehicle: {Seen("rider in a vehicle")}");
+            _vm.StopGameCommand.Execute(null);
+            await Pause(3000);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+        }
+    }
+
+    /// <summary>
+    /// What unit object_attach's offsets use: a mover attached every tick at offset (10, 0, 0) to an anchor, then the
+    /// game is asked how far apart they are (1: tenths of a world unit, ~3: feet, 10: world units).
+    /// </summary>
+    private Task AttachUnits() => InTourModAsync(async () =>
+    {
+        var map = await _vm.CreateMapAsync("Attach Test", @"levels\multi\20_sword_slayer\20_sword_slayer", empty: true);
+        if (!Check(map != null, "created an empty Sword Slayer map")) return;
+        var until = DateTime.UtcNow.AddMinutes(3);
+        while (map!.Bsp == null && DateTime.UtcNow < until) await Task.Delay(300);
+        var spawn = map.Items.First(i => i.Tag.Contains("respawn_point"));
+        var anchor = await map.AddTagAtAsync(@"objects\multi\generic\invisible_marker.crate", spawn.Position + new Vector3(3, 0, 0.1f));
+        string moverTag = Environment.GetEnvironmentVariable("KALO_MOVER") ?? @"objects\multi\generic\flag_spawn_point.crate";
+        var mover = await map.AddTagAtAsync(moverTag, spawn.Position + new Vector3(-3, 0, 0.1f));
+        if (!Check(anchor != null && mover != null, "placed the anchor and the mover")) return;
+        // Adding the second object rebuilt the item list: look both up again.
+        await map.RenameAsync(map.Items.First(i => i.Tag.EndsWith("invisible_marker.crate")), "kalo_anchor");
+        await map.RenameAsync(map.Items.First(i => i.Tag.Equals(moverTag, StringComparison.OrdinalIgnoreCase)), "kalo_mv");
+        foreach (var (item, label) in new[] { (map.Items.First(i => i.PlacedName == "kalo_anchor"), "kalo_anchor"), (map.Items.First(i => i.PlacedName == "kalo_mv"), "kalo_mover") })
+        {
+            map.SetSelection(new[] { item });
+            // Wait for this object's own property rows (the previous object's rows point at its fields).
+            string own = $"Block:{item.Category}[{item.Index}]/";
+            for (int i = 0; i < 80 && !map.Properties.Any(r => r.Path.StartsWith(own) && r.Path.EndsWith("String:megalo label")); i++) await Task.Delay(100);
+            await map.SetPropertyAsync(map.Properties.First(r => r.Path.StartsWith(own) && r.Path.EndsWith("String:megalo label")), label);
+        }
+        Say("labels: " + string.Join(", ", map.Items.Where(i => i.PlacedName?.StartsWith("kalo_") == true).Select(i => $"{i.PlacedName}={i.Label}")));
+        await map.SaveCommand.ExecuteAsync(null);
+        _vm.OpenNewGametypeFormCommand.Execute(null);
+        _vm.IsNewGametypeOpen = false;
+        var script = await _vm.CreateGametypeAsync("Attach Rules", _vm.GametypeTemplates.First(t => t.Label == "Slayer"), true);
+        if (!Check(script != null, "made a gametype")) return;
+        string offset = Environment.GetEnvironmentVariable("KALO_OFFSET") ?? "10";
+        // The mover goes to the anchor at the offset every tick; for its first 60 ticks the player is put onto the mover
+        // (the console measures the player: a name lookup only finds the map's own placement, not the gametype's copy).
+        string code =
+            "declare player.number kalo_moved = 0\n" +
+            "objects kalo_anchors with label \"kalo_anchor\"\n" +
+            "for each object with label \"kalo_mover\" do\n" +
+            "  temp object a = none\n" +
+            "  get_random_object(kalo_anchors, none, a)\n" +
+            "  if a != none then\n" +
+            $"    object_attach(current_object, a, {offset}, 0, 0)\n" +
+            "    object_detach(current_object)\n" +
+            "    for each player do\n" +
+            "      temp object body = current_player\n" +
+            "      if body != none and current_player.kalo_moved < 60 then\n" +
+            "        current_player.kalo_moved += 1\n" +
+            "        object_attach(body, current_object, 0, 0, 0)\n" +
+            "        object_detach(body)\n" +
+            "      end\n" +
+            "    end\n" +
+            "  end\n" +
+            "end\n";
+        script!.Text = script.Text.TrimEnd() + "\n\n" + (Kalo.Core.Scripting.KaloScriptStyle.FromClassic(code) ?? code);
+        await script.CompileCommand.ExecuteAsync(null);
+        if (!Check(script.CompileOk, "it compiles: " + script.CompileSummary)) return;
+        await script.SaveDocumentAsync();
+        _vm.ActiveDocument = map;
+
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _vm.Game!.Loaded += () => loaded.TrySetResult();
+        var probes = new List<string>();
+        _vm.Game.Output += line => { if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..].Trim()); };
+        await _vm.PlayCommand.ExecuteAsync(null);
+        if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "the game loaded")) return;
+        await Task.Delay(TimeSpan.FromSeconds(70));
+        var bands = new[] { 0.5, 1.5, 2.5, 3.5, 5.0, 7.0, 9.0, 11.0, 40.0 };
+        int measuredRound = -1;
+        for (int round = 1; round <= 14 && measuredRound < 0; round++)
+        {
+            var cmds = bands.Select(b => $"(if (< (objects_distance_to_object (players) kalo_anchor) {b.ToString(System.Globalization.CultureInfo.InvariantCulture)}) (print \"kalo probe: r{round} under {b}\") (print \"kalo probe: r{round} over {b}\"))").ToList();
+            cmds.Insert(0, $"(if (< (objects_distance_to_object (players) kalo_anchor) 0) (print \"kalo probe: r{round} not measurable\") (print \"kalo probe: r{round} measured\"))");
+            cmds.Insert(0, $"(if (> (list_count (players)) 0) (print \"kalo probe: r{round} has players\") (print \"kalo probe: r{round} no players\"))");
+            await _vm.Game.RunConsoleAsync(cmds, TimeSpan.FromSeconds(10));
+            await Task.Delay(TimeSpan.FromSeconds(6));
+            lock (probes) for (int k = 1; k <= round; k++) if (probes.Contains($"kalo probe: r{k} measured")) { measuredRound = k; break; }
+        }
+        for (int i = 0; i < 90 && measuredRound < 0; i++) { await Task.Delay(1000); lock (probes) for (int k = 1; k <= 14; k++) if (probes.Contains($"kalo probe: r{k} measured")) { measuredRound = k; break; } }
+        lock (probes) foreach (var p in probes.Distinct().TakeLast(30)) Say(p);
+        double? firstUnder = null;
+        lock (probes) foreach (double b in bands) if (probes.Contains($"kalo probe: r{measuredRound} under {b}")) { firstUnder = b; break; }
+        Check(measuredRound > 0, $"the player was measured (round {measuredRound}); distance to the anchor under {firstUnder}");
         _vm.StopGameCommand.Execute(null);
         await Pause(3000);
     });

@@ -501,6 +501,32 @@
                     </Border>
                   </StackPanel>
                   <!-- Campaign AI: the squad of the selected spawn point(s): what spawns -->
+                  <!-- Campaign: a squad patrols a path of script points -->
+                  <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,8,0,0"
+                          IsVisible="{Binding ActiveMap.ShowPatrol, FallbackValue=False}">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="PATROL" Classes="header" />
+                      <TextBlock Text="A squad walks a path of points until it sees an enemy." FontSize="11" Foreground="{StaticResource KMuted}" TextWrapping="Wrap" />
+                      <Grid ColumnDefinitions="50,*" RowDefinitions="Auto,Auto">
+                        <TextBlock Text="Squad" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding ActiveMap.PatrolSquadChoices, FallbackValue={x:Null}}" SelectedItem="{Binding ActiveMap.PatrolSquad, FallbackValue={x:Null}}"
+                                  HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" />
+                        <TextBlock Grid.Row="1" Text="Path" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,4,0,0" />
+                        <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding ActiveMap.PatrolPathChoices, FallbackValue={x:Null}}" SelectedItem="{Binding ActiveMap.PatrolPath, FallbackValue={x:Null}}"
+                                  HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" Margin="0,4,0,0" ToolTip.Tip="A point set: its points in order are the path" />
+                      </Grid>
+                      <WrapPanel>
+                        <Button Classes="outline" Content="New path here" Command="{Binding ActiveMap.NewPatrolPathCommand, FallbackValue={x:Null}}" Margin="0,0,4,4"
+                                ToolTip.Tip="A new point set with its first point where the view is aimed" />
+                        <Button Classes="outline" Content="Add point here" Command="{Binding ActiveMap.AddPatrolPointCommand, FallbackValue={x:Null}}" Margin="0,0,4,4"
+                                ToolTip.Tip="The path's next point, where the view is aimed" />
+                      </WrapPanel>
+                      <CheckBox Content="Walk (not run)" IsChecked="{Binding ActiveMap.PatrolWalk, FallbackValue=True}" FontSize="11.5" />
+                      <Button Classes="outline" Content="Add patrol to mission script" Command="{Binding ActiveMap.AddPatrolCommand, FallbackValue={x:Null}}" HorizontalAlignment="Left"
+                              ToolTip.Tip="Writes a command script that walks the path in a loop and gives it to the squad once it is in the game" />
+                      <TextBlock Text="{Binding ActiveMap.PatrolStatus, FallbackValue=''}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KMuted}" />
+                    </StackPanel>
+                  </Border>
                   <ContentControl Content="{Binding ActiveMap.SquadEditor, FallbackValue={x:Null}}" IsVisible="{Binding ActiveMap.HasSquadEditor, FallbackValue=False}">
                    <ContentControl.ContentTemplate>
                     <DataTemplate DataType="vm:SquadEditorViewModel">
@@ -551,6 +577,11 @@
                                 <TextBlock DockPanel.Dock="Right" Text="count" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
                                 <TextBlock Text="{Binding Name}" FontWeight="SemiBold" VerticalAlignment="Center" />
                               </DockPanel>
+                              <Grid ColumnDefinitions="70,*" Margin="0,0,0,3" IsVisible="{Binding HasVehicleField}">
+                                <TextBlock Text="Vehicle" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding VehicleChoices}" SelectedIndex="{Binding Vehicle}" HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" IsEnabled="{Binding CanEdit}"
+                                          ToolTip.Tip="The cell's AI spawn in this vehicle (the first one drives). The list is the mission's vehicle palette: open a vehicle and Use it › Add to map palette to add one. In Kalo's playtests the vehicle appears but AI only drive it in a built map (Play in MCC)." />
+                              </Grid>
                               <ItemsControl ItemsSource="{Binding Characters}">
                                 <ItemsControl.ItemTemplate>
                                   <DataTemplate DataType="vm:SquadChoiceRow">

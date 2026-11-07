@@ -107,6 +107,11 @@ for each player:
             P("4. Squads made from a squad template spawn what the template says, whatever their cells show: change each spawn point's own character, or click Use its own cells to edit the cells instead."),
             P("5. Play here (Ctrl+F5) near the squad, or Play (F5) for the whole mission. While the game runs, Spawn this squad (Live game bar) places it right away."),
             Tip("Used by scripts (right panel) lists the script lines that name the squad: when it is placed (ai_place) and what it does."),
+            H("Patrols"),
+            P("Select one of the squad's spawn points: the Patrol panel (right) remembers the squad. Aim the view where the path starts and click New path here, then Add point here for each next point. Add patrol to mission script: the squad walks the points in a loop until it sees an enemy."),
+            H("AI in vehicles"),
+            P("A cell's Vehicle (Squad section) makes its AI spawn in that vehicle. The list is the mission's vehicle palette: open a vehicle (e.g. ghost) in All game files and click Use it › Add to map palette to add one."),
+            Tip("Reach's levels in the editing kit have no AI pathfinding data, so in Kalo's playtests AI stay where they spawn: patrols, AI walking and boarding vehicles show in a built map (Play › Play in MCC, where tool.exe makes the pathfinding)."),
         });
 
         yield return new("recipe-mission-script", G, "Edit a mission script", new[]

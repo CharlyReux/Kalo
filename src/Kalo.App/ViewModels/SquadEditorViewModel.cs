@@ -22,6 +22,7 @@ public partial class SquadEditorViewModel : ObservableObject
         Weapons = (d.Weapons ?? new()).Select(PaletteLabel).ToList();
         CharacterOverrides = new[] { "From its cell" }.Concat(Characters).ToList();
         WeaponOverrides = new[] { "From its cell" }.Concat(Weapons).ToList();
+        VehicleChoices = new[] { "On foot" }.Concat((d.Vehicles ?? new()).Select(PaletteLabel)).ToList();
         var about = new List<string>();
         if (!string.IsNullOrEmpty(d.Team)) about.Add("team " + d.Team);
         if (d.Groups is { Count: > 0 }) about.Add("in " + string.Join(" › ", d.Groups));
@@ -69,6 +70,8 @@ public partial class SquadEditorViewModel : ObservableObject
     public IReadOnlyList<string> Weapons { get; }
     public IReadOnlyList<string> CharacterOverrides { get; }
     public IReadOnlyList<string> WeaponOverrides { get; }
+    /// <summary>"On foot", then the mission's vehicle palette (a vehicle joins it with Use it › Add to map palette).</summary>
+    public IReadOnlyList<string> VehicleChoices { get; }
     public ObservableCollection<SquadCellRow> Cells { get; } = new();
     public bool HasCells => Cells.Count > 0;
     public SquadPointRow? Point { get; }
@@ -103,6 +106,7 @@ public partial class SquadCellRow : ObservableObject
         _count = cell.Count.ToString(System.Globalization.CultureInfo.InvariantCulture);
         foreach (var c in cell.Characters ?? new()) Characters.Add(new SquadChoiceRow(owner, c, owner.Characters, "character"));
         foreach (var w in cell.Weapons ?? new()) Weapons.Add(new SquadChoiceRow(owner, w, owner.Weapons, "weapon"));
+        _vehicle = cell.Vehicle + 1;
         _ready = true;
     }
 
@@ -117,6 +121,16 @@ public partial class SquadCellRow : ObservableObject
     public bool ShowChances => Characters.Count > 1 || Weapons.Count > 1;
 
     [ObservableProperty] private string _count;
+    /// <summary>0 on foot, else 1 + the vehicle palette index: the cell's AI spawn in it (the first as driver).</summary>
+    [ObservableProperty] private int _vehicle;
+    public bool HasVehicleField => _cell.VehiclePath != null;
+    public IReadOnlyList<string> VehicleChoices => _owner.VehicleChoices;
+
+    partial void OnVehicleChanged(int value)
+    {
+        if (!_ready || value < 0 || _cell.VehiclePath == null) return;
+        _ = _owner.SetAsync(_cell.VehiclePath, (value - 1).ToString(System.Globalization.CultureInfo.InvariantCulture), "squad vehicle");
+    }
 
     partial void OnCountChanged(string value)
     {

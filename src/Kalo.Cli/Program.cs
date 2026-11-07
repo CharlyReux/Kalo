@@ -114,6 +114,24 @@ switch (command)
         Console.WriteLine(tr.Succeeded ? "transpiles" : "errors: " + string.Join("; ", tr.Errors));
         break;
     }
+    case "mission-show":
+    {
+        // mission-show <script tag>: a mission script as the game reads it (HaloScript).
+        await using var host = await HostClient.StartAsync(paths, line => { });
+        var r = await host.ReadMissionScriptAsync(argsList[1]);
+        Console.WriteLine(r.Text);
+        break;
+    }
+    case "patrol-script":
+    {
+        // patrol-script: a patrol added (twice) to a tiny mission script, turned into HaloScript by Kalo's converter.
+        string start = "startup mission_start:\n    print(\"start\")\n";
+        string text = PatrolScripts.AddTo(PatrolScripts.AddTo(start, "squad", "ps_path", new[] { "p0", "p1", "p2" }, true), "squad", "ps_path", new[] { "p0", "p1", "p2" }, true);
+        var r = MissionScript.ToHaloScript(text);
+        Console.WriteLine($"{(r.Errors.Count == 0 ? "ok" : string.Join("; ", r.Errors))}, {System.Text.RegularExpressions.Regex.Matches(text, "Written by Kalo").Count} block(s)");
+        Console.WriteLine(r.HaloScript.Trim());
+        break;
+    }
     case "volume-trigger":
     {
         // volume-trigger: each campaign volume action added (twice) to a tiny mission script, turned into HaloScript by Kalo's converter.

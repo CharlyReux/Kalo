@@ -35,8 +35,14 @@ namespace Kalo.BlamHost
         public BspBoundsResult BspBounds(string path)
         {
             var sw = Stopwatch.StartNew();
-            TagFile tag = _tags.GetOrOpen(path);
-            var result = new BspBoundsResult { Bounds = new List<float[]>() };
+            var result = new BspBoundsResult { Bounds = BoundsOf(_tags.GetOrOpen(path)) };
+            result.Ms = sw.ElapsedMilliseconds;
+            return result;
+        }
+
+        private List<float[]> BoundsOf(TagFile tag)
+        {
+            var list = new List<float[]>();
             var bsps = tag.SelectField("Block:structure bsps") as TagFieldBlock;
             for (int i = 0; bsps != null && i < bsps.Elements.Count; i++)
             {
@@ -67,10 +73,60 @@ namespace Kalo.BlamHost
                     }
                 }
                 catch (Exception ex) { Server.Log(bsp + ": bounds unavailable: " + ex.Message); }
-                result.Bounds.Add(b);
+                list.Add(b);
             }
-            result.Ms = sw.ElapsedMilliseconds;
-            return result;
+            return list;
+        }
+
+        /// <summary>
+        /// The structure bsp of the nearest other script point within 40 units (the mission's own points know their bsp; bsp
+        /// bounds overlap too much to tell), or -1.
+        /// </summary>
+        private static int NearestPointBsp(TagFile tag, string self, float[] pos)
+        {
+            int best = -1;
+            double bestD = 40 * 40;
+            foreach (var (s, j) in ScriptPointList(tag))
+            {
+                string e = "Block:scripting data[0]/Block:point sets[" + s + "]/Block:points[" + j + "]/";
+                if (e == self) continue;
+                int bsp = -1;
+                foreach (string type in new[] { "ShortBlockIndex", "ShortBlockIndexCustomSearch", "ShortInteger" })
+                    if (tag.SelectField(e + type + ":structure bsp") is TagField f) { bsp = Int(f); break; }
+                if (bsp < 0) continue;
+                var q = Pad(Floats(tag.SelectField(e + "RealPoint3d:position")), 3);
+                double d = (q[0] - pos[0]) * (q[0] - pos[0]) + (q[1] - pos[1]) * (q[1] - pos[1]) + (q[2] - pos[2]) * (q[2] - pos[2]);
+                if (d < bestD) { bestD = d; best = bsp; }
+            }
+            return best;
+        }
+
+        /// <summary>Sets an integer or block index field of an element by its name (its type name varies between fields).</summary>
+        private static void SetIndexByName(TagFile tag, string element, string name, int value)
+        {
+            foreach (string type in new[] { "ShortBlockIndex", "ShortBlockIndexCustomSearch", "CharBlockIndex", "LongBlockIndex", "ShortInteger", "CharInteger", "LongInteger" })
+            {
+                var f = tag.SelectField(element + type + ":" + name);
+                if (f is TagFieldBlockIndex b) { b.Value = value; return; }
+                if (f is TagFieldElementInteger i) { i.Data = value; return; }
+            }
+            Server.Log("no field " + name + " in " + element);
+        }
+
+        /// <summary>The structure bsp a point is in: the smallest whose world bounds hold it (shared bsps are big), or -1.</summary>
+        private int BspAt(TagFile tag, float[] pos)
+        {
+            var all = BoundsOf(tag);
+            int best = -1;
+            double bestVolume = double.MaxValue;
+            for (int i = 0; i < all.Count; i++)
+            {
+                var b = all[i];
+                if (b == null || pos[0] < b[0] || pos[0] > b[1] || pos[1] < b[2] || pos[1] > b[3] || pos[2] < b[4] || pos[2] > b[5]) continue;
+                double v = (double)(b[1] - b[0]) * (b[3] - b[2]) * (b[5] - b[4]);
+                if (v < bestVolume) { bestVolume = v; best = i; }
+            }
+            return best;
         }
 
         /// <summary>The type of a scenario (open in the host or read from disk).</summary>
@@ -424,6 +480,15 @@ namespace Kalo.BlamHost
                     break;
                 case CampaignCategories.ScriptPoints:
                     if (p.Position != null) SetFloats(tag.SelectField(e + "RealPoint3d:position"), p.Position);
+                    if (p.Position != null)
+                    {
+                        // The AI find a point through its bsp (as Bungie's points: structure bsp set, bsp and sector -1 for the game to work out).
+                        int bsp = NearestPointBsp(tag, e, p.Position);
+                        if (bsp < 0) bsp = BspAt(tag, p.Position);
+                        SetIndexByName(tag, e, "structure bsp", bsp);
+                        SetIndexByName(tag, e, "bsp index", -1);
+                        SetIndexByName(tag, e, "sector index", -1);
+                    }
                     if (p.Rotation != null && p.Rotation.Length >= 2) SetFloats(tag.SelectField(e + "RealEulerAngles2d:facing direction"), new[] { p.Rotation[0], p.Rotation[1] });
                     break;
             }
@@ -564,6 +629,31 @@ namespace Kalo.BlamHost
                 case CampaignCategories.ScriptPoints:
                 {
                     bool ai = category == CampaignCategories.AiSpawnPoints;
+                    if (!ai && copyOf < 0)
+                    {
+                        // Add (not Duplicate): a new point set (ps_path, ps_path_2...) with this first point.
+                        var sets = tag.SelectField("Block:scripting data[0]/Block:point sets") as TagFieldBlock;
+                        if (sets == null)
+                        {
+                            var data0 = tag.SelectField("Block:scripting data") as TagFieldBlock;
+                            if (data0 == null) throw new InvalidOperationException("This map has no scripting data block.");
+                            if (data0.Elements.Count == 0) data0.AddElement();
+                            sets = tag.SelectField("Block:scripting data[0]/Block:point sets") as TagFieldBlock;
+                        }
+                        if (sets == null) throw new InvalidOperationException("This map has no point sets block.");
+                        var setNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        for (int s = 0; s < sets.Elements.Count; s++) setNames.Add(Text(tag, "Block:scripting data[0]/Block:point sets[" + s + "]/String:name") ?? "");
+                        string setName = "ps_path";
+                        for (int n = 2; setNames.Contains(setName); n++) setName = "ps_path_" + n;
+                        sets.AddElement();
+                        int si = sets.Elements.Count - 1;
+                        string setPath = "Block:scripting data[0]/Block:point sets[" + si + "]/";
+                        SetText(tag.SelectField(setPath + "String:name"), setName);
+                        TrySet(() => ((TagFieldBlockIndex)tag.SelectField(setPath + "ShortBlockIndex:bsp index")).Value = -1);
+                        TrySet(() => ((TagFieldBlockIndex)tag.SelectField(setPath + "ShortBlockIndex:editor folder")).Value = -1);
+                        blockPath = setPath + "Block:points";
+                        break;
+                    }
                     List<(int, int)> all = new List<(int, int)>();
                     if (ai) foreach (var x in AiPoints(tag)) all.Add((x.Squad, x.Point));
                     else foreach (var x in ScriptPointList(tag)) all.Add((x.Set, x.Point));
@@ -593,9 +683,16 @@ namespace Kalo.BlamHost
             {
                 case CampaignCategories.CutsceneCameras: SetText(tag.SelectField(e + "String:name"), unique); break;
                 case CampaignCategories.ScriptPoints:
-                    SetText(tag.SelectField(e + "String:name"), unique);
-                    TrySet(() => SetText(tag.SelectField(e + "StringId:name_id"), unique));
+                {
+                    // Points are named within their set, Bungie's way: p0, p1, p2... (scripts say ps_path/p1).
+                    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    for (int k = 0; k < block.Elements.Count; k++) if (k != i) names.Add(Text(tag, blockPath + "[" + k + "]/String:name") ?? "");
+                    string pointName = "p" + i;
+                    for (int k = i + 1; names.Contains(pointName); k++) pointName = "p" + k;
+                    SetText(tag.SelectField(e + "String:name"), pointName);
+                    TrySet(() => SetText(tag.SelectField(e + "StringId:name_id"), pointName));
                     break;
+                }
                 default: TrySet(() => SetText(tag.SelectField(e + "StringId:name"), unique)); break;
             }
             if (category == CampaignCategories.TriggerVolumes && data == null)

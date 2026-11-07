@@ -511,6 +511,7 @@ public partial class MapEditorViewModel : DocumentViewModel
     partial void OnSelectedChanged(PlacementItem? value)
     {
         OnPropertyChanged(nameof(HasSelection));
+        UpdatePatrol(value);
         if (!_keepSelection)
         {
             _selection.Clear();

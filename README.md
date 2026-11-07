@@ -146,7 +146,11 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   Play (or a new one from Slayer) and give the object a Megalo label if it has none. Teleport attaches the player to the
   exit object and detaches it there (checked in game: --tour-sections zones-play).
   Campaign trigger volumes have "When the player enters" too (spawn a squad, checkpoint, teleport to a flag, kill zone, win),
-  written into the mission's own script (checked in game: volumes-play). Name an object (inspector "Name", or F2 /
+  written into the mission's own script (checked in game: volumes-play). Patrol (inspector, for a squad's spawn point or a script
+  point): New path here / Add point here make a point set (points get their bsp from the nearest mission point), and Add
+  patrol writes a looping cs_go_to command script. Squad cells have a Vehicle (the mission's vehicle palette). AI stay put
+  in reach_tag_test (the kit's levels have no pathfinding data; build-cache-file generates it), so patrols and driving
+  are for built maps. Name an object (inspector "Name", or F2 /
   Rename in the object list) to find it again, e.g. "red_goal". Drag any number box left/right to change it
   (Shift: fine, Ctrl: coarse).
 - Campaign missions: New map › "Campaign mission" copies a Reach mission (m05 … m70_bonus) into your mod whole:

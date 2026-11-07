@@ -32,22 +32,23 @@ public static class VolumeTriggers
     };
 
     /// <summary>HaloScript script names: letters, digits, _; at most 31 characters.</summary>
-    private static string ScriptName(string volume, VolumeAction a)
+    private static string ScriptName(string volume, VolumeAction a, string param)
     {
-        string v = Regex.Replace(volume.ToLowerInvariant(), "[^a-z0-9_]", "_");
+        string v = Regex.Replace((volume + (param.Length > 0 ? "_" + param : "")).ToLowerInvariant(), "[^a-z0-9_]", "_");
         string name = $"kalo_{Short(a)}_{v}";
         return name.Length <= 31 ? name : name[..31];
     }
 
     /// <summary>The block's first line, also how Kalo finds it again to replace it.</summary>
-    public static string Mark(string volume, VolumeAction a) => $"# Volume {volume}: when the player enters, {Label(a).ToLowerInvariant()}. Written by Kalo (map inspector).";
+    public static string Mark(string volume, VolumeAction a, string param = "") =>
+        $"# Volume {volume}: when the player enters, {Label(a).ToLowerInvariant()}{(param.Length > 0 ? " (" + param + ")" : "")}. Written by Kalo (map inspector).";
 
     /// <summary>The mission script code (Python-style Kalo Script).</summary>
     public static string Code(string volume, VolumeAction action, string param)
     {
-        string name = ScriptName(volume, action);
+        string name = ScriptName(volume, action, param);
         bool repeats = action is VolumeAction.Kill or VolumeAction.TeleportToFlag;
-        var lines = new List<string> { Mark(volume, action), $"{(repeats ? "continuous" : "startup")} {name}:" };
+        var lines = new List<string> { Mark(volume, action, param), $"{(repeats ? "continuous" : "startup")} {name}:" };
         lines.Add($"    sleep_until(volume_test_players({volume}), 1)");
         switch (action)
         {
@@ -66,15 +67,15 @@ public static class VolumeTriggers
     public static string AddTo(string script, string volume, VolumeAction action, string param)
     {
         string nl = script.Contains("\r\n") ? "\r\n" : "\n";
-        string text = RemoveFor(script.Replace("\r\n", "\n"), volume, action).TrimEnd('\n');
+        string text = RemoveFor(script.Replace("\r\n", "\n"), volume, action, param).TrimEnd('\n');
         return (text + "\n\n" + Code(volume, action, param)).Replace("\n", nl);
     }
 
     /// <summary>Removes Kalo's block for this volume and action: its mark line and the indented script under it.</summary>
-    public static string RemoveFor(string script, string volume, VolumeAction action)
+    public static string RemoveFor(string script, string volume, VolumeAction action, string param = "")
     {
         var lines = script.Replace("\r\n", "\n").Split('\n').ToList();
-        int start = lines.FindIndex(l => l.Trim() == Mark(volume, action));
+        int start = lines.FindIndex(l => l.Trim() == Mark(volume, action, param));
         if (start < 0) return script;
         int end = start + 2; // the mark, the script line, then its indented body
         while (end < lines.Count && lines[end].Length > 0 && char.IsWhiteSpace(lines[end][0])) end++;

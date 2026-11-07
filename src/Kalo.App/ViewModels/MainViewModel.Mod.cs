@@ -74,6 +74,8 @@ public partial class MainViewModel
     /// Saves what is unsaved, compiles and deploys the chosen gametype (if any), then starts the chosen map.
     /// Restarts the game if it is already running.
     /// </summary>
+    private bool _aiMovementNoted;
+
     [RelayCommand]
     public async Task PlayAsync()
     {
@@ -88,6 +90,13 @@ public partial class MainViewModel
             if (await IsCampaignScenarioAsync(SelectedScenario))
             {
                 // A campaign mission: no gametype; the mission's own scripts run (cutscenes, AI, objectives).
+                if (!_aiMovementNoted)
+                {
+                    _aiMovementNoted = true;
+                    Log("Note: in these playtests AI stay where they spawn on Reach's levels: the editing kit's levels have no AI pathfinding data. " +
+                        "tool.exe makes it when it builds the map, so patrols, AI moving and AI boarding vehicles are for a built map (Play › Play in MCC). " +
+                        "Spawning, fighting from where they stand and mission scripts work here.");
+                }
                 var commands = CampaignPlayCommands(out string campaignNote);
                 StartGame(SelectedScenario, commands, $"Play: {SelectedScenario}{campaignNote}. A mission takes a minute or two to load; its scripts' messages and errors show in Output (hs: …).", null, true);
                 return;

@@ -410,6 +410,8 @@ namespace Kalo.Protocol
         /// <summary>The scenario's character palette (character tag paths) and weapon palette (weapon tag paths).</summary>
         public List<string> Characters { get; set; }
         public List<string> Weapons { get; set; }
+        /// <summary>The scenario's vehicle palette (vehicle tag paths): what a cell's AI can spawn in.</summary>
+        public List<string> Vehicles { get; set; }
         public long Ms { get; set; }
     }
 
@@ -422,6 +424,9 @@ namespace Kalo.Protocol
         public string CountPath { get; set; }
         public List<SquadChoice> Characters { get; set; }
         public List<SquadChoice> Weapons { get; set; }
+        /// <summary>The vehicle the cell's AI spawn in: an index in the vehicle palette, -1 on foot; VehiclePath null when the cell has no such field.</summary>
+        public int Vehicle { get; set; } = -1;
+        public string VehiclePath { get; set; }
     }
 
     /// <summary>One entry of a cell's character or weapon list: a palette index and its chance.</summary>
