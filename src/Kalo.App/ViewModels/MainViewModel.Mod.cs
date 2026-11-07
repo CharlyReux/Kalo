@@ -512,21 +512,50 @@ public partial class MainViewModel
         IsNewMapOpen = false;
         if (GametypeTemplates.Count == 0)
         {
-            var known = new (string File, string Label)[]
-            {
-                (@"simple\slayer\2.txt", "Simple starter: points per kill (short, commented)"),
-                ("slayer.txt", "Slayer"), ("ctf.txt", "Capture the flag"), ("koth_team.txt", "King of the hill"),
-                ("oddball.txt", "Oddball"), ("juggernaut.txt", "Juggernaut"), ("infection.txt", "Infection"),
-                ("headhunter.txt", "Headhunter"), ("assault.txt", "Assault"), ("race.txt", "Race"),
-            };
-            foreach (var (file, label) in known)
+            foreach (var (file, label, preset) in KnownTemplates)
             {
                 string rel = System.IO.Path.Combine("data", "multiplayer", "megalo", file);
-                if (Paths != null && File.Exists(System.IO.Path.Combine(Paths.Workspace, rel))) GametypeTemplates.Add(new GametypeTemplate(label, rel));
+                if (Paths != null && File.Exists(System.IO.Path.Combine(Paths.Workspace, rel))) GametypeTemplates.Add(new GametypeTemplate(label, rel, preset));
             }
         }
         NewGametypeTemplate ??= GametypeTemplates.FirstOrDefault();
         IsNewGametypeOpen = true;
+    }
+
+    /// <summary>
+    /// New gametype templates: Bungie's scripts (data\multiplayer\megalo), and presets made from one of them with other
+    /// settings and traits (SWAT's are Bungie's own SWAT.txt overrides; SWAT.txt itself builds on Slayer's compiled file).
+    /// </summary>
+    private static readonly (string File, string Label, GametypePreset? Preset)[] KnownTemplates =
+    {
+        (@"simple\slayer\2.txt", "Simple starter: points per kill (short, commented)", null),
+        ("slayer.txt", "Slayer", null),
+        ("slayer.txt", "SWAT: DMR and magnum, no shields, headshots kill", new GametypePreset(
+            new[] { ("friendly_fire_enabled", "1"), ("round_time_limit", "12"), ("grenades_on_map", "0"), ("weapon_set", "none"), ("vehicle_set", "none") },
+            new[] { ("shield_multiplier", "0"), ("shield_recharge", "0"), ("damage_resistance", "200"), ("tracker_mode", "off"), ("infinite_ammo", "1"),
+                    ("initial_equipment", "sprint_equipment"), ("initial_primary_weapon", "dmr"), ("initial_secondary_weapon", "magnum"), ("initial_grenades", "none") },
+            NoLoadouts: true)),
+        ("slayer.txt", "Snipers: sniper rifle and magnum only", new GametypePreset(
+            new[] { ("round_time_limit", "12"), ("grenades_on_map", "0"), ("weapon_set", "none"), ("vehicle_set", "none") },
+            new[] { ("initial_primary_weapon", "sniper_rifle"), ("initial_secondary_weapon", "magnum"), ("initial_grenades", "none"), ("infinite_ammo", "1") },
+            NoLoadouts: true)),
+        ("fiesta.txt", "Fiesta: random weapons at every spawn", null),
+        ("gun_game.txt", "Gun Game: a new weapon after each kill", null),
+        ("ctf.txt", "Capture the flag", null), ("koth.txt", "King of the hill", null), ("oddball.txt", "Oddball", null),
+        ("juggernaut.txt", "Juggernaut", null), ("infection.txt", "Infection", null), ("headhunter.txt", "Headhunter", null),
+        ("assault.txt", "Assault", null), ("territories.txt", "Territories", null), ("stockpile.txt", "Stockpile", null),
+        ("vip.txt", "VIP", null), ("race.txt", "Race", null), ("rocket_race.txt", "Rocket Race", null),
+        ("hogpotato.txt", "Hog Potato", null), ("dogfight.txt", "Dogfight", null),
+    };
+
+    /// <summary>A preset's settings, traits and loadouts written into the converted template.</summary>
+    private string ApplyPreset(string text, GametypePreset preset)
+    {
+        text = Kalo.Core.Scripting.GametypeSettings.ApplyPreset(text, preset.Settings, preset.Traits);
+        if (!preset.NoLoadouts) return text;
+        var s = Kalo.Core.Scripting.GametypeLoadouts.Parse(text, Paths?.MegaloSource);
+        s.Spartan = s.Elite = "empty_palette";
+        return Kalo.Core.Scripting.GametypeLoadouts.Apply(text, s);
     }
 
     /// <summary>New gametypes are written in Kalo Script (modern syntax) unless unticked.</summary>
@@ -549,15 +578,15 @@ public partial class MainViewModel
         string rel = System.IO.Path.Combine("data", "multiplayer", "megalo", "mods", ModSlug, Slug(name) + ext);
         string full = System.IO.Path.Combine(Paths.Workspace, rel);
         if (File.Exists(full)) { AddProblem("warning", "A gametype with that name already exists in this mod.", "New gametype"); return null; }
-        var (text, _) = ScriptEditorViewModel.ReadScript(System.IO.Path.Combine(Paths.Workspace, template.Path));
-        string header = $"; {name.Trim()} — made with Kalo from the \"{template.Label}\" template\r\n\r\n";
-        if (kaloScript)
+        if (!kaloScript && template.Preset != null)
         {
-            header = $"# title: {name.Trim()}\r\n# Made with Kalo from the \"{template.Label}\" template. Kalo Script: if x:, for each player:, f(a, b), x += 1.\r\n\r\n";
-            text = template.Path.EndsWith(@"simple\slayer\2.txt", StringComparison.OrdinalIgnoreCase)
-                ? KaloScriptStarter
-                : PythonStyle(Kalo.Core.Scripting.KaloScript.FromMegalo(text));
+            AddProblem("warning", $"{template.Label} is a preset of Kalo Script settings: tick Write it in Kalo Script to use it.", "New gametype");
+            return null;
         }
+        string text = TemplateText(template, kaloScript);
+        string header = kaloScript
+            ? $"# title: {name.Trim()}\r\n# Made with Kalo from the \"{template.Label}\" template. Kalo Script: if x:, for each player:, f(a, b), x += 1.\r\n\r\n"
+            : $"; {name.Trim()} — made with Kalo from the \"{template.Label}\" template\r\n\r\n";
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(full)!);
         var unicode = Encoding.Unicode;
         await File.WriteAllBytesAsync(full, unicode.GetPreamble().Concat(unicode.GetBytes(header + text)).ToArray());
@@ -568,6 +597,17 @@ public partial class MainViewModel
         await RefreshChangesAsync();
         _ = AutoCaptureAsync();
         return await OpenScriptAsync(rel);
+    }
+
+    /// <summary>A new gametype's script from its template (without the title header): Kalo Script with the preset applied, or the Megalo text.</summary>
+    public string TemplateText(GametypeTemplate template, bool kaloScript)
+    {
+        var (text, _) = ScriptEditorViewModel.ReadScript(System.IO.Path.Combine(Paths!.Workspace, template.Path));
+        if (!kaloScript) return text;
+        text = template.Path.EndsWith(@"simple\slayer\2.txt", StringComparison.OrdinalIgnoreCase)
+            ? KaloScriptStarter
+            : PythonStyle(Kalo.Core.Scripting.KaloScript.FromMegalo(text));
+        return template.Preset != null ? ApplyPreset(text, template.Preset) : text;
     }
 
     /// <summary>Kalo Script in the Python style (the classic text when it can't be rewritten).</summary>
@@ -630,7 +670,10 @@ public sealed record GametypeChoice(string Label, string? Path)
     public override string ToString() => Label;
 }
 
-public sealed record GametypeTemplate(string Label, string Path)
+/// <summary>Settings and base traits a preset puts on its template (SWAT is Slayer with these), and no loadout menu.</summary>
+public sealed record GametypePreset((string Key, string Value)[] Settings, (string Key, string Value)[] Traits, bool NoLoadouts);
+
+public sealed record GametypeTemplate(string Label, string Path, GametypePreset? Preset = null)
 {
     public override string ToString() => Label;
 }

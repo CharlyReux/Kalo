@@ -42,7 +42,7 @@ public static class SimpleViews
     };
 
     private static readonly SimpleView Weapon = new(
-        "The weapon's most changed settings. How much a shot hurts is not here: it is in the bullet (Projectile, below: select it, then Open this file in the panel on the right), and then in its damage file.",
+        "The weapon's most changed settings. Each shot (below) sets how much a shot hurts and how fast the bullet flies: those numbers live in the bullet and its damage file, and Save saves them with the weapon. Every weapon that fires the same bullet changes too.",
         new SimpleField[]
         {
             new("magazines/rounds loaded maximum", "Magazine size", "Rounds in a full magazine."),

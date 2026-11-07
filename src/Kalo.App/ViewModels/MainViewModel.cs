@@ -301,7 +301,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         return tab;
     }
 
-    private async Task ReloadTabAsync(TagEditorViewModel tab)
+    internal async Task ReloadTabAsync(TagEditorViewModel tab)
     {
         if (await WaitForHostAsync() == null)
         {

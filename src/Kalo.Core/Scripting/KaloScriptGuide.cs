@@ -412,6 +412,67 @@ end
             C(@"
 hud_post_message(player current_player, none, ""Welcome!"")
 "),
+            H("A waypoint over an object"),
+            P("Waypoints (navpoints) are the markers players see over objects through walls. Give the object a Megalo label in the map " +
+              "(inspector › Properties › megalo label), then:"),
+            Prog(@"
+objects goals with label ""goal""
+for each goals do
+  navpoint_set_visible(current_object, everyone)
+  navpoint_set_icon(current_object, destination)
+  navpoint_set_text(current_object, ""Goal"")
+  navpoint_set_priority(current_object, high)
+end
+"),
+            P("Who sees it: everyone, no_one, allies, enemies. Icons: destination, defend, skull, king, vip, flag, bomb, target... " +
+              "(type navpoint_set_icon( and the suggestions list them). navpoint_set_timer shows a timer on it."),
+            H("A countdown on the screen"),
+            P("A HUD widget is a text box at a place on the screen; %s in its text shows a timer or a number."),
+            Prog(@"
+widget clock at top_right
+declare global.timer countdown = 60
+
+on init do
+  timer_set_rate(countdown, 1)
+end
+
+for each player do
+  hud_widget_set_visibility(clock, current_player, 1)
+end
+
+do
+  hud_widget_set_text(clock, ""Time left: %s"", countdown)
+  if timer_expired(countdown) then
+    end_round()
+  end
+end
+"),
+            P("Widget places: top_left, top_center, top_right, meter. hud_widget_set_meter(clock, countdown) turns it into a bar that empties with the timer."),
+            H("Announce something to everyone"),
+            Prog(@"
+for each player do
+  if current_player.score == 5 then
+    hud_post_message(everyone, none, ""Someone is halfway there!"")
+  end
+end
+"),
+            P("hud_post_message's second argument is a sound (none for silence); play_sound(everyone, sound) plays one alone. " +
+              "Rest the mouse on a sound name in the suggestions to hear it."),
+            H("A waypoint over a player"),
+            Prog(@"
+declare global.player leader = none
+for each player do
+  if current_player.score >= 10 then
+    leader = current_player
+  end
+end
+do
+  if leader != none then
+    navpoint_set_visible(leader, everyone)
+    navpoint_set_icon(leader, vip)
+  end
+end
+"),
         });
 
         yield return new("convert", "Guide", "Converting Megalo scripts", new[]

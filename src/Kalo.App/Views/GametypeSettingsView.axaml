@@ -93,6 +93,64 @@
         </ItemsControl.ItemTemplate>
       </ItemsControl>
 
+      <!-- Loadouts -->
+      <TextBlock Classes="section" Text="Loadouts" />
+      <TextBlock Classes="label" TextWrapping="Wrap" Margin="0,0,0,6"
+                 Text="The menu players pick from when they spawn: weapons, armor ability and grenades. Without a menu, players start with the weapons of Player traits (base player traits)." />
+      <Border Classes="card" DataContext="{Binding Loadouts}" x:DataType="vm:LoadoutsViewModel">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
+            <TextBlock Classes="label" Text="Spartans pick from" Margin="0,0,12,0" />
+            <ComboBox Grid.Column="1" ItemsSource="{Binding SpartanChoices}" SelectedItem="{Binding Spartan}" MinWidth="320" FontSize="12" />
+            <TextBlock Grid.Row="1" Classes="label" Text="Elites pick from" Margin="0,6,12,0" />
+            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding EliteChoices}" SelectedItem="{Binding Elite}" MinWidth="320" FontSize="12" Margin="0,6,0,0"
+                      ToolTip.Tip="Elites exist when the lobby allows them (Spartans vs Elites, or players choosing Elite)." />
+          </Grid>
+          <TextBlock Classes="label" Text="{Binding Summary}" TextWrapping="Wrap" IsVisible="{Binding Summary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          <TextBlock Text="{Binding Problem}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource KError}" IsVisible="{Binding HasProblem}" />
+
+          <StackPanel Spacing="6" IsVisible="{Binding ShowCustom}">
+            <TextBlock Text="My loadouts" FontWeight="SemiBold" />
+            <ItemsControl ItemsSource="{Binding Custom}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="vm:LoadoutRow">
+                  <Border BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="0,4,0,8">
+                    <StackPanel Spacing="4">
+                      <DockPanel>
+                        <Button DockPanel.Dock="Right" Classes="tool" Content="×" Padding="6,0" Command="{Binding RemoveCommand}" ToolTip.Tip="Remove this loadout" />
+                        <TextBlock Classes="label" Text="Name in the menu" Margin="0,0,8,0" />
+                        <ComboBox ItemsSource="{x:Static vm:LoadoutsViewModel.Names}" SelectedItem="{Binding Name}" MinWidth="220" FontSize="12"
+                                  ToolTip.Tip="The game's own loadout names (shown translated in game)." />
+                      </DockPanel>
+                      <WrapPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
+                          <TextBlock Classes="label" Text="Primary" />
+                          <ComboBox ItemsSource="{x:Static vm:LoadoutsViewModel.Weapons}" SelectedItem="{Binding Primary}" MinWidth="150" FontSize="12" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
+                          <TextBlock Classes="label" Text="Secondary" />
+                          <ComboBox ItemsSource="{x:Static vm:LoadoutsViewModel.Weapons}" SelectedItem="{Binding Secondary}" MinWidth="150" FontSize="12" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
+                          <TextBlock Classes="label" Text="Armor ability" />
+                          <ComboBox ItemsSource="{x:Static vm:LoadoutsViewModel.Equipment}" SelectedItem="{Binding Equipment}" MinWidth="170" FontSize="12" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,14,4">
+                          <TextBlock Classes="label" Text="Grenades" />
+                          <ComboBox ItemsSource="{x:Static vm:LoadoutsViewModel.Grenades}" SelectedItem="{Binding Grenades}" MinWidth="100" FontSize="12" />
+                        </StackPanel>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+          <Button Classes="outline" Content="+ Loadout" Command="{Binding AddLoadoutCommand}" HorizontalAlignment="Left"
+                  ToolTip.Tip="A loadout of your own (up to 8). Spartans then pick from My loadouts." />
+        </StackPanel>
+      </Border>
+
       <!-- Lobby options -->
       <DockPanel>
         <Button DockPanel.Dock="Right" Classes="outline" Content="+ Option" Command="{Binding AddOptionCommand}" VerticalAlignment="Bottom" />
@@ -191,7 +249,7 @@
         </ItemsControl>
       </Border>
       <TextBlock Classes="label" TextWrapping="Wrap" Margin="0,8,0,0"
-                 Text="Other declarations (engine name and icon, teams, loadouts, HUD widgets, statistics) are edited in the code." />
+                 Text="Other declarations (engine name and icon, teams, HUD widgets, statistics) are edited in the code." />
     </StackPanel>
   </ScrollViewer>
 </UserControl>

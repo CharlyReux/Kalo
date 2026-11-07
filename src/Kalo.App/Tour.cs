@@ -58,6 +58,10 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("barn-view", StringComparer.OrdinalIgnoreCase) == true) await Section("barn-view", BarnView);
                 if (AppArgs.Current.TourSections?.Contains("tutorial", StringComparer.OrdinalIgnoreCase) == true) await Section("tutorial", TutorialMission);
                 if (AppArgs.Current.TourSections?.Contains("level-pieces", StringComparer.OrdinalIgnoreCase) == true) await Section("level-pieces", LevelPiecesTest);
+                if (AppArgs.Current.TourSections?.Contains("weapon-shot", StringComparer.OrdinalIgnoreCase) == true) await Section("weapon-shot", WeaponShot);
+                if (AppArgs.Current.TourSections?.Contains("loadouts", StringComparer.OrdinalIgnoreCase) == true) await Section("loadouts", LoadoutsSection);
+                if (AppArgs.Current.TourSections?.Contains("templates", StringComparer.OrdinalIgnoreCase) == true) await Section("templates", TemplatesSection);
+                if (AppArgs.Current.TourSections?.Contains("zones-play", StringComparer.OrdinalIgnoreCase) == true) await Section("zones-play", ZonesPlay);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -739,6 +743,41 @@ public sealed class Tour
 
     // ---- blocks and references -------------------------------------------------------------------
 
+    /// <summary>The weapon's Each shot box: damage and bullet speed from the bullet's files, edited from the weapon (nothing saved).</summary>
+    private async Task WeaponShot()
+    {
+        const string weapon = @"objects\weapons\pistol\magnum\magnum.weapon";
+        const string damage = @"objects\weapons\pistol\magnum\projectiles\magnum_bullet.damage_effect";
+        var tab = await _vm.OpenTagAsync(weapon);
+        if (!Check(tab is { IsLoading: false }, "opened the magnum")) return;
+        for (int i = 0; i < 50 && tab!.Shot == null; i++) await Task.Delay(100);
+        var shot = tab!.Shot;
+        if (!Check(shot != null && tab.ShowShot, "the Each shot box is shown")) return;
+        Check(shot!.Damage == "17.5" && shot.DamageLabel == "Damage per hit", $"damage per hit read from the bullet's damage file: {shot.Damage}");
+        Check(shot.Speed == "3000", $"bullet speed: {shot.Speed}");
+        Check(shot.Summary.Contains("4 hits to break"), "summary: " + shot.Summary);
+        await Pause(600);
+        Shot("weapon-shot");
+        shot.Damage = "35";
+        await Task.Delay(500);
+        var d = await _vm.Host!.OpenTagAsync(damage);
+        Check(TagEditorViewModel.Find(d.Fields, "damage lower bound")?.Value == "35" && TagEditorViewModel.Find(d.Fields, "damage upper bound")?.Value?.StartsWith("35") == true,
+            "typing 35 sets the damage file's lower and upper bounds");
+        Check(tab.IsDirty && shot.Summary.Contains("2 hits to break"), "the weapon tab is unsaved, summary follows: " + shot.Summary);
+        shot.Speed = "abc";
+        Check(shot.Error != null, "a wrong speed is refused: " + shot.Error);
+        var grenade = await _vm.OpenTagAsync(@"objects\weapons\support_high\rocket_launcher\rocket_launcher.weapon");
+        for (int i = 0; i < 50 && grenade?.Shot == null; i++) await Task.Delay(100);
+        Check(grenade?.Shot is { Explosive: true, HasRadius: true }, $"the rocket launcher shows explosion damage and blast radius ({grenade?.Shot?.Damage}, {grenade?.Shot?.Radius}): {grenade?.Shot?.Summary}");
+        await Pause(400);
+        Shot("rocket-shot");
+        // Close without saving: the edits are dropped.
+        foreach (var t in new[] { tab, grenade }) if (t != null) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+        var again = await _vm.Host.OpenTagAsync(damage);
+        Say("after close: damage lower bound " + TagEditorViewModel.Find(again.Fields, "damage lower bound")?.Value);
+        await _vm.Host.CloseTagAsync(damage);
+    }
+
     private async Task Blocks()
     {
         const string weapon = @"objects\weapons\rifle\assault_rifle\assault_rifle.weapon";
@@ -789,6 +828,7 @@ public sealed class Tour
         string copyFile = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, copyPath);
         await _vm.SaveTagAsNewAsync(tab, "kalo_tour_rifle");
         var copy = _vm.Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.Equals(copyPath, StringComparison.OrdinalIgnoreCase));
+        if (copy == null) foreach (var pr in _vm.Problems.TakeLast(3)) Say($"problem: {pr.Severity}: {pr.Message}");
         Check(System.IO.File.Exists(copyFile) && copy != null, "Save as new wrote and opened " + copyPath);
         Check(copy?.FindField("Block:magazines")?.Node.ElementCount == 2, "the new tag has the unsaved edit (2 magazines)");
         Check(!_vm.Tabs.Any(t => t.Path.Equals(weapon, StringComparison.OrdinalIgnoreCase)), "the original's tab was replaced by the new tag");
@@ -1312,6 +1352,212 @@ public sealed class Tour
             if (_vm.IsSplit) _vm.Unsplit();
             await _vm.CloseTabCommand.ExecuteAsync(script);
             await _vm.CloseTabCommand.ExecuteAsync(map);
+        }
+    }
+
+    /// <summary>
+    /// Zones in game: a throwaway mod, an empty Sword Slayer map, one spawn point with a zone over the whole map and two
+    /// actions (message, teleport), another spawn point 12 units up as the exit. Played: the player should get the message
+    /// and fall from the sky (screenshots by the caller). The mod is deleted and the previous one restored.
+    /// </summary>
+    private async Task ZonesPlay()
+    {
+        var projects = _vm.ModProjects!;
+        foreach (var old in projects.List().Where(x => x.Name == TourMod).ToList())
+        {
+            if (projects.ActiveName == old.Name) await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            projects.Delete(old);
+        }
+        _vm.RefreshProjects();
+        string? previous = projects.ActiveName;
+        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
+        File.WriteAllText(marker, previous ?? "");
+        _vm.NewModName = TourMod;
+        await _vm.CreateModCommand.ExecuteAsync(null);
+        try
+        {
+            var map = await _vm.CreateMapAsync("Zone Test", @"levels\multi\20_sword_slayer\20_sword_slayer", empty: true);
+            if (!Check(map != null, "created an empty Sword Slayer map")) return;
+            var until = DateTime.UtcNow.AddMinutes(3);
+            while (map!.Bsp == null && DateTime.UtcNow < until) await Task.Delay(300);
+            var spawns = map.Items.Where(i => i.Tag.Contains("respawn_point")).ToList();
+            if (!Check(spawns.Count >= 2, $"{spawns.Count} spawn points")) return;
+            // The zone: a flag stand at the first spawn point. The exit: an invisible marker at the spawn point farthest from it.
+            // Named tp_zone / tp_exit so the game can be asked where the player is (spawn points are not measurable objects).
+            var far = spawns.Skip(1).OrderByDescending(s => Vector3.Distance(s.Position, spawns[0].Position)).First();
+            var zone = await map.AddTagAtAsync(@"objects\multi\generic\flag_spawn_point.crate", spawns[0].Position);
+            var exit = await map.AddTagAtAsync(@"objects\multi\generic\invisible_marker.crate", far.Position + new Vector3(0, 0, 0.1f));
+            if (!Check(zone != null && exit != null, "placed a flag stand (zone) and an invisible marker (exit)")) return;
+            Say($"exit {Vector3.Distance(exit!.Position, zone!.Position):F0} units from the zone object");
+            await map.RenameAsync(exit, "tp_exit");
+            await map.RenameAsync(zone, "tp_zone");
+            map.SetSelection(new[] { exit });
+            for (int i = 0; i < 50 && !map.Properties.Any(r => r.Path.EndsWith("String:megalo label")); i++) await Task.Delay(100);
+            var exitLabel = map.Properties.FirstOrDefault(r => r.Path.EndsWith("String:megalo label"));
+            if (!Check(exitLabel != null, "the spawn point has a Megalo label field")) return;
+            Check(await map.SetPropertyAsync(exitLabel!, "teleport_exit") == null, "labelled the exit teleport_exit");
+
+            // The zone: a cylinder over the whole map around the first spawn.
+            map.SetSelection(new[] { zone });
+            await map.SetZoneAsync(zone, "CharEnum:boundary shape", "2");
+            await map.SetZoneAsync(zone, "Real:boundary width or radius", "80");
+            await map.SetZoneAsync(zone, "Real:boundary positive height", "40");
+            await map.SetZoneAsync(zone, "Real:boundary negative height", "20");
+            Check(zone.HasZone, $"the spawn point has a zone (shape {zone.ZoneShape}, {zone.ZoneSize})");
+            for (int i = 0; i < 50 && !map.Properties.Any(r => r.Path.EndsWith("String:megalo label")); i++) await Task.Delay(100);
+            await Task.Delay(500);
+
+            map.ZoneAction = map.ZoneActionChoices.First(c => c.Action == Kalo.Core.Scripting.ZoneAction.Message);
+            map.ZoneParam = "KALO ZONE TEST";
+            await map.AddZoneTriggerCommand.ExecuteAsync(null);
+            Say("zone: " + map.ZoneTriggerStatus);
+            bool teleport = Environment.GetEnvironmentVariable("KALO_ZONE_TEST") != "message";
+            if (teleport)
+            {
+            map.ZoneAction = map.ZoneActionChoices.First(c => c.Action == Kalo.Core.Scripting.ZoneAction.Teleport);
+            map.ZoneParam = "teleport_exit";
+            await map.AddZoneTriggerCommand.ExecuteAsync(null);
+            Say("zone: " + map.ZoneTriggerStatus);
+            }
+            var script = _vm.Tabs.OfType<ScriptEditorViewModel>().FirstOrDefault(t => t.Path.Contains(@"\mods\kalo_tour_mod\"));
+            Check(script != null && script.Text.Contains("KALO ZONE TEST") && (!teleport || script.Text.Contains("object_attach(body, exit")), "both actions are in the new gametype");
+            Check(script?.CompileOk == true, "it compiles: " + script?.CompileSummary);
+            Check(_vm.SelectedGametype?.Path == script?.Path, "Play uses it: " + _vm.SelectedGametype?.Label);
+            if (script != null) await script.SaveDocumentAsync();
+            await map.SaveCommand.ExecuteAsync(null);
+            _vm.ActiveDocument = map;
+            await Pause(500);
+            Shot("zone-map");
+
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            _vm.Game.Exited += _ => loaded.TrySetException(new Exception("the game exited while loading"));
+            await _vm.PlayCommand.ExecuteAsync(null);
+            if (!Check(_vm.IsGameRunning, "Play started the game")) return;
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, "the game loaded the map with the zone gametype");
+            Say("GAME LOADED");
+            // Ask the game where the player is: probe lines come back through the game's log. objects_distance_to_object
+            // returns -1 when it has nothing to measure (no living player yet: players appear some 30-60 s after the round
+            // starts), so each round says whether it measured, and only rounds that measured both objects count.
+            var probes = new List<string>();
+            _vm.Game.Output += line => { if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..]); };
+            static string[] Probe(int round, string name, string what) => new[]
+            {
+                // The console prints only from an if that has both branches.
+                $"(if (< (objects_distance_to_object (players) {name}) 0) (print \"kalo probe: r{round} no player for {what}\") (print \"kalo probe: r{round} measured {what}\"))",
+                $"(if (< (objects_distance_to_object (players) {name}) 2.5) (print \"kalo probe: r{round} near {what}\") (print \"kalo probe: r{round} far from {what}\"))",
+            };
+            bool Has(string s) { lock (probes) return probes.Contains("kalo probe: " + s); }
+            var measured = new List<int>();
+            await Task.Delay(TimeSpan.FromSeconds(20));
+            for (int round = 1; round <= 14 && measured.Count < 2; round++)
+            {
+                bool ran = await _vm.Game.RunConsoleAsync(Probe(round, "tp_exit", "the exit").Concat(Probe(round, "tp_zone", "the zone object")).ToArray(), TimeSpan.FromSeconds(10));
+                if (!ran) Say("the game did not run the probe");
+                await Task.Delay(TimeSpan.FromSeconds(8));
+                // The game writes its log in batches: earlier rounds' answers may arrive now.
+                for (int r = 1; r <= round; r++)
+                    if (!measured.Contains(r) && Has($"r{r} measured the exit") && Has($"r{r} measured the zone object")) measured.Add(r);
+            }
+            for (int i = 0; i < 20 && measured.Count == 0; i++) await Task.Delay(1000);
+            lock (probes) foreach (var p in probes.Distinct()) Say(p);
+            if (Check(measured.Count > 0, $"the game measured the player (rounds {string.Join(", ", measured)})"))
+            {
+                int r = measured[^1];
+                // Without teleport (KALO_ZONE_TEST=message) the player stays away from the exit: the control run.
+                Check(teleport ? Has($"r{r} near the exit") : Has($"r{r} far from the exit"),
+                    teleport ? "the zone teleported the player to the exit" : "control: without the teleport action the player is not at the exit");
+                Check(Has($"r{r} far from the zone object"), "the player is away from the zone object (the measure tells places apart)");
+            }
+            Say($"holding the game for {_hold:F0} s");
+            await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Task.Delay(3000);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+            await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            var p = projects.Find(TourMod);
+            if (p != null) projects.Delete(p);
+            _vm.RefreshProjects();
+            if (previous != null)
+            {
+                await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == previous));
+                Check(projects.ActiveName == previous, $"'{previous}' is active again");
+            }
+            try { File.Delete(marker); } catch { }
+        }
+    }
+
+    /// <summary>Every New gametype template, in memory: converted to Kalo Script, preset applied, compiled by HREK.</summary>
+    private async Task TemplatesSection()
+    {
+        await _vm.EnsureMegaloCatalogAsync();
+        _vm.OpenNewGametypeFormCommand.Execute(null);
+        _vm.IsNewGametypeOpen = false;
+        Check(_vm.GametypeTemplates.Count >= 18, $"New gametype offers {_vm.GametypeTemplates.Count} templates");
+        foreach (var t in _vm.GametypeTemplates)
+        {
+            var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\template.kscript") { Text = "# title: T\n" + _vm.TemplateText(t, true) };
+            await doc.CompileCommand.ExecuteAsync(null);
+            Check(doc.CompileOk, $"{t.Label}: compiles ({doc.CompileSummary})");
+            if (t.Preset == null) continue;
+            var gs = doc.GametypeSettings;
+            gs.Reload();
+            var baseTraits = gs.Traits.FirstOrDefault();
+            string primary = baseTraits?.Rows.FirstOrDefault(r => r.Key == "initial_primary_weapon")?.Value ?? "";
+            Check(primary.Length > 0 && gs.Loadouts.Spartan?.Value == "empty_palette" && gs.Settings.Any(r => r.Name == "weapon_set" && r.Value == "none"),
+                $"{t.Label}: Settings shows the preset (primary weapon {primary}, loadouts {gs.Loadouts.Spartan?.Label}, weapons on map none)");
+        }
+    }
+
+    /// <summary>Settings › Loadouts on the starter (in memory): own loadouts, None for Elites, a refused mix; compiled by HREK.</summary>
+    private async Task LoadoutsSection()
+    {
+        await _vm.EnsureMegaloCatalogAsync();
+        var doc = new ScriptEditorViewModel(_vm, @"data\multiplayer\megalo\mods\_kalo_tour\loadouts.kscript") { Text = "# title: Loadouts\n" + Kalo.Core.Scripting.KaloScript.Starter };
+        _vm.Tabs.Add(doc);
+        _vm.ActiveDocument = doc;
+        try
+        {
+            doc.ToggleSettingsCommand.Execute(null);
+            var lo = doc.GametypeSettings.Loadouts;
+            Check(lo.Spartan?.Value == null && !lo.ShowCustom, "a script without loadouts shows Game default: " + lo.Summary);
+            lo.AddLoadoutCommand.Execute(null);
+            lo.AddLoadoutCommand.Execute(null);
+            Check(lo.Custom.Count == 2 && lo.Spartan?.Value == "kalo_loadouts" && lo.ShowCustom, "+ Loadout adds a loadout and Spartans pick from My loadouts");
+            lo.Custom[1].Primary = "sniper_rifle";
+            lo.Custom[1].Equipment = "jet_pack_equipment";
+            lo.Elite = lo.EliteChoices.First(c => c.Value == "empty_palette");
+            Check(doc.Text.Contains("loadout kalo_loadout_2:") && doc.Text.Contains("primary_weapon = sniper_rifle") && doc.Text.Contains("equipment = jet_pack_equipment")
+                  && doc.Text.Contains("setting loadout_palette = spartan_tier1 kalo_loadouts") && doc.Text.Contains("setting loadout_palette = elite_tier1 kalo_no_loadouts"),
+                "the form writes the loadouts and palettes into the script");
+            await doc.CompileCommand.ExecuteAsync(null);
+            Check(doc.CompileOk, "HREK's compiler accepts it: " + doc.CompileSummary);
+            await Pause(600);
+            Shot("loadouts");
+            string before = doc.Text;
+            lo.Elite = lo.EliteChoices.First(c => c.Value == "covy_slayer_loadouts");
+            Check(lo.HasProblem && doc.Text == before, "mixing my loadouts with Bungie's is refused (script unchanged): " + lo.Problem);
+            lo.Spartan = lo.SpartanChoices.First(c => c.Value == "slayer_loadouts");
+            Check(!lo.HasProblem && doc.Text.Contains("include \"includes/multiplayer_loadouts.txt\"") && !doc.Text.Contains("loadout kalo_loadout_1"),
+                "Bungie's for both: the include is added and my loadouts leave the script");
+            await doc.CompileCommand.ExecuteAsync(null);
+            Check(doc.CompileOk, "and it compiles: " + doc.CompileSummary);
+            lo.Spartan = lo.SpartanChoices[0];
+            lo.Elite = lo.EliteChoices[0];
+            Check(!doc.Text.Contains("loadout_palette"), "Game default for both removes the loadout lines");
+            doc.ToggleSettingsCommand.Execute(null);
+            doc.ToggleSettingsCommand.Execute(null);
+            Check(lo.Spartan?.Value == null, "reading the script back gives the same choices");
+        }
+        finally
+        {
+            doc.IsDirty = false;
+            await _vm.CloseTabCommand.ExecuteAsync(doc);
         }
     }
 

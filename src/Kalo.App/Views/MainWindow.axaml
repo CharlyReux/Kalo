@@ -642,6 +642,27 @@
                                IsVisible="{Binding !ActiveMap.Selected.IsSphereZone, FallbackValue=False}" ToolTip.Tip="Depth below the object"
                                Text="{Binding ActiveMap.Selected.ZoneBottom, Mode=TwoWay, UpdateSourceTrigger=LostFocus, FallbackValue=''}" />
                     </Grid>
+                    <!-- When a player enters: Kalo writes the gametype code -->
+                    <Border BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,4,0,0">
+                      <Border.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                          <Binding Path="ActiveMap.Selected.HasZone" FallbackValue="False" />
+                          <Binding Path="!ActiveMap.IsCampaign" FallbackValue="False" />
+                        </MultiBinding>
+                      </Border.IsVisible>
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="When a player enters" FontSize="11.5" FontWeight="SemiBold" />
+                        <ComboBox ItemsSource="{Binding ActiveMap.ZoneActionChoices, FallbackValue={x:Null}}" SelectedItem="{Binding ActiveMap.ZoneAction, FallbackValue={x:Null}}"
+                                  PlaceholderText="Pick what happens…" HorizontalAlignment="Stretch" FontSize="12" MinHeight="24" />
+                        <DockPanel IsVisible="{Binding ActiveMap.ZoneActionHasParam, FallbackValue=False}">
+                          <TextBlock Text="{Binding ActiveMap.ZoneParamLabel, FallbackValue=''}" FontSize="11" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                          <TextBox Classes="compact mono" Text="{Binding ActiveMap.ZoneParam, Mode=TwoWay, FallbackValue=''}" />
+                        </DockPanel>
+                        <Button Classes="outline" Content="Add to gametype" Command="{Binding ActiveMap.AddZoneTriggerCommand, FallbackValue={x:Null}}" HorizontalAlignment="Left"
+                                ToolTip.Tip="Writes the code into the gametype picked for Play (or a new one made from Slayer), and gives this object a Megalo label if it has none" />
+                        <TextBlock Text="{Binding ActiveMap.ZoneTriggerStatus, FallbackValue=''}" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KMuted}" />
+                      </StackPanel>
+                    </Border>
                   </StackPanel>
                   </StackPanel>
                   <!-- Every other property of this object, as saved in the map -->

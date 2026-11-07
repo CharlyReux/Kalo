@@ -91,6 +91,7 @@ public partial class TagEditorViewModel : DocumentViewModel
     partial void OnShowSimpleChanged(bool value)
     {
         if (value && ShowRaw) ShowRaw = false;
+        OnPropertyChanged(nameof(ShowShot));
         OnPropertyChanged(nameof(ShowLabeled));
         foreach (var f in AllFields()) f.RefreshMode();
         if (!value) CollapseToDefault();
@@ -133,6 +134,7 @@ public partial class TagEditorViewModel : DocumentViewModel
     public override async Task CloseAsync()
     {
         try { if (_main.Host != null) await _main.Host.CloseTagAsync(Path); } catch { }
+        await CloseLinkedAsync();
     }
 
     public void Load(TagDocument doc)
@@ -149,6 +151,7 @@ public partial class TagEditorViewModel : DocumentViewModel
         OnPropertyChanged(nameof(ShowLabeled));
         foreach (var f in AllFields()) f.RefreshMode();
         Status = $"{doc.FieldCount:N0} fields · loaded in {doc.LoadMs} ms" + (IsScoped ? $" · only {ScopeLabel} ({ScopeBlock}[{ScopeIndex}])" : "");
+        _ = LoadShotAsync(doc);
         ApplyFilter();
     }
 
@@ -254,7 +257,7 @@ public partial class TagEditorViewModel : DocumentViewModel
         {
             SetFieldResult result = await _main.Host.SetFieldAsync(Path, field.Path, value);
             field.Accept(result.Value ?? value);
-            IsDirty = _structureChanged || AllFields().Any(f => f.IsDirty);
+            IsDirty = _structureChanged || _linkedDirty.Count > 0 || AllFields().Any(f => f.IsDirty);
             _main.Log($"{Title}: {field.Label} = {result.Value}");
         }
         catch (HostException ex)
@@ -271,11 +274,15 @@ public partial class TagEditorViewModel : DocumentViewModel
         if (_main.Host == null) return;
         try
         {
-            SaveResult r = await _main.Host.SaveTagAsync(Path);
+            // Only the bullet or its damage changed (the Each shot box): the weapon file itself stays as it is.
+            bool own = _structureChanged || AllFields().Any(f => f.IsDirty) || _linkedDirty.Count == 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            if (own) await _main.Host.SaveTagAsync(Path);
+            await SaveLinkedAsync();
             foreach (var f in Fields) f.MarkSaved();
             _structureChanged = false;
             IsDirty = false;
-            Status = $"Saved in {r.Ms} ms";
+            Status = $"Saved in {sw.ElapsedMilliseconds} ms";
             _main.OnTagSaved(this);
         }
         catch (HostException ex)

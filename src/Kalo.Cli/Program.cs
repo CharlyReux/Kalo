@@ -95,6 +95,42 @@ switch (command)
         }
         break;
     }
+    case "loadouts-apply":
+    {
+        // loadouts-apply <in.kscript> <out.kscript> <spartan palette|-> <elite palette|-> [custom count]: the Settings › Loadouts form, from the command line.
+        string text = File.ReadAllText(argsList[1]);
+        var st = GametypeLoadouts.Parse(text, paths.MegaloSource);
+        st.Spartan = argsList[3] == "-" ? null : argsList[3];
+        st.Elite = argsList[4] == "-" ? null : argsList[4];
+        int n = int.Parse(argsList.ElementAtOrDefault(5) ?? "0");
+        st.Custom.Clear();
+        for (int k = 1; k <= n; k++) st.Custom.Add(GametypeLoadouts.NewLoadout(k) with { Primary = k == 2 ? "sniper_rifle" : "dmr" });
+        if (GametypeLoadouts.Problem(st) is { } why) Console.WriteLine("problem: " + why);
+        string outText = GametypeLoadouts.Apply(text, st);
+        File.WriteAllText(argsList[2], outText);
+        var back = GametypeLoadouts.Parse(outText);
+        Console.WriteLine($"read back: spartan {back.Spartan}, elite {back.Elite}, {back.Custom.Count} custom, include {back.HasInclude}");
+        var tr = KaloScript.Transpile(outText);
+        Console.WriteLine(tr.Succeeded ? "transpiles" : "errors: " + string.Join("; ", tr.Errors));
+        break;
+    }
+    case "zone-trigger":
+    {
+        // zone-trigger <in.kscript> <out-folder>: adds each zone action to the script and saves one file per action (then kscript-compile them).
+        string text = File.ReadAllText(argsList[1]);
+        Directory.CreateDirectory(argsList[2]);
+        foreach (var c in ZoneTriggers.Choices)
+        {
+            string outText = ZoneTriggers.AddTo(text, "my_zone", c.Action, c.Default);
+            outText = ZoneTriggers.AddTo(outText, "my_zone", c.Action, c.Default); // twice: replaces, does not add again
+            if (c.Action != ZoneAction.Message) outText = ZoneTriggers.AddTo(outText, "my_zone", ZoneAction.Message, "hello"); // another action on the same zone stays
+            var tr = KaloScript.Transpile(outText);
+            string file = Path.Combine(argsList[2], c.Action + ".kscript");
+            File.WriteAllText(file, outText);
+            Console.WriteLine($"{c.Action}: {(tr.Succeeded ? "transpiles" : "errors: " + string.Join("; ", tr.Errors.Take(3)))}, {System.Text.RegularExpressions.Regex.Matches(outText, "Written by Kalo").Count} block(s)");
+        }
+        break;
+    }
     case "kscript-compile":
         await KscriptCompile(argsList[1], argsList.ElementAtOrDefault(2));
         break;

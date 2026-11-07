@@ -59,6 +59,12 @@ public partial class TagEditorView : UserControl
         if (!string.IsNullOrWhiteSpace(name)) await main.SaveTagAsNewAsync(tab, name);
     }
 
+    /// <summary>Each shot box: Enter commits the number (focus moves away, which pushes the text).</summary>
+    private void ShotBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter) { FieldTree.Focus(); e.Handled = true; }
+    }
+
     /// <summary>Enter commits the value (by moving focus away, which pushes the text to the field).</summary>
     private void ValueBox_KeyDown(object? sender, KeyEventArgs e)
     {

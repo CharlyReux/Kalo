@@ -31,7 +31,7 @@ public static class KaloRecipes
             H("Steps"),
             P("1. Project panel › All game files: search the weapon (e.g. \"magnum weapon\" or \"assault rifle\") and open its .weapon file."),
             P("2. Change Magazine size, Fire rate, Spread, Zoom... and Save."),
-            P("3. Damage is not in the weapon: select Projectile (the bullet), click Open this file (right panel). In the bullet, select Impact damage (or Explosion damage) and Open this file again: change Damage (minimum / maximum) and Save."),
+            P("3. Each shot (top of the Simple view) changes the damage per hit, the bullet speed and, for rockets and grenade launchers, the blast radius. It says how many hits kill a Spartan. These numbers are in the bullet's files: Save saves them too, and every weapon firing the same bullet changes with them."),
             P("4. Play (F5). If the game is already running, it reloads the saved files: pick the weapon up again."),
             Tip("All fields shows everything (Raw: the engine's own names, for guides written for Guerilla). Compare lists what you changed; Revert to original puts the game's version back."),
             Tip("A Spartan has about 70 shield and 45 health points: a 17.5 damage magnum bullet takes 4 shots to break the shields."),
@@ -63,6 +63,24 @@ for each player:
 "),
             P("4. F7 checks it (errors are underlined on their line). Play (F5) with the gametype picked at the top. Export .bin makes an MCC game type file."),
             Tip("Hover a word for its help, F1 for its page. Help › Kalo Script documentation has the whole language."),
+            H("Quick variants"),
+            P("SWAT, Snipers, Fiesta and Gun Game are templates of their own: pick one in New gametype and change what you like in Settings."),
+            H("Starting weapons and loadouts"),
+            P("Settings › Player traits › base player traits: Primary weapon, Secondary weapon, Grenades, Armor ability are what everyone spawns with."),
+            P("Settings › Loadouts: the menu players pick from at spawn. None: no menu (the traits' weapons). My loadouts: + Loadout, then pick each one's name, weapons, armor ability and grenades. Or one of Bungie's lists (Slayer, SWAT...)."),
+            Tip("Bungie's loadout lists fill all 32 loadout slots a gametype has: use your own loadouts or Bungie's, not both. Kalo says so when a choice can't work."),
+        });
+
+        yield return new("recipe-zones", G, "Zones: kill zones, teleporters, pickups, messages", new[]
+        {
+            P("Any multiplayer object can have a zone (a sphere, cylinder or box around it). Kalo writes the gametype code that reacts when a player walks in."),
+            H("Steps"),
+            P("1. In your map, select an object (a Forge block, a flag stand, a spawn point...). Inspector › Zone: pick Sphere, Cylinder or Box, then its size. It is drawn in the view."),
+            P("2. Under the zone, When a player enters: Show a message, Kill the player, Give a weapon, Give points, Speed boost, or Teleport to another object. Fill in the box under it (the text, the weapon...)."),
+            P("3. Add to gametype. Kalo gives the object a Megalo label if it has none, and writes the code into the gametype picked for Play (a new one made from Slayer if it isn't one of your Kalo Script gametypes). Add another action to the same zone the same way."),
+            P("4. Save the map and the gametype, then Play (F5)."),
+            Tip("Teleport: give the exit object a Megalo label (inspector › Properties › megalo label) and type that label in the box. Megalo has no real teleport: Kalo attaches the player to the exit and lets go."),
+            Tip("The code is plain Kalo Script in the gametype, under a comment that names the zone: change it there for anything the list doesn't offer."),
         });
 
         yield return new("recipe-mission-ai", G, "Change which enemies a mission spawns", new[]

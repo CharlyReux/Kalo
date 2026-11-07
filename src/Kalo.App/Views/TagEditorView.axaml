@@ -54,6 +54,39 @@
       <TextBlock Text="{Binding SimpleIntro}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource KMuted}" />
     </Border>
 
+    <!-- Weapons: what one shot does (from the bullet and its damage file, saved with the weapon) -->
+    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Padding="12,8" IsVisible="{Binding ShowShot}">
+      <StackPanel Spacing="6" DataContext="{Binding Shot}" x:DataType="vm:ShotInfo">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <TextBlock Text="Each shot" FontWeight="SemiBold" VerticalAlignment="Center" />
+          <TextBlock Text="{Binding Files}" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center"
+                     ToolTip.Tip="These numbers live in the bullet and its damage file. Save saves them with the weapon. Every weapon that fires the same bullet changes too." />
+        </StackPanel>
+        <WrapPanel Orientation="Horizontal">
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,20,4" IsVisible="{Binding HasDamage}">
+            <TextBlock Text="{Binding DamageLabel}" VerticalAlignment="Center" FontSize="12.5" />
+            <TextBox Classes="compact" Width="90" Text="{Binding Damage, UpdateSourceTrigger=LostFocus}" KeyDown="ShotBox_KeyDown"
+                     ToolTip.Tip="Damage of one hit: one number (20), or a range the game picks from (15 to 20). A Spartan has about 70 shield and 45 health points." />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,20,4" IsVisible="{Binding HasSpeed}">
+            <TextBlock Text="Bullet speed" VerticalAlignment="Center" FontSize="12.5" />
+            <TextBox Classes="compact" Width="80" Text="{Binding Speed, UpdateSourceTrigger=LostFocus}" KeyDown="ShotBox_KeyDown"
+                     ToolTip.Tip="World units per second (1 unit is about 3 meters). Its speed at the end of its flight changes in proportion." />
+            <TextBlock Text="units/s" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource KMuted}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,20,4" IsVisible="{Binding HasRadius}">
+            <TextBlock Text="Blast radius" VerticalAlignment="Center" FontSize="12.5" />
+            <TextBox Classes="compact" Width="80" Text="{Binding Radius, UpdateSourceTrigger=LostFocus}" KeyDown="ShotBox_KeyDown"
+                     ToolTip.Tip="One number: the edge of the blast (full damage in its inner third). Or inner, outer: full damage inside inner, fading to nothing at outer." />
+            <TextBlock Text="units" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource KMuted}" />
+          </StackPanel>
+        </WrapPanel>
+        <TextBlock Text="{Binding Summary}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource KMuted}" />
+        <TextBlock Text="{Binding Error}" TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource KError}"
+                   IsVisible="{Binding Error, Converter={x:Static ObjectConverters.IsNotNull}}" />
+      </StackPanel>
+    </Border>
+
     <!-- Column header -->
     <Border DockPanel.Dock="Top" Background="{StaticResource KPanel}" BorderBrush="{StaticResource KBorder}" BorderThickness="0,0,0,1" Height="26">
       <Grid ColumnDefinitions="*,260,110,130" Margin="12,0,16,0">

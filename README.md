@@ -37,6 +37,9 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
 - Middle: the tag editor. "Labeled" shows friendly names and hides engine internals, "Raw fields" shows
   the engine's names and types. Type a value and press Enter: Kalo checks it with the engine right away.
   Save (Ctrl+S) writes the tag into the shared workspace, never into HREK.
+  Weapons open in a Simple view whose "Each shot" box shows and edits the bullet's damage per hit (or explosion damage and
+  blast radius) and speed, with how many hits kill a Spartan; those numbers live in the bullet and its damage file, which
+  Save saves with the weapon.
 - While the game runs, every tag you save is reloaded within a second (change the assault rifle's magazine
   size and look at its ammo counter). Object placements need a restart: press Play again.
 - The Changes panel (second icon on the left) lists every file that differs from vanilla HREK and puts any
@@ -82,7 +85,7 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   converts and compiles back to the same triggers, conditions and actions (`kalo-cli kscript-roundtrip`),
   declarations included (engine, teams, loadouts, widgets, stats have `name ... end` blocks; `megalo [[ ]]` is
   still there for anything else).
-  Settings (toolbar) shows the settings, lobby options, player traits, map objects and constants as forms, like
+  Settings (toolbar) shows the settings, lobby options, player traits, loadouts, map objects and constants as forms, like
   ReachVariantTool; each change rewrites only that line or block of the code. Hovering a word in the code shows its
   help; F1 or Help › Kalo Script documentation opens the guide and a reference of every action and condition.
   Ctrl+Shift+I (or Format) tidies the file: indentation by block, one space after commas and around = and ==, no
@@ -138,7 +141,10 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   "Start locations (first spawn)" in the object list are where players first appear (respawn points are only used
   after dying). Scale is ignored by Reach in multiplayer games (the inspector says so; use object_set_scale).
   Objective zones (hills, territories, capture areas): the inspector's Zone picks none / sphere / cylinder / box and
-  shows only the sizes that shape uses; zones are drawn in the view. Name an object (inspector "Name", or F2 /
+  shows only the sizes that shape uses; zones are drawn in the view. Under it, "When a player enters" (message, kill, weapon,
+  points, speed boost, teleport to another object) and Add to gametype write the Kalo Script into the gametype picked for
+  Play (or a new one from Slayer) and give the object a Megalo label if it has none. Teleport attaches the player to the
+  exit object and detaches it there (checked in game: --tour-sections zones-play). Name an object (inspector "Name", or F2 /
   Rename in the object list) to find it again, e.g. "red_goal". Drag any number box left/right to change it
   (Shift: fine, Ctrl: coarse).
 - Campaign missions: New map › "Campaign mission" copies a Reach mission (m05 … m70_bonus) into your mod whole:

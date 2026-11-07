@@ -337,6 +337,32 @@ public static class GametypeSettings
         return string.Join(Newline(text), lines);
     }
 
+    /// <summary>
+    /// A gametype preset (SWAT, Snipers...): sets base settings and base player traits on a script, replacing the ones it
+    /// has. Trait rows the script had and the preset doesn't name stay.
+    /// </summary>
+    public static string ApplyPreset(string text, IEnumerable<(string Key, string Value)> settings, IEnumerable<(string Key, string Value)> baseTraits)
+    {
+        foreach (var (key, value) in settings)
+        {
+            var items = Parse(text);
+            var d = new DeclItem { Kind = DeclKind.Setting, Name = key, Value = value };
+            var old = items.FirstOrDefault(i => i.Kind == DeclKind.Setting && i.Name == key);
+            text = old != null ? Replace(text, old, RenderFor(text, d)) : Insert(text, items, DeclKind.Setting, RenderFor(text, d));
+        }
+        var traits = baseTraits.ToList();
+        if (traits.Count > 0)
+        {
+            var items = Parse(text);
+            var old = items.FirstOrDefault(i => i.Kind == DeclKind.SettingBlock && i.Name == "base_player_traits");
+            var d = new DeclItem { Kind = DeclKind.SettingBlock, Name = "base_player_traits" };
+            if (old != null) foreach (var row in old.Rows.Where(r => traits.All(t => t.Key != r.Key))) d.Rows.Add(row);
+            d.Rows.AddRange(traits);
+            text = old != null ? Replace(text, old, RenderFor(text, d)) : Insert(text, items, DeclKind.SettingBlock, RenderFor(text, d));
+        }
+        return text;
+    }
+
     private static List<string> Lines(string text) => text.Replace("\r\n", "\n").Split('\n').ToList();
     private static string Newline(string text) => text.Contains("\r\n") ? "\r\n" : "\n";
 

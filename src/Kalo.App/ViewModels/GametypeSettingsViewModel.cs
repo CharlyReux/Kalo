@@ -14,7 +14,14 @@ public partial class GametypeSettingsViewModel : ObservableObject
     private readonly ScriptEditorViewModel _script;
     private bool _loading;
 
-    public GametypeSettingsViewModel(ScriptEditorViewModel script) => _script = script;
+    public GametypeSettingsViewModel(ScriptEditorViewModel script)
+    {
+        _script = script;
+        Loadouts = new LoadoutsViewModel(script);
+    }
+
+    /// <summary>Settings › Loadouts.</summary>
+    public LoadoutsViewModel Loadouts { get; }
 
     public ObservableCollection<SettingRow> Settings { get; } = new();
     public ObservableCollection<OptionCard> Options { get; } = new();
@@ -38,7 +45,8 @@ public partial class GametypeSettingsViewModel : ObservableObject
                 var it = items.FirstOrDefault(i => i.Kind == DeclKind.Setting && i.Name == k.Name);
                 Settings.Add(new SettingRow(this, k.Name, k.Label, k.Help, k.Values, it));
             }
-            foreach (var it in items.Where(i => i.Kind == DeclKind.Setting && GametypeSettings.Settings.All(k => k.Name != i.Name)))
+            // loadout_palette lines belong to the Loadouts section.
+            foreach (var it in items.Where(i => i.Kind == DeclKind.Setting && i.Name != "loadout_palette" && GametypeSettings.Settings.All(k => k.Name != i.Name)))
                 Settings.Add(new SettingRow(this, it.Name, Pretty(it.Name), "", Array.Empty<string>(), it));
 
             Traits.Clear();
@@ -52,6 +60,7 @@ public partial class GametypeSettingsViewModel : ObservableObject
             foreach (var it in items.Where(i => i.Kind == DeclKind.Objects)) Objects.Add(new ObjectsRow(this, it));
             Constants.Clear();
             foreach (var it in items.Where(i => i.Kind == DeclKind.Constant)) Constants.Add(new ConstantRow(this, it));
+            Loadouts.Reload();
             Status = $"{items.Count(i => i.Kind != DeclKind.Other)} declarations. Changes are written into the script.";
         }
         finally
