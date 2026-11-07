@@ -1,3 +1,4 @@
+using Kalo.Core.Scripting.Multiplayer;
 namespace Kalo.Core.Scripting;
 
 /// <summary>

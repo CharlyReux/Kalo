@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
+using Kalo.Core.Scripting.Multiplayer;
 
 namespace Kalo.App.ViewModels;
 
@@ -501,7 +502,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         try
         {
             MegaloCatalog = await Host.MegaloCatalogAsync(Paths.MegaloObjectLists);
-            Kalo.Core.Scripting.MegaloDocs.Fix(MegaloCatalog);
+            Kalo.Core.Scripting.Multiplayer.MegaloDocs.Fix(MegaloCatalog);
             Trace($"Gametype compiler ready: {MegaloCatalog.Actions?.Count} actions, {MegaloCatalog.Conditions?.Count} conditions.");
         }
         catch (Exception ex)

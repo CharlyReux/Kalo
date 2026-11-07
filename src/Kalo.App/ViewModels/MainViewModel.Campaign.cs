@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Kalo.Core;
+using Kalo.Core.Scripting.Campaign;
 
 namespace Kalo.App.ViewModels;
 
@@ -184,20 +185,20 @@ public partial class MainViewModel
         return any.Length == 1 ? System.IO.Path.GetRelativePath(Paths.WorkspaceTags, any[0]) : null;
     }
 
-    private readonly Dictionary<string, List<Kalo.Core.Scripting.MissionDecl>> _missionDecls = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<Kalo.Core.Scripting.Campaign.MissionDecl>> _missionDecls = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The scripts and globals a mission script file declares (cached until it is saved from Kalo).</summary>
-    public async Task<List<Kalo.Core.Scripting.MissionDecl>> MissionDeclarationsAsync(string script)
+    public async Task<List<Kalo.Core.Scripting.Campaign.MissionDecl>> MissionDeclarationsAsync(string script)
     {
         if (_missionDecls.TryGetValue(script, out var cached)) return cached;
         var open = Tabs.OfType<MissionScriptViewModel>().FirstOrDefault(t => t.Path.Equals(script, StringComparison.OrdinalIgnoreCase));
-        List<Kalo.Core.Scripting.MissionDecl> list;
-        if (open != null && open.IsKaloScript) list = Kalo.Core.Scripting.MissionAssist.Declarations(open.Text, script);
+        List<Kalo.Core.Scripting.Campaign.MissionDecl> list;
+        if (open != null && open.IsKaloScript) list = Kalo.Core.Scripting.Campaign.MissionAssist.Declarations(open.Text, script);
         else
         {
             if (Host == null) return new();
             var r = await Host.ReadMissionScriptAsync(script);
-            list = Kalo.Core.Scripting.MissionAssist.HaloScriptDeclarations(r.Text ?? "", script);
+            list = Kalo.Core.Scripting.Campaign.MissionAssist.HaloScriptDeclarations(r.Text ?? "", script);
         }
         _missionDecls[script] = list;
         return list;
@@ -215,11 +216,11 @@ public partial class MainViewModel
     public async Task<string> MissionKaloScriptAsync(string script)
     {
         var open = Tabs.OfType<MissionScriptViewModel>().FirstOrDefault(t => t.Path.Equals(script, StringComparison.OrdinalIgnoreCase));
-        if (open != null) return open.IsKaloScript ? open.Text : Kalo.Core.Scripting.MissionScript.ToPython(open.Text);
+        if (open != null) return open.IsKaloScript ? open.Text : Kalo.Core.Scripting.Campaign.MissionScript.ToPython(open.Text);
         if (_missionPython.TryGetValue(script, out var cached)) return cached;
         if (Host == null) return "";
         var r = await Host.ReadMissionScriptAsync(script);
-        string py = await Task.Run(() => Kalo.Core.Scripting.MissionScript.ToPython(r.Text ?? ""));
+        string py = await Task.Run(() => Kalo.Core.Scripting.Campaign.MissionScript.ToPython(r.Text ?? ""));
         _missionPython[script] = py;
         return py;
     }

@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
+using Kalo.Core.Scripting.Multiplayer;
 
 namespace Kalo.App.ViewModels;
 
@@ -50,7 +51,7 @@ public partial class MainViewModel
                 if (engine == null) { Log($"Play in MCC: stopped, the gametype {System.IO.Path.GetFileName(script)} does not compile (see Problems)."); return; }
                 string bin = System.IO.Path.Combine(Paths.Workspace, "maps", "megalo", engine + ".bin");
                 string title = GametypeTitle(script) ?? System.IO.Path.GetFileNameWithoutExtension(script).Replace('_', ' ');
-                variants.Add((engine + ".bin", Kalo.Core.Scripting.GameVariantFile.ToMcc(await File.ReadAllBytesAsync(bin), title, "Made with Kalo")));
+                variants.Add((engine + ".bin", Kalo.Core.Scripting.Multiplayer.GameVariantFile.ToMcc(await File.ReadAllBytesAsync(bin), title, "Made with Kalo")));
                 titles.Add(title);
             }
 

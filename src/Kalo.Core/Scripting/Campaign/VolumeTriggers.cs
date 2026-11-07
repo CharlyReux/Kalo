@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
+using Kalo.Core.Scripting.Multiplayer;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Campaign;
 
 /// <summary>What happens when the player enters a trigger volume of a campaign mission (map inspector › When the player enters).</summary>
 public enum VolumeAction { SpawnSquad, Checkpoint, TeleportToFlag, Kill, Win }
@@ -63,24 +64,10 @@ public static class VolumeTriggers
         return string.Join("\n", lines) + "\n";
     }
 
-    /// <summary>The mission script with the block added at its end, replacing the one Kalo wrote earlier for this volume and action.</summary>
-    public static string AddTo(string script, string volume, VolumeAction action, string param)
-    {
-        string nl = script.Contains("\r\n") ? "\r\n" : "\n";
-        string text = RemoveFor(script.Replace("\r\n", "\n"), volume, action, param).TrimEnd('\n');
-        return (text + "\n\n" + Code(volume, action, param)).Replace("\n", nl);
-    }
+    /// <summary>The mission script with the block added at its end, replacing the one Kalo wrote earlier for this volume, action and squad or flag.</summary>
+    public static string AddTo(string script, string volume, VolumeAction action, string param) =>
+        WrittenBlocks.Put(script, Mark(volume, action, param), Code(volume, action, param));
 
-    /// <summary>Removes Kalo's block for this volume and action: its mark line and the indented script under it.</summary>
-    public static string RemoveFor(string script, string volume, VolumeAction action, string param = "")
-    {
-        var lines = script.Replace("\r\n", "\n").Split('\n').ToList();
-        int start = lines.FindIndex(l => l.Trim() == Mark(volume, action, param));
-        if (start < 0) return script;
-        int end = start + 2; // the mark, the script line, then its indented body
-        while (end < lines.Count && lines[end].Length > 0 && char.IsWhiteSpace(lines[end][0])) end++;
-        lines.RemoveRange(start, Math.Min(end, lines.Count) - start);
-        if (start < lines.Count && start > 0 && lines[start].Trim().Length == 0 && lines[start - 1].Trim().Length == 0) lines.RemoveAt(start);
-        return string.Join("\n", lines);
-    }
+    public static string RemoveFor(string script, string volume, VolumeAction action, string param = "") =>
+        WrittenBlocks.Remove(script, Mark(volume, action, param));
 }

@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Multiplayer;
 
 /// <summary>
 /// Halo: Reach game variant files (.bin, "BLF" chunks). HREK's Megalo compiler serializes a variant as

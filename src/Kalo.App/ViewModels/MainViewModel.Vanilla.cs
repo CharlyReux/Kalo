@@ -2,6 +2,7 @@ using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
+using Kalo.Core.Scripting.Multiplayer;
 
 namespace Kalo.App.ViewModels;
 
@@ -32,8 +33,8 @@ public partial class MainViewModel
         try
         {
             if (!File.Exists(bin)) return null;
-            int size = Kalo.Core.Scripting.GameVariantFile.VariantData(File.ReadAllBytes(bin)).Length;
-            int max = Kalo.Core.Scripting.GameVariantFile.MpvrChunkSize - 12 - 28;
+            int size = Kalo.Core.Scripting.Multiplayer.GameVariantFile.VariantData(File.ReadAllBytes(bin)).Length;
+            int max = Kalo.Core.Scripting.Multiplayer.GameVariantFile.MpvrChunkSize - 12 - 28;
             return size > max ? $"a game type too big for a game type file ({size:N0} bytes of {max:N0})" : null;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException) { return null; }

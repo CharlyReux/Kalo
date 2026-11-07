@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Campaign;
 
 /// <summary>A script or global a mission declares (in Kalo Script or HaloScript text).</summary>
 public sealed record MissionDecl(string Kind, string Name, int Line, int Column, int Params = -1, string? Returns = null, string? File = null)

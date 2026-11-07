@@ -16,7 +16,7 @@
 
   <ItemGroup>
     <!-- Every HaloScript function and engine global (the game's script_doc output), for mission script help and checks. -->
-    <EmbeddedResource Include="Scripting\hs_doc.txt" LogicalName="Kalo.HsDoc" />
+    <EmbeddedResource Include="Scripting\Campaign\hs_doc.txt" LogicalName="Kalo.HsDoc" />
   </ItemGroup>
 
 </Project>

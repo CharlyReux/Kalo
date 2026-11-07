@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
+using Kalo.Core.Scripting.Campaign;
 
 namespace Kalo.App.ViewModels;
 
@@ -60,7 +61,7 @@ public partial class MissionScriptViewModel : DocumentViewModel
 
     /// <summary>The map's names by kind (squad, trigger volume...), and the scripts and globals of the mission's other files.</summary>
     public IReadOnlyDictionary<string, List<string>>? Names { get; private set; }
-    public IReadOnlyList<Kalo.Core.Scripting.MissionDecl>? Others { get; private set; }
+    public IReadOnlyList<Kalo.Core.Scripting.Campaign.MissionDecl>? Others { get; private set; }
 
     /// <summary>For the saved HaloScript: its line i+1 came from Kalo Script line LineMap[i] (to place the game's errors).</summary>
     public IReadOnlyList<int>? LineMap { get; private set; }
@@ -111,11 +112,11 @@ public partial class MissionScriptViewModel : DocumentViewModel
             _loading = true;
             ScriptName = r.Name ?? "";
             _savedHaloScript = r.Text ?? "";
-            _saved = IsKaloScript ? Kalo.Core.Scripting.MissionScript.ToPython(_savedHaloScript) : _savedHaloScript;
+            _saved = IsKaloScript ? Kalo.Core.Scripting.Campaign.MissionScript.ToPython(_savedHaloScript) : _savedHaloScript;
             Text = _saved;
             _loading = false;
             IsDirty = false;
-            if (IsKaloScript) LineMap = Kalo.Core.Scripting.MissionScript.ToHaloScript(Text).LineMap;
+            if (IsKaloScript) LineMap = Kalo.Core.Scripting.Campaign.MissionScript.ToHaloScript(Text).LineMap;
             Check();
             Status = $"{Text.Split('\n').Length:N0} lines";
             _ = LoadContextAsync();
@@ -137,7 +138,7 @@ public partial class MissionScriptViewModel : DocumentViewModel
         {
             var r = await _main.Host.ScenarioNamesAsync(ScenarioPath);
             var names = new Dictionary<string, List<string>>(r.Names ?? new());
-            var others = new List<Kalo.Core.Scripting.MissionDecl>();
+            var others = new List<Kalo.Core.Scripting.Campaign.MissionDecl>();
             foreach (var script in r.Scripts ?? new())
             {
                 if (script.Equals(Path, StringComparison.OrdinalIgnoreCase)) continue;
@@ -160,7 +161,7 @@ public partial class MissionScriptViewModel : DocumentViewModel
     {
         if (IsKaloScript)
         {
-            var r = Kalo.Core.Scripting.MissionScript.ToHaloScript(Text);
+            var r = Kalo.Core.Scripting.Campaign.MissionScript.ToHaloScript(Text);
             if (!r.Ok)
             {
                 Check();
@@ -176,8 +177,8 @@ public partial class MissionScriptViewModel : DocumentViewModel
         else
         {
             _loading = true;
-            string py = Kalo.Core.Scripting.MissionScript.ToPython(Text);
-            _saved = Kalo.Core.Scripting.MissionScript.ToPython(_savedHaloScript);
+            string py = Kalo.Core.Scripting.Campaign.MissionScript.ToPython(Text);
+            _saved = Kalo.Core.Scripting.Campaign.MissionScript.ToPython(_savedHaloScript);
             Text = IsDirty ? py : _saved;
             IsKaloScript = true;
             _loading = false;
@@ -204,7 +205,7 @@ public partial class MissionScriptViewModel : DocumentViewModel
             string haloScript = text;
             if (IsKaloScript)
             {
-                var r = Kalo.Core.Scripting.MissionScript.ToHaloScript(text);
+                var r = Kalo.Core.Scripting.Campaign.MissionScript.ToHaloScript(text);
                 haloScript = r.HaloScript;
                 LineMap = r.LineMap;
             }
@@ -240,10 +241,10 @@ public partial class MissionScriptViewModel : DocumentViewModel
         Declarations.Clear();
         if (IsKaloScript)
         {
-            foreach (var m in Kalo.Core.Scripting.MissionAssist.Check(Text, Names, Others).Take(200))
+            foreach (var m in Kalo.Core.Scripting.Campaign.MissionAssist.Check(Text, Names, Others).Take(200))
                 Messages.Add(new ScriptMessage(m.Line, -1, m.Length, m.IsError ? "error" : "warning", m.Text, null, m.Column));
             var starts = LineStarts(Text);
-            foreach (var d in Kalo.Core.Scripting.MissionAssist.Declarations(Text))
+            foreach (var d in Kalo.Core.Scripting.Campaign.MissionAssist.Declarations(Text))
                 Declarations.Add(new HsDeclaration(d.Kind, d.Name, d.Line, starts[d.Line - 1] + d.Column - 1));
         }
         else
@@ -276,13 +277,13 @@ public partial class MissionScriptViewModel : DocumentViewModel
     public (int Start, List<CompletionItem> Items) Complete(string lineBefore)
     {
         if (!IsKaloScript) return (lineBefore.Length, new());
-        var (start, items) = Kalo.Core.Scripting.MissionAssist.Complete(lineBefore, Text, Names, Others);
+        var (start, items) = Kalo.Core.Scripting.Campaign.MissionAssist.Complete(lineBefore, Text, Names, Others);
         return (start, items.Select(i => new CompletionItem(i.Text, i.Kind, i.Signature != null ? i.Signature + (i.About is { Length: > 0 } ? "\n\n" + i.About : "") : i.About)).ToList());
     }
 
     public HoverInfo? Hover(string line, int column)
     {
-        var h = Kalo.Core.Scripting.MissionAssist.Hover(line, column, Text, Names, Others);
+        var h = Kalo.Core.Scripting.Campaign.MissionAssist.Hover(line, column, Text, Names, Others);
         if (h == null) return null;
         return new HoverInfo(h.Kind == "function" ? h.Text : $"{h.Text}  ({h.Kind})", h.Signature, null, h.About ?? "", null);
     }
@@ -294,7 +295,7 @@ public partial class MissionScriptViewModel : DocumentViewModel
         foreach (var (kind, list) in Names)
             if (kind != "script" && list.Contains(word, StringComparer.OrdinalIgnoreCase))
                 return await _main.ShowNameInMapAsync(ScenarioPath, word, kind);
-        var decl = Kalo.Core.Scripting.MissionAssist.Declarations(Text).FirstOrDefault(d => d.Name.Equals(word, StringComparison.OrdinalIgnoreCase));
+        var decl = Kalo.Core.Scripting.Campaign.MissionAssist.Declarations(Text).FirstOrDefault(d => d.Name.Equals(word, StringComparison.OrdinalIgnoreCase));
         if (decl != null) { RevealLine(decl.Line, decl.Name); return true; }
         var other = Others?.FirstOrDefault(d => d.Name.Equals(word, StringComparison.OrdinalIgnoreCase) && d.File != null);
         if (other?.File != null)
@@ -309,8 +310,8 @@ public partial class MissionScriptViewModel : DocumentViewModel
     /// <summary>The line declaring a script or global in this file's current view.</summary>
     public int FindDeclarationLine(string name)
     {
-        var d = IsKaloScript ? Kalo.Core.Scripting.MissionAssist.Declarations(Text).FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-            : Kalo.Core.Scripting.MissionAssist.HaloScriptDeclarations(Text).FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+        var d = IsKaloScript ? Kalo.Core.Scripting.Campaign.MissionAssist.Declarations(Text).FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            : Kalo.Core.Scripting.Campaign.MissionAssist.HaloScriptDeclarations(Text).FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
         return d?.Line ?? 1;
     }
 

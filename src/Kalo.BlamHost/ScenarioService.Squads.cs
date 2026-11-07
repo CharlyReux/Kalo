@@ -231,6 +231,10 @@ namespace Kalo.BlamHost
             TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + "ShortBlockIndex:initial weapon")).Value = -1);
             foreach (string f in new[] { "ShortBlockIndex:initial secondary weapon", "ShortBlockIndex:initial equipment", "ShortBlockIndex:vehicle type", "ShortBlockIndex:reference frame", "ShortBlockIndex:point set" })
                 TrySet(() => ((TagFieldBlockIndex)tag.SelectField(e + f)).Value = -1);
+            // No placement script (0 would be the mission's first script).
+            SetIndexByName(tag, e, "placement script index", -1);
+            // The spawn point uses the squad's cell 0 (-1 left the AI without the cell's character set-up and vehicle).
+            SetIndexByName(tag, e, "cell", 0);
             int flat = FlatIndex(tag, CampaignCategories.AiSpawnPoints, s + "Block:spawn points", 0);
             if (p.Position != null && p.Position.Length >= 3)
                 CampaignSet(tag, new SetPlacementParams

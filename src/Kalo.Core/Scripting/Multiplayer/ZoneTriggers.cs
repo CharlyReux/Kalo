@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Multiplayer;
 
 /// <summary>What happens when a player enters a zone (Map › inspector › Zone › When a player enters).</summary>
 public enum ZoneAction { Message, Kill, GiveWeapon, Points, Traits, Teleport }
@@ -115,32 +115,17 @@ public static class ZoneTriggers
     private static string Number(string s, int fallback) =>
         int.TryParse(s.Trim(), out int n) ? n.ToString(System.Globalization.CultureInfo.InvariantCulture) : fallback.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-    /// <summary>The script with the zone code added at its end (in its own style), replacing code Kalo wrote earlier for the same zone.</summary>
+    /// <summary>What marks Kalo's block for this zone and action (another action on the same zone has its own).</summary>
+    private static string Mark(string label, ZoneAction action) =>
+        $"Zone \"{label}\": when a player enters, {Choices.First(c => c.Action == action).Label.ToLowerInvariant()}.";
+
+    /// <summary>The script with the zone code added at its end (in its own style), replacing code Kalo wrote earlier for the same zone and action.</summary>
     public static string AddTo(string script, string label, ZoneAction action, string param)
     {
         string classic = Classic(label, action, param);
-        bool classicStyle = KaloScriptStyle.IsClassic(script);
-        string code = classicStyle ? classic : KaloScriptStyle.FromClassic(classic) ?? classic;
-        string nl = script.Contains("\r\n") ? "\r\n" : "\n";
-        string text = RemoveFor(script.Replace("\r\n", "\n"), label, action).TrimEnd('\n');
-        return (text + "\n\n" + code.TrimEnd('\n') + "\n").Replace("\n", nl);
+        string code = KaloScriptStyle.IsClassic(script) ? classic : KaloScriptStyle.FromClassic(classic) ?? classic;
+        return WrittenBlocks.Put(script, Mark(label, action), code);
     }
 
-    /// <summary>
-    /// Removes the block Kalo wrote for this zone and action (another action on the same zone stays): from its comment
-    /// line to the first blank line.
-    /// </summary>
-    public static string RemoveFor(string script, string label, ZoneAction action)
-    {
-        var lines = script.Replace("\r\n", "\n").Split('\n').ToList();
-        string mark = $"Zone \"{label}\": when a player enters, {Choices.First(c => c.Action == action).Label.ToLowerInvariant()}.";
-        int start = lines.FindIndex(l => l.TrimStart().StartsWith("--") || l.TrimStart().StartsWith("#") ? l.Contains(mark) : false);
-        if (start < 0) return script;
-        int end = start + 1;
-        // Kalo's block is contiguous (no blank lines inside): it ends at the first blank line or the end of the file.
-        while (end < lines.Count && lines[end].Trim().Length > 0) end++;
-        lines.RemoveRange(start, end - start);
-        if (start < lines.Count && start > 0 && lines[start].Trim().Length == 0 && lines[start - 1].Trim().Length == 0) lines.RemoveAt(start);
-        return string.Join("\n", lines);
-    }
+    public static string RemoveFor(string script, string label, ZoneAction action) => WrittenBlocks.Remove(script, Mark(label, action));
 }

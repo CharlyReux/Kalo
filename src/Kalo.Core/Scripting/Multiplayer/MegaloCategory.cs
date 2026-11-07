@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Multiplayer;
 
 /// <summary>
 /// The game type's category: the folder it is listed in by the game's menus (Slayer, Oddball, Action Sack...; MCC only

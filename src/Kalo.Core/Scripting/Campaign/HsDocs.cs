@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Campaign;
 
 /// <summary>One form of a HaloScript function: what it returns, its parameter types, its help text.</summary>
 public sealed record HsFunction(string Name, string Returns, IReadOnlyList<HsParam> Params, string Help)

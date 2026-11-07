@@ -3,6 +3,9 @@ using System.Numerics;
 using Kalo.App.ViewModels;
 using Kalo.App.Views;
 using Kalo.Protocol;
+using Kalo.Core.Scripting.Multiplayer;
+using Kalo.Core.Scripting.Campaign;
+using Kalo.Core.Scripting.Docs;
 
 namespace Kalo.App;
 
@@ -67,6 +70,7 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("weapon-play", StringComparer.OrdinalIgnoreCase) == true) await Section("weapon-play", WeaponPlay);
                 if (AppArgs.Current.TourSections?.Contains("ai-play", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-play", AiPlay);
                 if (AppArgs.Current.TourSections?.Contains("attach-units", StringComparer.OrdinalIgnoreCase) == true) await Section("attach-units", AttachUnits);
+                if (AppArgs.Current.TourSections?.Contains("m10-ai", StringComparer.OrdinalIgnoreCase) == true) await Section("m10-ai", M10Ai);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -1416,14 +1420,14 @@ public sealed class Tour
             for (int i = 0; i < 50 && !map.Properties.Any(r => r.Path.EndsWith("String:megalo label")); i++) await Task.Delay(100);
             await Task.Delay(500);
 
-            map.ZoneAction = map.ZoneActionChoices.First(c => c.Action == Kalo.Core.Scripting.ZoneAction.Message);
+            map.ZoneAction = map.ZoneActionChoices.First(c => c.Action == Kalo.Core.Scripting.Multiplayer.ZoneAction.Message);
             map.ZoneParam = "KALO ZONE TEST";
             await map.AddZoneTriggerCommand.ExecuteAsync(null);
             Say("zone: " + map.ZoneTriggerStatus);
             bool teleport = Environment.GetEnvironmentVariable("KALO_ZONE_TEST") != "message";
             if (teleport)
             {
-            map.ZoneAction = map.ZoneActionChoices.First(c => c.Action == Kalo.Core.Scripting.ZoneAction.Teleport);
+            map.ZoneAction = map.ZoneActionChoices.First(c => c.Action == Kalo.Core.Scripting.Multiplayer.ZoneAction.Teleport);
             map.ZoneParam = "teleport_exit";
             await map.AddZoneTriggerCommand.ExecuteAsync(null);
             Say("zone: " + map.ZoneTriggerStatus);
@@ -1658,7 +1662,7 @@ public sealed class Tour
 
         doc.Text = Kalo.Core.Scripting.KaloScript.ClassicStarter;
         string? bin = await doc.ExportBin();
-        Check(bin != null && File.Exists(bin) && Kalo.Core.Scripting.GameVariantFile.HashIsValid(File.ReadAllBytes(bin)), "Export .bin wrote an MCC game type file: " + bin);
+        Check(bin != null && File.Exists(bin) && Kalo.Core.Scripting.Multiplayer.GameVariantFile.HashIsValid(File.ReadAllBytes(bin)), "Export .bin wrote an MCC game type file: " + bin);
         Check(_vm.NewGametypeKaloScript, "new gametypes default to Kalo Script");
 
         // Convert a Bungie script and show both in the split view.
@@ -1818,6 +1822,13 @@ public sealed class Tour
             await Pause(600);
             Check(docs.Current?.Title == "Getting started", "the guide opens at Getting started");
             MainWindow.SaveShot(docs, System.IO.Path.Combine(_dir, $"{++_shot:D2}-docs-guide.png"));
+            docs.GoTo("recipe-zones");
+            await Pause(600);
+            Check(docs.ShowingRecipes && docs.Current?.Group == "Multiplayer", $"a recipe opens the Recipes book ({docs.Current?.Group} › {docs.Current?.Title})");
+            MainWindow.SaveShot(docs, System.IO.Path.Combine(_dir, $"{++_shot:D2}-docs-recipes.png"));
+            docs.GoTo("mission");
+            await Pause(600);
+            Check(!docs.ShowingRecipes && docs.Current?.Group == "Mission scripts", "the reference has a Mission scripts page");
             docs.GoTo("timer");
             await Pause(600);
             Check(docs.Current == null && docs.Query == "timer", "an unknown word searches the docs");
@@ -2514,8 +2525,8 @@ public sealed class Tour
         await map.SaveCommand.ExecuteAsync(null);
         var own = map.MissionScripts.First(m => m.IsOwn);
         var doc = await _vm.OpenMissionScriptAsync(own.Path, map.Path);
-        var recipe = Kalo.Core.Scripting.KaloRecipes.All().First(x => x.Id == "recipe-small-mission");
-        string code = recipe.Blocks.First(b => b.Kind == Kalo.Core.Scripting.GuideKind.Code).Text;
+        var recipe = Kalo.Core.Scripting.Docs.KaloRecipes.All().First(x => x.Id == "recipe-small-mission");
+        string code = recipe.Blocks.First(b => b.Kind == Kalo.Core.Scripting.Docs.GuideKind.Code).Text;
         doc.Text = code.Replace("\r\n", "\n") + "\n";
         doc.Check();
         Check(doc.CheckOk && doc.Messages.Count == 0, "step 6: the tutorial's script checks clean: " + doc.Summary);
@@ -2782,10 +2793,13 @@ public sealed class Tour
             map.SetSelection(new[] { map.Items.First(i => i.IsVolume && i.Index == volume.Index) });
             foreach (string squad in new[] { walker, rider, footer })
             {
-                map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.VolumeAction.SpawnSquad);
+                map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.Campaign.VolumeAction.SpawnSquad);
                 map.VolumeParam = squad;
                 await map.AddVolumeTriggerCommand.ExecuteAsync(null);
             }
+            if (Environment.GetEnvironmentVariable("KALO_FORCE_BSP") is { Length: > 0 } forced)
+                foreach (var sq in map.Squads.Where(s => s.Name == walker || s.Name == rider))
+                    Say("force bsp: " + (await _vm.Host.SetFieldAsync(map.Path, $"Block:squads[{sq.Index}]/Block:spawn points[0]/ShortBlockIndex:structure bsp", forced)).Value);
             if (Environment.GetEnvironmentVariable("KALO_AI_ZONE") == "1")
                 foreach (var sq in map.Squads.Where(s => s.Name == walker || s.Name == rider))
                     Say("zone: " + (await _vm.Host.SetFieldAsync(map.Path, $"Block:squads[{sq.Index}]/ShortBlockIndex:initial zone", "3")).Value);
@@ -2815,11 +2829,14 @@ public sealed class Tour
                 Say("switch: " + await _vm.Game.RunConsoleAsync(new[] { "switch_zone_set " + zs.Name }, TimeSpan.FromSeconds(10)));
             // The AI ignore the player (so the patrol isn't aborted by an alert) and the player can't die.
             await _vm.Game.RunConsoleAsync(Environment.GetEnvironmentVariable("KALO_AI_SEE") == "1" ? new[] { "(set cheat_deathless_player true)" } : new[] { "(ai_disregard (players) true)", "(set cheat_deathless_player true)" }, TimeSpan.FromSeconds(10));
+            // The squads are placed from the console too: the volume only spawns them if the player starts inside it, and where
+            // the test puts the start depends on the camera ray (the volume script itself is checked above).
+            await _vm.Game.RunConsoleAsync(new[] { $"(if (= (ai_living_count {walker}) 0) (ai_place {walker}))", $"(if (= (ai_living_count {rider}) 0) (ai_place {rider}))", "(ai_disregard (players) true)" }, TimeSpan.FromSeconds(10));
             for (int round = 1; round <= 16; round++)
             {
                 await Task.Delay(TimeSpan.FromSeconds(4));
                 // Experiment: once the rider is placed (round 4), order it into its vehicle; does it stay in?
-                if (round == 4 && Environment.GetEnvironmentVariable("KALO_AI_CMDS") is { Length: > 0 } cmds)
+                if (round == int.Parse(Environment.GetEnvironmentVariable("KALO_AI_CMDS_ROUND") ?? "4") && Environment.GetEnvironmentVariable("KALO_AI_CMDS") is { Length: > 0 } cmds)
                     foreach (string c in cmds.Split(";;").Select(x => x.Replace("{walker}", walker).Replace("{rider}", rider)))
                         Say($"cmd {(await _vm.Game.RunConsoleAsync(new[] { c }, TimeSpan.FromSeconds(10)) ? "ok" : "failed")}: {c}");
                 if (round == 4 && Environment.GetEnvironmentVariable("KALO_AI_ENTER") == "1")
@@ -2833,8 +2850,10 @@ public sealed class Tour
                     $"(if (> (ai_living_count {rider}) 0) (print \"kalo probe: r{round} rider alive\") (print \"kalo probe: r{round} rider none\"))",
                     $"(if (> (ai_living_count {footer}) 0) (print \"kalo probe: r{round} control on foot alive\") (print \"kalo probe: r{round} control on foot none\"))",
                     $"(if (ai_enabled) (print \"kalo probe: r{round} ai enabled\") (print \"kalo probe: r{round} ai disabled\"))",
-                    $"(if (cs_command_script_running {walker} {Kalo.Core.Scripting.PatrolScripts.CommandScript(walker)}) (print \"kalo probe: r{round} patrol script running\") (print \"kalo probe: r{round} patrol script not running\"))",
+                    $"(if (cs_command_script_running {walker} {Kalo.Core.Scripting.Campaign.PatrolScripts.CommandScript(walker)}) (print \"kalo probe: r{round} patrol script running\") (print \"kalo probe: r{round} patrol script not running\"))",
                     $"(if (> (ai_combat_status {walker}) 2) (print \"kalo probe: r{round} walker alerted\") (print \"kalo probe: r{round} walker calm\"))",
+                    $"(if (= (ai_combat_status {walker}) (ai_combat_status_asleep)) (print \"kalo probe: r{round} walker asleep\") (print \"kalo probe: r{round} walker not asleep\"))",
+                    $"(if (= (ai_combat_status {walker}) (ai_combat_status_idle)) (print \"kalo probe: r{round} walker idle\") (print \"kalo probe: r{round} walker not idle\"))",
                     $"(if (> (ai_vehicle_get_squad_count {rider}) 0) (print \"kalo probe: r{round} rider squad has a vehicle\") (print \"kalo probe: r{round} rider squad has no vehicle\"))",
                 }, TimeSpan.FromSeconds(10));
             }
@@ -2947,6 +2966,81 @@ public sealed class Tour
     });
 
     /// <summary>
+    /// Do Bungie's own AI work in a playtest? A full copy of m10 (levels\mods\_kalo_tour\m10full), Play here at the barn
+    /// (no mission scripts), then barn_skirm_init placed from the console; its alert state and position are watched.
+    /// </summary>
+    private async Task M10Ai()
+    {
+        const string path = @"levels\mods\_kalo_tour\m10full\m10full.scenario";
+        string folder = System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, @"levels\mods\_kalo_tour\m10full");
+        if (!File.Exists(System.IO.Path.Combine(_vm.Paths.WorkspaceTags, path)))
+        {
+            var r = await _vm.Host!.CreateMapAsync(new CreateMapParams { Template = @"levels\solo\m10\m10.scenario", NewPath = path, Empty = false, MapId = 7995 });
+            Check(r.Type == "solo", "full copy of m10");
+        }
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        try
+        {
+            // Two squads of our own at the barn flag: one from scratch (Add › Squad in an empty mission), one copied from
+            // barn_skirm_init (team, group, zone, objective kept). Compared with Bungie's own squad in game.
+            var flag = map.Items.FirstOrDefault(i => i.PlacedName == "fl_barn_skirm_init");
+            var bungie = map.Squads.FirstOrDefault(s => s.Name == "barn_skirm_init");
+            if (flag != null && bungie != null && !map.Squads.Any(s => s.Name == "kalo_scratch"))
+            {
+                var at = new[] { flag.Position.X + 1, flag.Position.Y, flag.Position.Z + 0.2f, 0f };
+                await _vm.Host!.SquadOpAsync(new SquadOpParams { Path = map.Path, Op = SquadOps.Create, Name = "kalo_scratch", Position = at });
+                await _vm.Host.SquadOpAsync(new SquadOpParams { Path = map.Path, Op = SquadOps.New, Index = bungie.Index, Name = "kalo_copy", Position = new[] { flag.Position.X - 1, flag.Position.Y, flag.Position.Z + 0.2f, 0f } });
+                map.IsDirty = true;
+                await map.SaveCommand.ExecuteAsync(null);
+                Say("made kalo_scratch and kalo_copy at the barn flag");
+            }
+            map.LookFrom(new Vector3(146f, 26f, 3.0f), 180, -20);
+            await Pause(2000);
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            var probes = new List<string>();
+            _vm.Game.Output += line => { if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..].Trim()); };
+            await map.PlayFromCameraCommand.ExecuteAsync(null);
+            if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "Play here loaded the mission")) return;
+            await Task.Delay(TimeSpan.FromSeconds(8));
+            string sq = Environment.GetEnvironmentVariable("KALO_M10_SQUAD") ?? "barn_skirm_init";
+            await _vm.Game.RunConsoleAsync(new[] { "(ai_place kalo_scratch)", "(ai_place kalo_copy)" }, TimeSpan.FromSeconds(10));
+            Say("place: " + await _vm.Game.RunConsoleAsync(new[] { Environment.GetEnvironmentVariable("KALO_M10_MORTAL") == "1" ? "(print \"mortal\")" : "(set cheat_deathless_player true)", $"(ai_place {sq})", "(object_teleport (player_get 0) fl_barn_skirm_init)", $"(ai_magically_see_object {sq} (player_get 0))" }, TimeSpan.FromSeconds(10)));
+            for (int round = 1; round <= 10; round++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5));
+                await _vm.Game.RunConsoleAsync(new[]
+                {
+                    $"(if (> (ai_living_count {sq}) 0) (print \"kalo probe: r{round} squad alive\") (print \"kalo probe: r{round} squad none\"))",
+                    $"(if (> (ai_combat_status {sq}) 2) (print \"kalo probe: r{round} squad alerted\") (print \"kalo probe: r{round} squad calm\"))",
+                    $"(if (< (unit_get_shield (player_get 0)) 0.95) (print \"kalo probe: r{round} player shot (shield down)\") (print \"kalo probe: r{round} player shield full\"))",
+                    $"(if (< (unit_get_health (player_get 0)) 0.95) (print \"kalo probe: r{round} player hurt\") (print \"kalo probe: r{round} player health full\"))",
+                    $"(if (> (ai_combat_status kalo_scratch) 2) (print \"kalo probe: r{round} scratch alerted\") (print \"kalo probe: r{round} scratch calm\"))",
+                    $"(if (> (ai_combat_status kalo_copy) 2) (print \"kalo probe: r{round} copy alerted\") (print \"kalo probe: r{round} copy calm\"))",
+                    $"(if (> (ai_living_count kalo_scratch) 0) (print \"kalo probe: r{round} scratch alive\") (print \"kalo probe: r{round} scratch none\"))",
+                    $"(if (> (ai_living_count kalo_copy) 0) (print \"kalo probe: r{round} copy alive\") (print \"kalo probe: r{round} copy none\"))",
+                    $"(if (< (objects_distance_to_object (ai_actors {sq}) (player_get 0)) 6) (print \"kalo probe: r{round} squad within 6 of the player\") (print \"kalo probe: r{round} squad farther than 6\"))",
+                    $"(if (< (objects_distance_to_object (ai_actors {sq}) (player_get 0)) 15) (print \"kalo probe: r{round} squad within 15\") (print \"kalo probe: r{round} squad farther than 15\"))",
+                }, TimeSpan.FromSeconds(10));
+            }
+            for (int i = 0; i < 30; i++) { lock (probes) if (probes.Any(p => p.StartsWith("kalo probe: r10"))) break; await Task.Delay(1000); }
+            lock (probes) foreach (var p in probes.Distinct()) Say(p);
+            _vm.StopGameCommand.Execute(null);
+            await Pause(3000);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+        }
+    }
+
+    /// <summary>
     /// Campaign volumes in game: an empty m10 mission (levels\mods\_kalo_tour\volumes, outside the mod), an unnamed volume
     /// around the player's start with Checkpoint and Teleport to a flag (fl_exit) from the inspector, a control flag inside
     /// the volume. Played: the game is asked how far the player is from each flag.
@@ -2986,14 +3080,14 @@ public sealed class Tour
             await map.CommitMoveAsync(start);
             map.SetSelection(new[] { volume });
 
-            map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.VolumeAction.Checkpoint);
+            map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.Campaign.VolumeAction.Checkpoint);
             await map.AddVolumeTriggerCommand.ExecuteAsync(null);
             Say("volume: " + map.VolumeTriggerStatus);
             int volumeIndex = volume.Index;
             volume = map.Items.FirstOrDefault(i => i.IsVolume && i.Index == volumeIndex);
             Check(!string.IsNullOrEmpty(volume?.PlacedName), "the volume has a script name: " + volume?.PlacedName);
             map.SetSelection(new[] { volume! });
-            map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.VolumeAction.TeleportToFlag);
+            map.VolumeAction = map.VolumeActionChoices.First(c => c.Action == Kalo.Core.Scripting.Campaign.VolumeAction.TeleportToFlag);
             Check(map.VolumeParamChoices.Contains("fl_exit"), "the flag list offers fl_exit: " + string.Join(", ", map.VolumeParamChoices));
             map.VolumeParam = "fl_exit";
             await map.AddVolumeTriggerCommand.ExecuteAsync(null);

@@ -1,4 +1,4 @@
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Multiplayer;
 
 /// <summary>
 /// Plain-language help for gametype scripts, shown when hovering a word in the script editor and in autocomplete:

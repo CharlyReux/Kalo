@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Multiplayer;
 
 /// <summary>One loadout players can pick at spawn: Megalo's loadout block.</summary>
 public sealed record LoadoutDef(string Id, string Name, string Primary, string Secondary, string Equipment, string Grenades);

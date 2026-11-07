@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Campaign;
 
 /// <summary>
 /// Kalo Script for campaign missions: HaloScript (Bungie's Lisp-like mission language) shown and edited in a

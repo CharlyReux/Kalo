@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core.Scripting;
+using Kalo.Core.Scripting.Multiplayer;
 
 namespace Kalo.App.ViewModels;
 
@@ -32,7 +33,7 @@ public partial class MapEditorViewModel
         ZoneParam = value?.Default ?? "";
         OnPropertyChanged(nameof(ZoneActionHasParam));
         OnPropertyChanged(nameof(ZoneParamLabel));
-        ZoneTriggerStatus = value?.Action == Kalo.Core.Scripting.ZoneAction.Teleport
+        ZoneTriggerStatus = value?.Action == Kalo.Core.Scripting.Multiplayer.ZoneAction.Teleport
             ? "Give the exit object (any object, e.g. a teleporter receiver or a flag stand) this Megalo label in its Properties."
             : "";
     }
@@ -67,7 +68,7 @@ public partial class MapEditorViewModel
         script.IsDirty = true;
         await script.CompileCommand.ExecuteAsync(null);
         ZoneTriggerStatus = $"Added to {script.Title} (zone label \"{label}\")" + (script.CompileOk ? ". Save the map and the gametype, then Play." : ": it does not compile yet, see the gametype tab.") +
-                            (choice.Action == Kalo.Core.Scripting.ZoneAction.Teleport ? $" The exit is the object labelled \"{ZoneTriggers.LabelFor(param)}\"." : "");
+                            (choice.Action == Kalo.Core.Scripting.Multiplayer.ZoneAction.Teleport ? $" The exit is the object labelled \"{ZoneTriggers.LabelFor(param)}\"." : "");
         _main.Log($"{Title}: zone {label} › {choice.Label} written into {script.Path}.");
         _main.ActiveDocument = this;
         // Back on the map: show the choice again (which resets the status line, so it is written after).

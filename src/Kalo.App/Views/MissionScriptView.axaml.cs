@@ -8,6 +8,7 @@ using AvaloniaEdit.Document;
 using AvaloniaEdit.Highlighting;
 using AvaloniaEdit.Highlighting.Xshd;
 using Kalo.App.ViewModels;
+using Kalo.Core.Scripting.Campaign;
 
 namespace Kalo.App.Views;
 
@@ -172,7 +173,7 @@ public partial class MissionScriptView : UserControl
         string text = Editor.Document.GetText(line.Offset, line.Length);
         int col = pos.Value.Column - 1;
         if (col < 0 || col >= text.Length || !(char.IsLetterOrDigit(text[col]) || text[col] is '_' or '/')) return null;
-        var (_, word) = Kalo.Core.Scripting.MissionAssist.WordAt(text, col);
+        var (_, word) = Kalo.Core.Scripting.Campaign.MissionAssist.WordAt(text, col);
         return word.Length > 0 ? word : null;
     }
 

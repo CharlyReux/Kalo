@@ -87,7 +87,8 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   still there for anything else).
   Settings (toolbar) shows the settings, lobby options, player traits, loadouts, map objects and constants as forms, like
   ReachVariantTool; each change rewrites only that line or block of the code. Hovering a word in the code shows its
-  help; F1 or Help › Kalo Script documentation opens the guide and a reference of every action and condition.
+  help; F1 or Help › Kalo Script reference opens the reference book (gametype and mission languages, every action and
+  condition); Help › Recipes is the other book: step-by-step pages grouped by multiplayer, campaign, weapons and testing.
   Ctrl+Shift+I (or Format) tidies the file: indentation by block, one space after commas and around = and ==, no
   double blank lines; only spaces change (the result is checked against the original tokens).
   Mistakes are underlined in red as you type (after a short pause; point at one to read it), and inside a call's
@@ -148,9 +149,8 @@ src\Kalo.App\bin\Debug\net8.0\kalo.exe
   Campaign trigger volumes have "When the player enters" too (spawn a squad, checkpoint, teleport to a flag, kill zone, win),
   written into the mission's own script (checked in game: volumes-play). Patrol (inspector, for a squad's spawn point or a script
   point): New path here / Add point here make a point set (points get their bsp from the nearest mission point), and Add
-  patrol writes a looping cs_go_to command script. Squad cells have a Vehicle (the mission's vehicle palette). AI stay put
-  in reach_tag_test (the kit's levels have no pathfinding data; build-cache-file generates it), so patrols and driving
-  are for built maps. Name an object (inspector "Name", or F2 /
+  patrol writes a looping cs_go_to command script. Squad cells have a Vehicle (the mission's vehicle palette).
+  (Squads made in Kalo don't move in reach_tag_test playtests yet: under investigation.) Name an object (inspector "Name", or F2 /
   Rename in the object list) to find it again, e.g. "red_goal". Drag any number box left/right to change it
   (Shift: fine, Ctrl: coarse).
 - Campaign missions: New map › "Campaign mission" copies a Reach mission (m05 … m70_bonus) into your mod whole:

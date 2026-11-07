@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Campaign;
 
 /// <summary>
 /// Campaign missions: a squad that walks a path of script points (a point set) until it sees an enemy. Written into the
@@ -41,23 +41,8 @@ public static class PatrolScripts
     }
 
     /// <summary>The mission script with the patrol added at its end, replacing the one Kalo wrote earlier for this squad.</summary>
-    public static string AddTo(string script, string squad, string pointSet, IReadOnlyList<string> points, bool walk)
-    {
-        string nl = script.Contains("\r\n") ? "\r\n" : "\n";
-        string text = RemoveFor(script.Replace("\r\n", "\n"), squad).TrimEnd('\n');
-        return (text + "\n\n" + Code(squad, pointSet, points, walk)).Replace("\n", nl);
-    }
+    public static string AddTo(string script, string squad, string pointSet, IReadOnlyList<string> points, bool walk) =>
+        WrittenBlocks.Put(script, Mark(squad), Code(squad, pointSet, points, walk));
 
-    /// <summary>Removes Kalo's patrol block for the squad: from its mark line to the first blank line.</summary>
-    public static string RemoveFor(string script, string squad)
-    {
-        var lines = script.Replace("\r\n", "\n").Split('\n').ToList();
-        int start = lines.FindIndex(x => x.Trim() == Mark(squad));
-        if (start < 0) return script;
-        int end = start + 1;
-        while (end < lines.Count && lines[end].Trim().Length > 0) end++;
-        lines.RemoveRange(start, end - start);
-        if (start < lines.Count && start > 0 && lines[start].Trim().Length == 0 && lines[start - 1].Trim().Length == 0) lines.RemoveAt(start);
-        return string.Join("\n", lines);
-    }
+    public static string RemoveFor(string script, string squad) => WrittenBlocks.Remove(script, Mark(squad));
 }

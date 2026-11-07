@@ -1,6 +1,7 @@
 using Kalo.Protocol;
+using Kalo.Core.Scripting.Multiplayer;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Docs;
 
 /// <summary>One piece of a documentation page.</summary>
 public enum GuideKind
@@ -28,7 +29,7 @@ public sealed record GuideSection(string Id, string Group, string Title, IReadOn
 }
 
 /// <summary>
-/// The Kalo Script documentation shown in Help › Kalo Script documentation: a guide to the language, then a reference
+/// The Kalo Script reference book (Help › Kalo Script reference): a guide to the language, then a reference
 /// of every action and condition (with the compiler's argument lists when the catalog is loaded) and the value lists.
 /// </summary>
 public static class KaloScriptGuide
@@ -54,7 +55,7 @@ public static class KaloScriptGuide
     /// <summary>The guide pages (language), without the reference.</summary>
     public static IEnumerable<GuideSection> Guide()
     {
-        yield return new("start", "Guide", "Getting started", new[]
+        yield return new("start", "Gametype scripts", "Getting started", new[]
         {
             P("Kalo Script is the language Kalo uses for gametypes. It reads like Python: a line ending with a colon opens a block " +
               "(if x:, for each player:) and the lines under it are indented; # starts a comment; calls look like f(a, b), and x += 1 " +
@@ -86,7 +87,7 @@ end
             Tip("A line starting with # is a comment. A \"# title: Name\" line near the top names the exported game type. Indent with 4 spaces (Tab)."),
         });
 
-        yield return new("ticks", "Guide", "How a gametype runs", new[]
+        yield return new("ticks", "Gametype scripts", "How a gametype runs", new[]
         {
             P("A gametype script is a list of triggers. The game runs every trigger about 60 times a second (each \"tick\"), from top " +
               "to bottom. There is no waiting: a trigger checks what is true now and acts. To make something happen later, use a timer."),
@@ -107,7 +108,7 @@ end
               "the tick the player was killed."),
         });
 
-        yield return new("triggers", "Guide", "Triggers: for each, on, do", new[]
+        yield return new("triggers", "Gametype scripts", "Triggers: for each, on, do", new[]
         {
             P("At the top level of the file, each of these is a trigger:"),
             Verbatim(@"
@@ -131,7 +132,7 @@ on pregame:                       # before the game starts
                 "a script finds \"the hill\" or \"the bomb spawn\" on your map."),
         });
 
-        yield return new("if", "Guide", "Conditions: if, and, or, not", new[]
+        yield return new("if", "Gametype scripts", "Conditions: if, and, or, not", new[]
         {
             P("if runs what follows when its conditions are true. A condition is a comparison or a condition call."),
             C(@"
@@ -158,19 +159,13 @@ if not (current_player.score > 5 or current_player.team == none) then
   ...
 end
 "),
-            Tip("When and and or are both used, parentheses are required, so it is always clear which you mean: write " +
-                "(a or b) and c, or a or (b and c)."),
-            P("How it compiles: Megalo can only AND groups of ORed conditions. Kalo rewrites the expression in that form: " +
-              "a or (b and c) becomes (a or b) and (a or c), which costs one more condition. Very large expressions are refused; " +
-              "split them into nested ifs."),
-            P("How it compiles: an if becomes a block whose conditions gate its contents. An if that is the last thing in its block " +
-              "needs no block of its own, so it costs nothing extra. else / elif add a temporary number that remembers whether a " +
-              "branch already ran."),
+            Tip("When and and or are both used, parentheses are required: write (a or b) and c, or a or (b and c). " +
+                "Very long mixes of and / or cost extra conditions; split them into nested ifs."),
             H("Conditions"),
             P(string.Join(", ", MegaloDocs.Conditions.Keys.Where(k => k != "if")) + ". See Reference › Conditions."),
         });
 
-        yield return new("calls", "Guide", "Actions and calls", new[]
+        yield return new("calls", "Gametype scripts", "Actions and calls", new[]
         {
             P("Actions do things. Call them like functions: name(arguments). The first argument can also go before a dot."),
             C(@"
@@ -189,7 +184,7 @@ adjust_grenades(current_player, frag, set_to, 4)
             Tip("Every action's arguments are listed in Reference › Actions, with the exact form the compiler accepts."),
         });
 
-        yield return new("variables", "Guide", "Variables: declare, temp, members", new[]
+        yield return new("variables", "Gametype scripts", "Variables: declare, temp, members", new[]
         {
             P("scope.name: type makes a variable that keeps its value between ticks (write it at the top of the file). It belongs to " +
               "the game (global), or there is one for each player, team or object."),
@@ -232,7 +227,7 @@ hud_post_message(everyone, ball_taken, goal_message)
 "),
         });
 
-        yield return new("functions", "Guide", "Functions", new[]
+        yield return new("functions", "Gametype scripts", "Functions", new[]
         {
             P("A function names a group of statements so you can use them in several places. Define it with def at the top level " +
               "(outside triggers) and call it on its own line, like an action."),
@@ -256,7 +251,7 @@ end
                 "action and condition budget every time. A function can call other functions, but not itself."),
         });
 
-        yield return new("math", "Guide", "Changing values", new[]
+        yield return new("math", "Gametype scripts", "Changing values", new[]
         {
             C(@"
 x = 5
@@ -288,7 +283,7 @@ end
 "),
         });
 
-        yield return new("declarations", "Guide", "Settings, options, traits, objects", new[]
+        yield return new("declarations", "Gametype scripts", "Settings, options, traits, objects", new[]
         {
             P("Everything a gametype declares besides its triggers. The Settings button in the script toolbar shows most of " +
               "these as a form (like ReachVariantTool); what you change there is written here, and the other way round."),
@@ -376,106 +371,7 @@ include ""slayer_gameplay_triggers.txt""
             Tip("Literal text in options and messages compiles with a localization warning: that's fine for a mod."),
         });
 
-        yield return new("recipes", "Guide", "Recipes", new[]
-        {
-            H("Give everyone a weapon when they spawn"),
-            Prog(@"
-declare player.number armed = 0
-
-for each player do
-  temp object body = current_player       -- a player used as an object is its body (none while dead)
-  if current_player.armed == 0 and not body == none then
-    biped_give_weapon(body, ""sniper_rifle"", force)
-    current_player.armed = 1
-  end
-  if player_died(current_player, any) then
-    current_player.armed = 0
-  end
-end
-"),
-            H("Make objects bigger in game"),
-            P("Reach ignores the scale set on a map object in multiplayer; a script can scale it instead (percent)."),
-            Prog(@"
-for each object with label ""big"" do
-  object_set_scale(current_object, 300)
-end
-"),
-            H("First to 10 kills ends the round"),
-            Prog(@"
-for each player do
-  if current_player.score >= 10 then
-    end_round()
-  end
-end
-"),
-            H("Show a message to one player"),
-            C(@"
-hud_post_message(player current_player, none, ""Welcome!"")
-"),
-            H("A waypoint over an object"),
-            P("Waypoints (navpoints) are the markers players see over objects through walls. Give the object a Megalo label in the map " +
-              "(inspector › Properties › megalo label), then:"),
-            Prog(@"
-objects goals with label ""goal""
-for each goals do
-  navpoint_set_visible(current_object, everyone)
-  navpoint_set_icon(current_object, destination)
-  navpoint_set_text(current_object, ""Goal"")
-  navpoint_set_priority(current_object, high)
-end
-"),
-            P("Who sees it: everyone, no_one, allies, enemies. Icons: destination, defend, skull, king, vip, flag, bomb, target... " +
-              "(type navpoint_set_icon( and the suggestions list them). navpoint_set_timer shows a timer on it."),
-            H("A countdown on the screen"),
-            P("A HUD widget is a text box at a place on the screen; %s in its text shows a timer or a number."),
-            Prog(@"
-widget clock at top_right
-declare global.timer countdown = 60
-
-on init do
-  timer_set_rate(countdown, 1)
-end
-
-for each player do
-  hud_widget_set_visibility(clock, current_player, 1)
-end
-
-do
-  hud_widget_set_text(clock, ""Time left: %s"", countdown)
-  if timer_expired(countdown) then
-    end_round()
-  end
-end
-"),
-            P("Widget places: top_left, top_center, top_right, meter. hud_widget_set_meter(clock, countdown) turns it into a bar that empties with the timer."),
-            H("Announce something to everyone"),
-            Prog(@"
-for each player do
-  if current_player.score == 5 then
-    hud_post_message(everyone, none, ""Someone is halfway there!"")
-  end
-end
-"),
-            P("hud_post_message's second argument is a sound (none for silence); play_sound(everyone, sound) plays one alone. " +
-              "Rest the mouse on a sound name in the suggestions to hear it."),
-            H("A waypoint over a player"),
-            Prog(@"
-declare global.player leader = none
-for each player do
-  if current_player.score >= 10 then
-    leader = current_player
-  end
-end
-do
-  if leader != none then
-    navpoint_set_visible(leader, everyone)
-    navpoint_set_icon(leader, vip)
-  end
-end
-"),
-        });
-
-        yield return new("convert", "Guide", "Converting Megalo scripts", new[]
+        yield return new("convert", "Gametype scripts", "Converting Megalo scripts", new[]
         {
             P("Open any Megalo script (Gametypes panel) and press To Kalo Script: Kalo writes a .kscript copy in your mod and " +
               "opens it; the original stays as it is. Every Bungie script that compiles converts and compiles back to the same " +
@@ -502,11 +398,44 @@ map_object hill label ""x"" end     objects hill with label ""x""
 constants number k 0 end          constant k = 0
 ; comment                         # comment
 "),
-            H("The older style"),
-            P("Kalo Script used to close blocks with then / do / end (if x then ... end, for each player do ... end, -- comments, " +
-              "temp player p = none, declare player.number n = 0, function f() ... end). Files written that way still work. A banner " +
-              "offers to rewrite them in the Python style; the gametype stays exactly the same (Kalo checks it)."),
-            P("In Megalo, a condition gates everything after it in its block; Kalo Script makes that an if around the rest of the block."),
+            Tip("Files in the older then / do / end style still work; a banner offers to rewrite them in the Python style."),
+        });
+
+        yield return new("mission", "Mission scripts", "Mission scripts", new[]
+        {
+            P("Campaign missions are scripted in HaloScript, Bungie's mission language. Kalo shows it in the same Python style as " +
+              "gametypes and saves it back as HaloScript. The functions are HaloScript's, not Megalo's: hover one for its help."),
+            H("Scripts"),
+            Verbatim(@"
+startup intro:            # runs once when the mission starts
+dormant fight_barn:       # runs once when another script wakes it: wake(fight_barn)
+continuous watch:         # runs again and again, every tick
+command_script go_home:   # orders for AI: cs_run_command_script(squad, go_home)
+def half(x):              # a function that returns a value (static script)
+"),
+            H("Waiting"),
+            P("A mission script can wait, unlike a gametype: sleep(30) waits 30 ticks (1 second), sleep_until(condition, 1) waits " +
+              "until the condition is true, checking it every tick."),
+            Verbatim(@"
+startup mission_start:
+    game_save()
+    sleep_until(volume_test_players(tv_start_fight), 1)
+    ai_place(squad)
+    sleep_until(ai_living_count(squad) == 0, 1)
+    game_won()
+"),
+            H("Loops"),
+            P("repeat ... until runs its lines again until the condition is true (Bungie's sleep_until (begin ... condition))."),
+            Verbatim(@"
+command_script patrol:
+    repeat:
+        cs_go_to(ps_path/p0)
+        cs_go_to(ps_path/p1)
+        until false
+"),
+            H("Names from the map"),
+            P("Squads, trigger volumes, cutscene flags, point sets (ps_path/p0) and named objects are used by their name. Suggestions " +
+              "list the map's names; Check flags a name the map doesn't have."),
         });
     }
 

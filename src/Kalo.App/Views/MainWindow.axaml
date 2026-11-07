@@ -53,7 +53,8 @@
           </MenuItem>
           <MenuItem Header="_Help">
             <MenuItem Header="Recipes: how to do common things" Click="Recipes_Click" />
-            <MenuItem Header="Kalo Script documentation" InputGesture="F1" Click="Docs_Click" />
+            <Separator />
+            <MenuItem Header="Kalo Script reference (gametypes and missions)" InputGesture="F1" Click="Docs_Click" />
             <MenuItem Header="Kalo Script: actions and conditions" Click="DocsReference_Click" />
           </MenuItem>
         </Menu>
@@ -580,7 +581,7 @@
                               <Grid ColumnDefinitions="70,*" Margin="0,0,0,3" IsVisible="{Binding HasVehicleField}">
                                 <TextBlock Text="Vehicle" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding VehicleChoices}" SelectedIndex="{Binding Vehicle}" HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24" IsEnabled="{Binding CanEdit}"
-                                          ToolTip.Tip="The cell's AI spawn in this vehicle (the first one drives). The list is the mission's vehicle palette: open a vehicle and Use it › Add to map palette to add one. In Kalo's playtests the vehicle appears but AI only drive it in a built map (Play in MCC)." />
+                                          ToolTip.Tip="The cell's AI spawn in this vehicle (the first one drives). The list is the mission's vehicle palette: open a vehicle and Use it › Add to map palette to add one." />
                               </Grid>
                               <ItemsControl ItemsSource="{Binding Characters}">
                                 <ItemsControl.ItemTemplate>

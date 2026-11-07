@@ -1,7 +1,7 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Multiplayer;
 
 /// <summary>
 /// MCC map variant files (.mvar: a Forge map), made from the 'mvar' chunk the game encodes (Kalo's xinput1_4.dll command

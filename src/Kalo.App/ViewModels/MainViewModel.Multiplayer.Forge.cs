@@ -2,6 +2,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
 using Kalo.Protocol;
+using Kalo.Core.Scripting.Multiplayer;
 
 namespace Kalo.App.ViewModels;
 
@@ -93,7 +94,7 @@ public partial class MainViewModel
             byte[] chunk = await File.ReadAllBytesAsync(chunkFile);
             File.Delete(chunkFile);
             string title = map;
-            byte[] mvar = Kalo.Core.Scripting.MapVariantFile.ToMcc(chunk, title, "Made with Kalo from " + map + ".");
+            byte[] mvar = Kalo.Core.Scripting.Multiplayer.MapVariantFile.ToMcc(chunk, title, "Made with Kalo from " + map + ".");
             string folder = System.IO.Path.Combine(Paths.KaloData, "forge-variants");
             System.IO.Directory.CreateDirectory(folder);
             string mine = System.IO.Path.Combine(folder, map + ".mvar");
@@ -101,7 +102,7 @@ public partial class MainViewModel
             LastForgeVariant = mine;
             var mcc = MccMod.SetMapVariant("kalo_" + map + ".mvar", mvar);
             Log($"Export as Forge variant: \"{title}\" is a Forge variant of {System.IO.Path.GetFileNameWithoutExtension(r.BaseScenario)} " +
-                $"({Kalo.Core.Scripting.MapVariantFile.ChunkData(chunk).Length:N0} bytes), saved in {mine}" +
+                $"({Kalo.Core.Scripting.Multiplayer.MapVariantFile.ChunkData(chunk).Length:N0} bytes), saved in {mine}" +
                 (mcc.Count > 0 ? " and in MCC's map variants (" + string.Join(", ", mcc) + ")." : ". MCC's map folder (LocalFiles\\<id>\\HaloReach\\Map) wasn't found: copy the file there."));
             Log($"Export as Forge variant: in MCC (mods off is fine), Custom Games \u203a Halo: Reach \u203a map: pick {System.IO.Path.GetFileNameWithoutExtension(r.BaseScenario)}, then the variant \"{title}\". Restart MCC if it was running.");
         }

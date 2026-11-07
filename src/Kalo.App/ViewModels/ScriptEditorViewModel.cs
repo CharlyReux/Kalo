@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
 using Kalo.Core.Scripting;
 using Kalo.Protocol;
+using Kalo.Core.Scripting.Multiplayer;
 
 namespace Kalo.App.ViewModels;
 

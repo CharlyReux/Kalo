@@ -86,6 +86,26 @@ namespace Kalo.BlamHost
         {
             int best = -1;
             double bestD = 40 * 40;
+            // The AI zones' firing positions first: thousands of them on the walkable ground, each knowing its bsp.
+            var zones = tag.SelectField("Block:zones") as TagFieldBlock;
+            for (int z = 0; zones != null && z < zones.Elements.Count; z++)
+            {
+                var fps = tag.SelectField("Block:zones[" + z + "]/Block:firing positions") as TagFieldBlock;
+                for (int k = 0; fps != null && k < fps.Elements.Count; k++)
+                {
+                    string e = "Block:zones[" + z + "]/Block:firing positions[" + k + "]/";
+                    var posField = tag.SelectField(e + "RealPoint3d:position (local)");
+                    if (posField == null) break;
+                    var q = Pad(Floats(posField), 3);
+                    double d = (q[0] - pos[0]) * (q[0] - pos[0]) + (q[1] - pos[1]) * (q[1] - pos[1]) + (q[2] - pos[2]) * (q[2] - pos[2]);
+                    if (d >= bestD) continue;
+                    int bsp = -1;
+                    foreach (string type in new[] { "ShortBlockIndex", "ShortBlockIndexCustomSearch", "ShortInteger" })
+                        if (tag.SelectField(e + type + ":structure bsp") is TagField f) { bsp = Int(f); break; }
+                    if (bsp >= 0) { bestD = d; best = bsp; }
+                }
+            }
+            if (best >= 0 && bestD < 15 * 15) return best;
             foreach (var (s, j) in ScriptPointList(tag))
             {
                 string e = "Block:scripting data[0]/Block:point sets[" + s + "]/Block:points[" + j + "]/";
@@ -97,6 +117,24 @@ namespace Kalo.BlamHost
                 var q = Pad(Floats(tag.SelectField(e + "RealPoint3d:position")), 3);
                 double d = (q[0] - pos[0]) * (q[0] - pos[0]) + (q[1] - pos[1]) * (q[1] - pos[1]) + (q[2] - pos[2]) * (q[2] - pos[2]);
                 if (d < bestD) { bestD = d; best = bsp; }
+            }
+            // Squad spawn points know theirs too.
+            var squads = tag.SelectField("Block:squads") as TagFieldBlock;
+            for (int s = 0; squads != null && s < squads.Elements.Count; s++)
+            {
+                var pts = tag.SelectField("Block:squads[" + s + "]/Block:spawn points") as TagFieldBlock;
+                for (int j = 0; pts != null && j < pts.Elements.Count; j++)
+                {
+                    string e = "Block:squads[" + s + "]/Block:spawn points[" + j + "]/";
+                    if (e == self) continue;
+                    int bsp = -1;
+                    foreach (string type in new[] { "ShortBlockIndex", "ShortBlockIndexCustomSearch", "ShortInteger" })
+                        if (tag.SelectField(e + type + ":structure bsp") is TagField f) { bsp = Int(f); break; }
+                    if (bsp < 0) continue;
+                    var q = Pad(Floats(tag.SelectField(e + "RealPoint3d:position")), 3);
+                    double d = (q[0] - pos[0]) * (q[0] - pos[0]) + (q[1] - pos[1]) * (q[1] - pos[1]) + (q[2] - pos[2]) * (q[2] - pos[2]);
+                    if (d < bestD) { bestD = d; best = bsp; }
+                }
             }
             return best;
         }

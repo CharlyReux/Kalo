@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
 using Kalo.Protocol;
+using Kalo.Core.Scripting.Multiplayer;
 
 namespace Kalo.App.ViewModels;
 
@@ -74,8 +75,6 @@ public partial class MainViewModel
     /// Saves what is unsaved, compiles and deploys the chosen gametype (if any), then starts the chosen map.
     /// Restarts the game if it is already running.
     /// </summary>
-    private bool _aiMovementNoted;
-
     [RelayCommand]
     public async Task PlayAsync()
     {
@@ -90,13 +89,6 @@ public partial class MainViewModel
             if (await IsCampaignScenarioAsync(SelectedScenario))
             {
                 // A campaign mission: no gametype; the mission's own scripts run (cutscenes, AI, objectives).
-                if (!_aiMovementNoted)
-                {
-                    _aiMovementNoted = true;
-                    Log("Note: in these playtests AI stay where they spawn on Reach's levels: the editing kit's levels have no AI pathfinding data. " +
-                        "tool.exe makes it when it builds the map, so patrols, AI moving and AI boarding vehicles are for a built map (Play › Play in MCC). " +
-                        "Spawning, fighting from where they stand and mission scripts work here.");
-                }
                 var commands = CampaignPlayCommands(out string campaignNote);
                 StartGame(SelectedScenario, commands, $"Play: {SelectedScenario}{campaignNote}. A mission takes a minute or two to load; its scripts' messages and errors show in Output (hs: …).", null, true);
                 return;
@@ -228,7 +220,7 @@ public partial class MainViewModel
             text = kalo.Megalo;
         }
         int added = 0;
-        if (category != null) (text, added) = Kalo.Core.Scripting.MegaloCategory.Set(text, category);
+        if (category != null) (text, added) = Kalo.Core.Scripting.Multiplayer.MegaloCategory.Set(text, category);
         string name = "kalo_" + System.IO.Path.GetFileNameWithoutExtension(relativePath);
         string mglo = System.IO.Path.Combine(Paths.Workspace, "maps", "megalo", name + ".mglo");
         await EnsureMegaloCatalogAsync();
@@ -560,11 +552,11 @@ public partial class MainViewModel
     /// <summary>A preset's settings, traits and loadouts written into the converted template.</summary>
     private string ApplyPreset(string text, GametypePreset preset)
     {
-        text = Kalo.Core.Scripting.GametypeSettings.ApplyPreset(text, preset.Settings, preset.Traits);
+        text = Kalo.Core.Scripting.Multiplayer.GametypeSettings.ApplyPreset(text, preset.Settings, preset.Traits);
         if (!preset.NoLoadouts) return text;
-        var s = Kalo.Core.Scripting.GametypeLoadouts.Parse(text, Paths?.MegaloSource);
+        var s = Kalo.Core.Scripting.Multiplayer.GametypeLoadouts.Parse(text, Paths?.MegaloSource);
         s.Spartan = s.Elite = "empty_palette";
-        return Kalo.Core.Scripting.GametypeLoadouts.Apply(text, s);
+        return Kalo.Core.Scripting.Multiplayer.GametypeLoadouts.Apply(text, s);
     }
 
     /// <summary>New gametypes are written in Kalo Script (modern syntax) unless unticked.</summary>

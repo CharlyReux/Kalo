@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Kalo.Core.Scripting;
+namespace Kalo.Core.Scripting.Multiplayer;
 
 public enum DeclKind { Setting, SettingBlock, Option, Traits, Objects, Constant, Other }
 

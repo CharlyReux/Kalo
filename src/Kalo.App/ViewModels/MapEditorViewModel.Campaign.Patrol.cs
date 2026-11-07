@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core.Scripting;
 using Kalo.Protocol;
+using Kalo.Core.Scripting.Campaign;
 
 namespace Kalo.App.ViewModels;
 
@@ -93,6 +94,6 @@ public partial class MapEditorViewModel
         _main.ActiveDocument = this;
         PatrolSquad = squad;
         PatrolPath = path;
-        PatrolStatus = $"Added to {doc.Title}: {squad} walks {path} ({string.Join(" › ", points)}) until it sees an enemy. Save the map and the script. AI move in a built map (Play in MCC): in Kalo's playtests they stand still (the editing kit's levels have no AI pathfinding data).";
+        PatrolStatus = $"Added to {doc.Title}: {squad} walks {path} ({string.Join(" › ", points)}) until it sees an enemy. Save the map and the script, then Play.";
     }
 }

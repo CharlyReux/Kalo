@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Input;
 using Avalonia.Layout;
@@ -7,12 +8,14 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Kalo.App.ViewModels;
 using Kalo.Core.Scripting;
+using Kalo.Core.Scripting.Docs;
 
 namespace Kalo.App.Views;
 
 /// <summary>
-/// Help › Kalo Script documentation: the guide to the language and a reference of every action, condition and value,
-/// with search. One window, reused; F1 in a script opens it at the word under the caret.
+/// Kalo help, two books: Recipes (how to do common things, by multiplayer / campaign...) and the Kalo Script reference
+/// (the gametype and mission languages, every action, condition and value). Each book has its own list and search; a
+/// topic opens the book that has it. One window, reused; F1 in a script opens the reference at the word under the caret.
 /// </summary>
 public sealed class DocsWindow : Window
 {
@@ -20,6 +23,11 @@ public sealed class DocsWindow : Window
 
     private readonly MainViewModel _vm;
     private IReadOnlyList<GuideSection> _sections = Array.Empty<GuideSection>();
+    private IReadOnlyList<GuideSection> _recipes = Array.Empty<GuideSection>();
+    private IReadOnlyList<GuideSection> _reference = Array.Empty<GuideSection>();
+    private readonly ToggleButton _recipesButton, _referenceButton;
+    /// <summary>True when the Recipes book is shown, false for the Kalo Script reference.</summary>
+    public bool ShowingRecipes { get; private set; }
     private readonly TextBox _search;
     private readonly ListBox _nav;
     private readonly StackPanel _page;
@@ -68,8 +76,18 @@ public sealed class DocsWindow : Window
             if (_updatingNav) return;
             if (_nav.SelectedItem is NavRow { Section: { } s }) Show(s);
         };
+        _recipesButton = new ToggleButton { Content = "Recipes", Classes = { "seg" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        _referenceButton = new ToggleButton { Content = "Script reference", Classes = { "seg" }, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Center };
+        _recipesButton.Click += (_, _) => SwitchBook(true);
+        _referenceButton.Click += (_, _) => SwitchBook(false);
+        var books = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*"), Margin = new Thickness(8, 8, 8, 0) };
+        Grid.SetColumn(_referenceButton, 1);
+        books.Children.Add(_recipesButton);
+        books.Children.Add(_referenceButton);
         var left = new DockPanel { Background = Brush("KPanel") };
+        DockPanel.SetDock(books, Dock.Top);
         DockPanel.SetDock(_search, Dock.Top);
+        left.Children.Add(books);
         left.Children.Add(_search);
         left.Children.Add(_nav);
 
@@ -88,8 +106,9 @@ public sealed class DocsWindow : Window
         KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.F, KeyModifiers.Control), Command = new CommunityToolkit.Mvvm.Input.RelayCommand(() => { _search.Focus(); _search.SelectAll(); }) });
         KeyBindings.Add(new KeyBinding { Gesture = new KeyGesture(Key.Escape), Command = new CommunityToolkit.Mvvm.Input.RelayCommand(Close) });
 
-        _sections = KaloRecipes.All().Concat(KaloScriptGuide.Build(vm.MegaloCatalog)).ToList();
-        Refresh();
+        _recipes = KaloRecipes.All().ToList();
+        _reference = KaloScriptGuide.Build(vm.MegaloCatalog);
+        SwitchBook(false);
         // The reference gets the compiler's argument lists once the gametype compiler is up.
         if (vm.MegaloCatalog == null)
             _ = Dispatcher.UIThread.InvokeAsync(async () =>
@@ -97,10 +116,24 @@ public sealed class DocsWindow : Window
                 try { await vm.EnsureMegaloCatalogAsync(); } catch { return; }
                 if (vm.MegaloCatalog == null) return;
                 string? id = Current?.Id;
-                _sections = KaloRecipes.All().Concat(KaloScriptGuide.Build(vm.MegaloCatalog)).ToList();
+                _reference = KaloScriptGuide.Build(vm.MegaloCatalog);
+                if (!ShowingRecipes) _sections = _reference;
                 Refresh();
                 if (id != null && string.IsNullOrWhiteSpace(Query)) GoTo(id);
             });
+    }
+
+    /// <summary>Shows one book: its list, its title, and its first page unless a page of it is already shown.</summary>
+    private void SwitchBook(bool recipes)
+    {
+        ShowingRecipes = recipes;
+        _recipesButton.IsChecked = recipes;
+        _referenceButton.IsChecked = !recipes;
+        _sections = recipes ? _recipes : _reference;
+        Title = recipes ? "Kalo recipes" : "Kalo Script reference";
+        _search.Watermark = recipes ? "Search: weapon, zone, squad, patrol..." : "Search: timer, score, create_object, sleep_until...";
+        if (Current != null && !_sections.Contains(Current)) Current = null;
+        Refresh();
     }
 
     private sealed record NavRow(string Text, GuideSection? Section);
@@ -136,6 +169,11 @@ public sealed class DocsWindow : Window
     public void GoTo(string? topic)
     {
         if (string.IsNullOrWhiteSpace(topic)) { if (Current == null) Show(_sections.FirstOrDefault()); return; }
+        // A page id opens the book that has it.
+        var recipe = _recipes.FirstOrDefault(s => s.Id == topic);
+        if (recipe != null) { if (!ShowingRecipes) SwitchBook(true); _search.Text = ""; Show(recipe); return; }
+        // Everything else (pages of the language, actions, keywords) is in the reference.
+        if (ShowingRecipes && (_reference.Any(s => s.Id == topic) || !topic.Contains(' '))) SwitchBook(false);
         var byId = _sections.FirstOrDefault(s => s.Id == topic);
         if (byId != null) { _search.Text = ""; Show(byId); return; }
         var withEntry = _sections.FirstOrDefault(s => s.Blocks.Any(b => b.Kind == GuideKind.Entry && b.Title == topic));

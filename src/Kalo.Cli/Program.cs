@@ -2,6 +2,9 @@ using System.Diagnostics;
 using Kalo.Core;
 using Kalo.Protocol;
 using Kalo.Core.Scripting;
+using Kalo.Core.Scripting.Multiplayer;
+using Kalo.Core.Scripting.Campaign;
+using Kalo.Core.Scripting.Docs;
 
 // kalo-cli <command>
 //   host-test   start the Blam Host, open a weapon tag, edit, save as a test copy, check, clean up
@@ -1045,7 +1048,7 @@ async Task KscriptGuide()
     await using var host = await HostClient.StartAsync(paths, line => { });
     var cat = await host.MegaloCatalogAsync(paths.MegaloObjectLists);
     MegaloDocs.Fix(cat);
-    var sections = KaloScriptGuide.Build(cat);
+    var sections = KaloScriptGuide.Build(cat).Concat(KaloRecipes.All()).ToList();
     Console.WriteLine($"{sections.Count} pages, {sections.Sum(s => s.Blocks.Count)} blocks");
     int n = 0, bad = 0;
     foreach (var s in sections)
