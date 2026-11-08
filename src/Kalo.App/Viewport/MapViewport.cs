@@ -225,6 +225,7 @@ void main() {
             if (_subscribed.PlacementPointProvider is { } provider && ReferenceEquals(provider.Target, this)) _subscribed.PlacementPointProvider = null;
             if (_subscribed.PlayFromProvider is { } play && ReferenceEquals(play.Target, this)) _subscribed.PlayFromProvider = null;
             if (_subscribed.PlayFromCheck is { } check && ReferenceEquals(check.Target, this)) _subscribed.PlayFromCheck = null;
+            if (_subscribed.ViewProvider is { } view && ReferenceEquals(view.Target, this)) _subscribed.ViewProvider = null;
         }
         _subscribed = Map;
         if (_subscribed != null)
@@ -237,6 +238,7 @@ void main() {
             _subscribed.PlacementPointProvider = PlacementPoint;
             _subscribed.PlayFromProvider = PlayFromPoint;
             _subscribed.PlayFromCheck = PlayFromProblem;
+            _subscribed.ViewProvider = CurrentView;
             _cameraPlaced = false;
         }
         RequestNextFrameRendering();
@@ -286,6 +288,8 @@ void main() {
         _cameraPlaced = true;
         RequestNextFrameRendering();
     }
+
+    private (Vector3 Eye, float Yaw, float Pitch) CurrentView() => (_eye, _yaw * 180f / MathF.PI, _pitch * 180f / MathF.PI);
 
     private void OnFrameAll()
     {

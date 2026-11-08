@@ -66,10 +66,19 @@
                   ToolTip.Tip="A new trigger volume (a 4 x 4 x 3 box) in front of the camera. Rename it so scripts can use it." />
           <Button Classes="outline" Content="Flag" Command="{Binding AddMarkerCommand}" CommandParameter="cutscene flags"
                   ToolTip.Tip="A new cutscene flag (a named point for scripts) in front of the camera" />
+          <Button Classes="outline" Content="Camera" Command="{Binding AddCameraHereCommand}"
+                  ToolTip.Tip="A new cutscene camera point that shows exactly what this view shows. Scripts use it with camera_set." />
           <Button Classes="outline" Content="Spawn point" Command="{Binding AddMarkerCommand}" CommandParameter="ai spawn points"
                   ToolTip.Tip="Another spawn point for the squad of the selected spawn point, in front of the camera" />
           <Button Classes="outline" Content="Squad" Command="{Binding AddSquadCommand}"
                   ToolTip.Tip="A new squad in front of the camera: one AI (an Elite when the mission has one), team covenant. Change what it spawns in the Squad section; a script places it with ai_place(name)." />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2" IsVisible="{Binding Selected.IsCamera, FallbackValue=False}">
+          <TextBlock Text="Camera" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
+          <Button Classes="outline" Content="Look through" Command="{Binding LookThroughCameraCommand}"
+                  ToolTip.Tip="Moves this view to the selected camera point, to see what it shows" />
+          <Button Classes="outline" Content="Set to view" Command="{Binding SetCameraToViewCommand}"
+                  ToolTip.Tip="Moves the selected camera point to this view" />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="0,2,14,2">
           <TextBlock Text="Level pieces" Foreground="{StaticResource KMuted}" FontSize="12" VerticalAlignment="Center" />
@@ -133,6 +142,10 @@
                   ToolTip.Tip="Moves your player in the game to the ground under this view's camera, facing where it looks" />
           <Button Classes="outline" Content="Spawn this squad" Command="{Binding LiveSpawnSquadCommand}" IsVisible="{Binding IsCampaign}"
                   ToolTip.Tip="Places the selected spawn point's squad in the game now (ai_place). Save and restart with Play for squads added or changed since the game started." />
+          <Button Classes="outline" Content="Show this camera" Command="{Binding LivePreviewCameraCommand}" IsVisible="{Binding Selected.IsCamera, FallbackValue=False}"
+                  ToolTip.Tip="Shows the selected camera point in the game (camera_control, camera_set). Save and restart with Play for cameras added or moved since the game started." />
+          <Button Classes="outline" Content="View back on player" Command="{Binding LiveCameraBackCommand}" IsVisible="{Binding IsCampaign}"
+                  ToolTip.Tip="Gives the view back to the player (camera_control 0)" />
           <Button Classes="outline" Content="Remove all AI" Command="{Binding LiveRemoveAiCommand}" IsVisible="{Binding IsCampaign}"
                   ToolTip.Tip="Removes every AI from the game (ai_erase_all)" />
           <Button Classes="outline" Content="Load this zone set" Command="{Binding LiveSwitchZoneSetCommand}" IsVisible="{Binding IsCampaign}"

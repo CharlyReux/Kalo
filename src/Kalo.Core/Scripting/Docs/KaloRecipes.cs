@@ -230,6 +230,31 @@ startup mission_start:
             Tip("Next: more squads and volumes, checkpoints with game_save(), Level pieces › Here to remove a building."),
         });
 
+        yield return new("recipe-camera-cutscene", Campaign, "A simple camera cutscene", new[]
+        {
+            P("The camera holds on one view, glides to another, then gives control back. Durations are in ticks: 30 is one second."),
+            Code(@"
+# intro_shot: two camera points, shot_a and shot_b.
+startup intro_shot:
+    player_enable_input(false)
+    chud_show(false)
+    camera_control(true)
+    camera_set(shot_a, 0)
+    sleep(60)
+    camera_set(shot_b, 150)
+    sleep(180)
+    camera_control(false)
+    chud_show(true)
+    player_enable_input(true)
+"),
+            H("Steps"),
+            P("1. In a copy of a mission, turn on Cutscenes in the Campaign bar and fly to the first view."),
+            P("2. Add › Camera saves that view. Name it shot_a. Fly to the second view, Add › Camera, name it shot_b."),
+            P("3. With a camera selected, Look through shows its view and Set to view moves it to where you are looking."),
+            P("4. Mission scripts › your map's script: add the script above. Save everything, then Play (F5)."),
+            Tip("To check a shot without the script: save, Play here, select the camera and click Show this camera in the Live game bar; View back on player ends it."),
+        });
+
         yield return new("recipe-level-pieces", Campaign, "Remove a building or rock from a level", new[]
         {
             P("1. In a copy of a level, pick a zone set, aim at the building and click Level pieces › Here: the pieces there, nearest first."),

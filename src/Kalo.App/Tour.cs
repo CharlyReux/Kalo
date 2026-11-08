@@ -73,6 +73,7 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("m10-ai", StringComparer.OrdinalIgnoreCase) == true) await Section("m10-ai", M10Ai);
                 if (AppArgs.Current.TourSections?.Contains("ai-matrix", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-matrix", AiMatrix);
                 if (AppArgs.Current.TourSections?.Contains("ai-demo", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-demo", AiDemoMission);
+                if (AppArgs.Current.TourSections?.Contains("cameras", StringComparer.OrdinalIgnoreCase) == true) await Section("cameras", CamerasSection);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -3032,6 +3033,90 @@ public sealed class Tour
             }
             for (int i = 0; i < 30; i++) { lock (probes) if (probes.Any(p => p.StartsWith("kalo probe: r10"))) break; await Task.Delay(1000); }
             lock (probes) foreach (var p in probes.Distinct()) Say(p);
+            _vm.StopGameCommand.Execute(null);
+            await Pause(3000);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+        }
+    }
+
+    /// <summary>
+    /// Add › Camera on the m10 copy at the barn (a level shot and one tilted down), saved, read back, then shown in game
+    /// with the Live game bar and moved between with camera_pan. KALO_SHOTS_DIR is where the game is captured from outside.
+    /// </summary>
+    private async Task CamerasSection()
+    {
+        const string path = @"levels\mods\_kalo_tour\m10full\m10full.scenario";
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        try
+        {
+            foreach (var old in map.Items.Where(i => i.IsCamera && i.PlacedName is "tour_a" or "tour_b").OrderByDescending(i => i.Index).ToList())
+            { map.SetSelection(new[] { old }); await map.DeleteSelectedCommand.ExecuteAsync(null); }
+            async Task<PlacementItem> Add(string name, Vector3 eye, float yaw, float pitch)
+            {
+                map.LookFrom(eye, yaw, pitch);
+                await Pause(1500);
+                await map.AddCameraHereCommand.ExecuteAsync(null);
+                await map.RenameAsync(map.Selected!, name);
+                return map.Items.First(i => i.IsCamera && i.PlacedName == name);
+            }
+            var a = await Add("tour_a", new Vector3(146f, 26f, 12f), 90, -60);
+            var b = await Add("tour_b", new Vector3(146f, 26f, 12f), 90, 0);
+            Check(Vector3.Distance(a.Position, new Vector3(146f, 26f, 12f)) < 0.01f && MathF.Abs(a.Yaw - 90) < 0.1f, $"tour_a is at the view: {a.Position} yaw {a.Yaw} pitch {a.Pitch}");
+            Check(MathF.Abs(a.Pitch + 60) < 0.1f && MathF.Abs(b.Pitch) < 0.1f, $"the tilts are kept: {a.Pitch}, {b.Pitch}");
+            // A capture from outside the game: the capture script takes one when the request file appears and deletes it.
+            async Task GameShot(string name)
+            {
+                string request = System.IO.Path.Combine(_dir, "request-" + name + ".txt");
+                File.WriteAllText(request, name);
+                for (int i = 0; i < 60 && File.Exists(request); i++) await Task.Delay(500);
+            }
+            foreach (var (cam, shot) in new[] { (a, "editor-down.png"), (b, "editor-up.png") })
+            {
+                map.SetSelection(new[] { cam });
+                map.LookThroughCameraCommand.Execute(null);
+                await Pause(1500);
+                await map.CaptureViewAsync(System.IO.Path.Combine(_dir, shot));
+            }
+            await map.SaveCommand.ExecuteAsync(null);
+            map.LookFrom(new Vector3(146f, 26f, 3f), 90, 0); // the player faces the same way as tour_b: compare the two
+            await Pause(1500);
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            await map.PlayFromCameraCommand.ExecuteAsync(null);
+            if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "Play here loaded the mission")) return;
+            await _vm.Game.RunConsoleAsync(new[] { "(set cheat_deathless_player true)" }, TimeSpan.FromSeconds(10));
+            await Task.Delay(TimeSpan.FromSeconds(8));
+            await GameShot("game-start");
+            Say("errors shown: " + await _vm.Game.RunConsoleAsync(new[] { "(error_geometry_show_all)" }, TimeSpan.FromSeconds(10)));
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await GameShot("errors-shown");
+            Say("errors hidden: " + await _vm.Game.RunConsoleAsync(new[] { "(error_geometry_hide_all)" }, TimeSpan.FromSeconds(10)));
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await GameShot("errors-hidden");
+            Say("wire off: " + await _vm.Game.RunConsoleAsync(new[] { "render_debug_structure_all_cluster_errors 0", "render_debug_structure_line_opacity 0 0 0 0", "render_debug_structure_opacity 0 0 0 0", "render_debug_structure_text_opacity 0 0 0 0" }, TimeSpan.FromSeconds(10)));
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await GameShot("wire-off");
+            // The recipe's commands, in order, as console commands.
+            Say("recipe: " + await _vm.Game.RunConsoleAsync(new[] { "player_enable_input 0", "chud_show 0", "camera_control 1", "camera_set tour_a 0" }, TimeSpan.FromSeconds(10)));
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await GameShot("game-down");
+            map.SetSelection(new[] { map.Items.First(i => i.IsCamera && i.PlacedName == "tour_b") });
+            await map.LivePreviewCameraCommand.ExecuteAsync(null);
+            Say("preview b: " + map.LiveStatus);
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await GameShot("game-up");
+            Say("recipe end: " + await _vm.Game.RunConsoleAsync(new[] { "camera_control 0", "chud_show 1", "player_enable_input 1" }, TimeSpan.FromSeconds(10)));
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            await GameShot("game-back");
             _vm.StopGameCommand.Execute(null);
             await Pause(3000);
         }

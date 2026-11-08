@@ -763,6 +763,7 @@ public partial class PlacementItem : ObservableObject
     public string? Block { get; private set; }
     public int BlockIndex { get; private set; }
     public bool IsCampaignMarker => CampaignCategories.Contains(Category);
+    public bool IsCamera => Category == CampaignCategories.CutsceneCameras;
     /// <summary>A placed object (not a start location or a campaign marker): scale and objective zones apply.</summary>
     public bool IsObject => !IsCampaignMarker && Category != StartLocations.Category;
     public bool IsVolume => Category == CampaignCategories.TriggerVolumes;

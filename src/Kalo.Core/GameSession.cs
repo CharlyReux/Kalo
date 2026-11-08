@@ -42,12 +42,19 @@ public sealed class GameSession : IDisposable
     public bool CleanScreen { get; set; }
 
     /// <summary>Console commands that hide (or show again) the engine's text and error geometry drawn over the game. The log files keep everything.</summary>
-    public static IReadOnlyList<string> ScreenCommands(bool clean) => new[]
+    public static IReadOnlyList<string> ScreenCommands(bool clean)
     {
-        $"(events_suppress_display {(clean ? "true" : "false")})",
-        $"(events_suppress_console_display {(clean ? "true" : "false")})",
-        clean ? "(error_geometry_hide_all)" : "(error_geometry_show_all)",
-    };
+        var commands = new List<string>
+        {
+            $"(events_suppress_display {(clean ? "true" : "false")})",
+            $"(events_suppress_console_display {(clean ? "true" : "false")})",
+            clean ? "(error_geometry_hide_all)" : "(error_geometry_show_all)",
+        };
+        // The green wire over badly built level pieces. Its default opacities aren't known, so turning Clean screen off
+        // brings it back at the next launch.
+        if (clean) commands.AddRange(new[] { "render_debug_structure_all_cluster_errors 0", "render_debug_structure_line_opacity 0 0 0 0", "render_debug_structure_opacity 0 0 0 0", "render_debug_structure_text_opacity 0 0 0 0" });
+        return commands;
+    }
 
     /// <summary>Test option (--init-order after): the console commands go after game_start instead of before.</summary>
     public static string InitOrder { get; set; } = "before";
