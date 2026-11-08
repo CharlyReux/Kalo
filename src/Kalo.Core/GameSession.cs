@@ -38,6 +38,17 @@ public sealed class GameSession : IDisposable
 
     public GameSession(KaloPaths paths) => _paths = paths;
 
+    /// <summary>Set before Start: the game starts with the engine's on-screen text and error markers hidden.</summary>
+    public bool CleanScreen { get; set; }
+
+    /// <summary>Console commands that hide (or show again) the engine's text and error geometry drawn over the game. The log files keep everything.</summary>
+    public static IReadOnlyList<string> ScreenCommands(bool clean) => new[]
+    {
+        $"(events_suppress_display {(clean ? "true" : "false")})",
+        $"(events_suppress_console_display {(clean ? "true" : "false")})",
+        clean ? "(error_geometry_hide_all)" : "(error_geometry_show_all)",
+    };
+
     /// <summary>Test option (--init-order after): the console commands go after game_start instead of before.</summary>
     public static string InitOrder { get; set; } = "before";
 
@@ -69,6 +80,7 @@ public sealed class GameSession : IDisposable
         _campaign = Campaign;
         Campaign = false;
         RunScripts = true;
+        if (CleanScreen) commands = string.Concat(ScreenCommands(true).Select(c => c + "\r\n")) + commands;
         string init = InitOrder == "after"
             ? scripts + $"game_start {scenario}\r\n" + commands + after
             : scripts + commands + $"game_start {scenario}\r\n" + after;

@@ -73,6 +73,8 @@
                     ToolTip.Tip="Where the mission starts (its insertion point). What each one does is up to the mission's insertion script (e.g. m10_insertion): 0 is the beginning." />
           <ComboBox ItemsSource="{Binding PlayerChoices}" SelectedItem="{Binding SelectedPlayers}" Width="96" MinHeight="26" FontSize="12"
                     ToolTip.Tip="Local players, split-screen in one game window. Player 1 uses the keyboard and mouse (or the first gamepad); plug in gamepads for the others." />
+          <CheckBox Content="Clean screen" IsChecked="{Binding CleanGameScreen}" FontSize="12" VerticalAlignment="Center"
+                    ToolTip.Tip="Hides the engine's text and error markers drawn over the game (they stay in the Log panel). Remembered for next time; applies at once while the game runs." />
           <Button Classes="primary" Command="{Binding PlayCommand}" ToolTip.Tip="{Binding PlaySummary}" Padding="10,3">
             <StackPanel Orientation="Horizontal" Spacing="6">
               <TextBlock FontFamily="{StaticResource KIcons}" Text="&#xE768;" VerticalAlignment="Center" />

@@ -123,6 +123,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
         }
 
         Game = new GameSession(Paths);
+        InitCleanScreen();
         Geometry = new Kalo.Core.Geometry.LevelGeometry(Paths);
         Models = new Kalo.Core.Geometry.ModelLibrary(Paths);
         Textures = new Kalo.Core.Geometry.TextureLibrary(Paths);

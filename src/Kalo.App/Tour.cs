@@ -71,6 +71,7 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("ai-play", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-play", AiPlay);
                 if (AppArgs.Current.TourSections?.Contains("attach-units", StringComparer.OrdinalIgnoreCase) == true) await Section("attach-units", AttachUnits);
                 if (AppArgs.Current.TourSections?.Contains("m10-ai", StringComparer.OrdinalIgnoreCase) == true) await Section("m10-ai", M10Ai);
+                if (AppArgs.Current.TourSections?.Contains("ai-matrix", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-matrix", AiMatrix);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -3038,6 +3039,63 @@ public sealed class Tour
             if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
             foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
         }
+    }
+
+    /// <summary>
+    /// Which missions have AI that obey? Starts one scenario as it is on disk (KALO_MX=scenario|squad|flag|point), places the
+    /// squad, puts the player at the flag, orders the squad to the point and watches its distance from the flag.
+    /// </summary>
+    private async Task AiMatrix()
+    {
+        string[] mx = (Environment.GetEnvironmentVariable("KALO_MX") ?? @"levels\solo\m10\m10|barn_skirm_init|fl_barn_skirm_init|pts_barn/spartan01").Split('|');
+        var (scenario, squad, flag, point) = (mx[0], mx[1], mx[2], mx[3]);
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var game = _vm.Game!;
+        game.Loaded += () => loaded.TrySetResult();
+        var probes = new List<string>();
+        game.Output += line => { if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..].Trim()); };
+        game.Campaign = true;
+        game.RunScripts = Environment.GetEnvironmentVariable("KALO_MX_SCRIPTS") == "1";
+        game.Start(scenario, new[] { "game_difficulty normal" }, new[] { "switch_zone_set zoneset_intro_cinematic" });
+        try
+        {
+            if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "loaded " + scenario)) return;
+            await Task.Delay(TimeSpan.FromSeconds(10));
+            if (Environment.GetEnvironmentVariable("KALO_MX_WATCH") is { Length: > 0 } watch)
+            {
+                // No orders: each squad's distance to the player, in fine steps, over a minute. Moving AI change band.
+                var squads = watch.Split(',');
+                await game.RunConsoleAsync(new[] { "(set cheat_deathless_player true)", $"(object_teleport (player_get 0) {flag})" }.Concat(squads.Select(s => $"(ai_place {s})")).ToArray(), TimeSpan.FromSeconds(10));
+                int[] steps = { 3, 6, 10, 15 };
+                for (int round = 1; round <= 15; round++)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(4));
+                    var cmds = squads.SelectMany(s => steps.Select(b =>
+                        $"(if (and (>= (objects_distance_to_object (ai_actors {s}) (player_get 0)) 0) (< (objects_distance_to_object (ai_actors {s}) (player_get 0)) {b})) (print \"kalo probe: r{round} {s} u{b}\") (print \"kalo probe: r{round} {s} x\"))")).ToList();
+                    await game.RunConsoleAsync(cmds, TimeSpan.FromSeconds(15));
+                }
+                await Task.Delay(TimeSpan.FromSeconds(15));
+                lock (probes)
+                    foreach (string s in squads)
+                        Say($"{s}: " + string.Join(" ", Enumerable.Range(1, 15).Select(r => probes.Where(p => p.StartsWith($"kalo probe: r{r} {s} u")).Select(p => int.Parse(p[(p.LastIndexOf(" u") + 2)..])).DefaultIfEmpty(-1).Min())));
+                return;
+            }
+            await game.RunConsoleAsync(new[] { "(set cheat_deathless_player true)", $"(object_teleport (player_get 0) {flag})", $"(ai_place {squad})", "(ai_disregard (players) true)" }, TimeSpan.FromSeconds(10));
+            for (int round = 1; round <= 12; round++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4));
+                if (round == 3) Say("order: " + await game.RunConsoleAsync(new[] { $"(cs_go_to {squad} true {point})" }, TimeSpan.FromSeconds(10)));
+                var cmds = new List<string> { $"(if (> (ai_living_count {squad}) 0) (print \"kalo probe: r{round} alive\") (print \"kalo probe: r{round} none\"))" };
+                foreach (int b in new[] { 3, 6, 10, 15 })
+                    cmds.Add($"(if (< (objects_distance_to_flag (ai_actors {squad}) {flag}) {b}) (print \"kalo probe: r{round} under {b}\") (print \"kalo probe: r{round} over {b}\"))");
+                await game.RunConsoleAsync(cmds, TimeSpan.FromSeconds(10));
+            }
+            for (int i = 0; i < 40; i++) { lock (probes) if (probes.Any(p => p.StartsWith("kalo probe: r12 "))) break; await Task.Delay(1000); }
+            lock (probes)
+                for (int r = 1; r <= 12; r++)
+                    Say($"r{r}: " + string.Join(" ", probes.Distinct().Where(p => p.StartsWith($"kalo probe: r{r} ")).Select(p => p[$"kalo probe: r{r} ".Length..]).Where(p => !p.StartsWith("over"))));
+        }
+        finally { if (game.IsRunning) game.Stop(); await Pause(3000); }
     }
 
     /// <summary>
