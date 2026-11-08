@@ -72,6 +72,7 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("attach-units", StringComparer.OrdinalIgnoreCase) == true) await Section("attach-units", AttachUnits);
                 if (AppArgs.Current.TourSections?.Contains("m10-ai", StringComparer.OrdinalIgnoreCase) == true) await Section("m10-ai", M10Ai);
                 if (AppArgs.Current.TourSections?.Contains("ai-matrix", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-matrix", AiMatrix);
+                if (AppArgs.Current.TourSections?.Contains("ai-demo", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-demo", AiDemoMission);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -3039,6 +3040,28 @@ public sealed class Tour
             if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
             foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
         }
+    }
+
+    /// <summary>
+    /// A mission left in the active mod for checking AI by eye: a full copy of m10 with two Kalo-made squads at the barn,
+    /// one from scratch and one copied from Bungie's barn_skirm_init.
+    /// </summary>
+    private async Task AiDemoMission()
+    {
+        var map = await _vm.CreateMapAsync("test_ai_squads", @"levels\solo\m10\m10", false);
+        if (!Check(map != null, "full copy of m10 in the active mod")) return;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map!.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        var flag = map.Items.FirstOrDefault(i => i.PlacedName == "fl_barn_skirm_init");
+        var bungie = map.Squads.FirstOrDefault(s => s.Name == "barn_skirm_init");
+        if (!Check(flag != null && bungie != null, "barn flag and squad found")) return;
+        await _vm.Host!.SquadOpAsync(new SquadOpParams { Path = map.Path, Op = SquadOps.Create, Name = "kalo_scratch", Position = new[] { flag!.Position.X + 1, flag.Position.Y, flag.Position.Z + 0.2f, 0f } });
+        await _vm.Host.SquadOpAsync(new SquadOpParams { Path = map.Path, Op = SquadOps.New, Index = bungie!.Index, Name = "kalo_copy", Position = new[] { flag.Position.X - 1, flag.Position.Y, flag.Position.Z + 0.2f, 0f } });
+        map.IsDirty = true;
+        await map.SaveCommand.ExecuteAsync(null);
+        Say("saved " + map.Path);
+        map.IsDirty = false;
+        await _vm.CloseTabCommand.ExecuteAsync(map);
     }
 
     /// <summary>

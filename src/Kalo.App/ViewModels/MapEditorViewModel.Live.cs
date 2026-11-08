@@ -43,7 +43,7 @@ public partial class MapEditorViewModel
     {
         string? squad = Squads.FirstOrDefault(s => s.Index == SquadOf(Selected))?.Name;
         if (squad == null) { LiveStatus = "Select a squad's spawn point first (AI in the Campaign bar)."; return; }
-        await LiveAsync($"Placed squad {squad} in the game (a squad added since the game started is not in it: restart with Play).", "ai_place " + squad);
+        await LiveAsync($"Placed squad {squad} in the game (a squad added since the game started is not in it: restart with Play). Bungie's squads and copies of them can hold still and only shoot under Play here: the mission scripts that drive them aren't running.", "ai_place " + squad);
     }
 
     [RelayCommand]

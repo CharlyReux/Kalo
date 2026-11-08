@@ -245,6 +245,7 @@ startup mission_start:
             P("Play here (Ctrl+F5) starts on the ground under the camera; in a mission it loads the zone set picked in the Campaign bar, without the mission scripts."),
             P("The Live game bar acts on the running game: Move me to the camera, Spawn this squad, Remove all AI, Load this zone set, Can't die, Infinite ammo."),
             Tip("Saved game files reload by themselves; map changes (objects, squads) need Play again."),
+            Tip("Without the mission scripts, Bungie's squads and copies of them can hold still and only shoot. To see them behave, use Play. A squad made with Add › Squad chases you as far as it can walk."),
         });
 
         yield return new("recipe-mcc", Test, "Play your mod in MCC", new[]
