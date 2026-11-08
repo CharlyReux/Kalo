@@ -69,6 +69,7 @@ namespace Kalo.BlamHost
                 }
             }
             d.Team = team >= 0 && team < Teams.Length ? Teams[team] : "";
+            d.TeamIndex = team;
             var seen = new HashSet<int>();
             for (int g = Int(tag.SelectField(s + "ShortBlockIndex:parent")); g >= 0 && seen.Add(g); g = Int(tag.SelectField("Block:squad groups[" + g + "]/ShortBlockIndex:parent")))
                 d.Groups.Add(Text(tag, "Block:squad groups[" + g + "]/String:name"));

@@ -538,6 +538,11 @@
                     <TextBlock Text="{Binding About, FallbackValue=''}" FontSize="11.5" Foreground="{StaticResource KMuted}" TextWrapping="Wrap" />
                     <TextBlock Text="{Binding PlacedBy, FallbackValue=''}" FontSize="11.5" TextWrapping="Wrap" IsVisible="{Binding HasPlacedBy, FallbackValue=False}" />
                     <TextBlock Text="{Binding Starts, FallbackValue=''}" FontSize="11.5" TextWrapping="Wrap" IsVisible="{Binding HasStarts, FallbackValue=False}" />
+                    <Grid ColumnDefinitions="70,*">
+                      <TextBlock Text="Team" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" />
+                      <ComboBox Grid.Column="1" ItemsSource="{Binding TeamChoices, FallbackValue={x:Null}}" SelectedIndex="{Binding TeamIndex, FallbackValue=-1}" HorizontalAlignment="Stretch" FontSize="11.5" MinHeight="24"
+                                ToolTip.Tip="Who it fights. Human squads are on the player's side and fight the Covenant." />
+                    </Grid>
                     <!-- The selected point's own character and weapon -->
                     <ContentControl Content="{Binding Point}" IsVisible="{Binding HasPoint}">
                      <ContentControl.ContentTemplate>

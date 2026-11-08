@@ -106,6 +106,12 @@ namespace Kalo.BlamHost
                 case Methods.Squad:
                     var sq = Params<SquadParams>(r);
                     return scenarios.Squad(sq.Path, sq.Index);
+                case Methods.StartingGear:
+                    return scenarios.ReadStartingGear(Params<TagPathParams>(r).Path);
+                case Methods.SetStartingGear:
+                    return scenarios.WriteStartingGear(Params<StartingGear>(r));
+                case Methods.MakeTextureShader:
+                    return scenarios.MakeTextureShader(Params<TextureShaderParams>(r));
                 case Methods.Categories:
                     return scenarios.Categories(Params<CategoriesParams>(r));
                 case Methods.LevelPieces:

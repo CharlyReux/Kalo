@@ -70,6 +70,8 @@
           <TextBlock Text="Look" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,10,0" />
           <ToggleButton Classes="outline" Content="Paint…" IsChecked="{Binding IsPaintOpen, Mode=OneWay}" Command="{Binding TogglePaintCommand}" Margin="0,2,6,2"
                         ToolTip.Tip="Paint every surface with one of Reach's materials. Your mod's own objects are painted in place; the game's get a painted copy in your mod." />
+          <Button Classes="outline" Content="Your picture…" Click="PaintPicture_Click" Margin="0,2,6,2"
+                  ToolTip.Tip="Paint it with a PNG or JPEG of yours. Every surface shows the whole picture once. The game's own objects get a painted copy in your mod." />
           <ToggleButton Classes="outline" Content="Looks like…" IsChecked="{Binding IsLooksLikeOpen, Mode=OneWay}" Command="{Binding ToggleLooksLikeCommand}" Margin="0,2,6,2"
                         ToolTip.Tip="Take the model of another object of the same kind (a weapon for a weapon...). Everything else stays: stats, sounds, animations." />
           <TextBlock Text="{Binding LookStatus}" FontSize="11.5" Foreground="{StaticResource KMuted}" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="620" />

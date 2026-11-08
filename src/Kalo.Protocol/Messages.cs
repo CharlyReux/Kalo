@@ -62,6 +62,11 @@ namespace Kalo.Protocol
         /// <summary>Each structure bsp's world bounds (to find which zone sets hold a point).</summary>
         public const string BspBounds = "bspBounds";
         public const string Squad = "squad";
+        /// <summary>What the player starts with (the map's starting profiles).</summary>
+        public const string StartingGear = "startingGear";
+        public const string SetStartingGear = "setStartingGear";
+        /// <summary>A shader copy that shows one bitmap.</summary>
+        public const string MakeTextureShader = "makeTextureShader";
         /// <summary>Squad tools: detach a squad from its template, or a new squad like the selected one.</summary>
         public const string SquadOp = "squadOp";
         /// <summary>Some campaign categories read again.</summary>
@@ -391,11 +396,38 @@ namespace Kalo.Protocol
     /// a spawn point can override the character and weapon. Squads made from a squad template keep the template's cells
     /// in "templated" (designer cells stay empty). Field paths are for setField.
     /// </summary>
+    public sealed class StartingGear
+    {
+        public string Path { get; set; }
+        /// <summary>How many profiles the map has (reading shows the first; writing sets them all).</summary>
+        public int Profiles { get; set; }
+        public string Primary { get; set; }
+        public string Secondary { get; set; }
+        public string Equipment { get; set; }
+        public int Frags { get; set; }
+        public int Plasmas { get; set; }
+    }
+
+    public sealed class TextureShaderParams
+    {
+        /// <summary>Shaders to copy; the first with a base_map is used.</summary>
+        public List<string> Templates { get; set; }
+        public string Bitmap { get; set; }
+        public string NewShader { get; set; }
+    }
+
+    public sealed class TextureShaderResult
+    {
+        public string Shader { get; set; }
+        public string Template { get; set; }
+    }
+
     public sealed class SquadDetail
     {
         public int Index { get; set; }
         public string Name { get; set; }
         public string Team { get; set; }
+        public int TeamIndex { get; set; }
         /// <summary>Squad groups it belongs to, innermost first.</summary>
         public List<string> Groups { get; set; }
         /// <summary>The squad template (string id) or "".</summary>

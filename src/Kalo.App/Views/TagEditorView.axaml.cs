@@ -1,3 +1,4 @@
+using Avalonia.Platform.Storage;
 using Avalonia.Controls;
 using Avalonia.Input;
 
@@ -57,6 +58,18 @@ public partial class TagEditorView : UserControl
             $"Name of the new tag. It is saved as {main.NewTagPathFor(tab.Path, "<name>")}, with the edits you made here; {current} stays as it is on disk.",
             current + "_copy");
         if (!string.IsNullOrWhiteSpace(name)) await main.SaveTagAsNewAsync(tab, name);
+    }
+
+    private async void PaintPicture_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not Kalo.App.ViewModels.TagEditorViewModel tab || TopLevel.GetTopLevel(this)?.StorageProvider is not { } storage) return;
+        var files = await storage.OpenFilePickerAsync(new Avalonia.Platform.Storage.FilePickerOpenOptions
+        {
+            Title = "Paint it with a picture",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new Avalonia.Platform.Storage.FilePickerFileType("Pictures") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg" } } }
+        });
+        if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) await tab.PaintWithImageAsync(path);
     }
 
     private async void LooksLike_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e)

@@ -23,8 +23,8 @@ public partial class SquadEditorViewModel : ObservableObject
         CharacterOverrides = new[] { "From its cell" }.Concat(Characters).ToList();
         WeaponOverrides = new[] { "From its cell" }.Concat(Weapons).ToList();
         VehicleChoices = new[] { "On foot" }.Concat((d.Vehicles ?? new()).Select(PaletteLabel)).ToList();
+        _teamIndex = d.TeamIndex;
         var about = new List<string>();
-        if (!string.IsNullOrEmpty(d.Team)) about.Add("team " + d.Team);
         if (d.Groups is { Count: > 0 }) about.Add("in " + string.Join(" › ", d.Groups));
         About = string.Join(" · ", about);
         var starts = new List<string>();
@@ -45,6 +45,15 @@ public partial class SquadEditorViewModel : ObservableObject
             Point = new SquadPointRow(this, p, d.Cells?.FirstOrDefault(c => c.Index == (p.Cell < 0 ? 0 : p.Cell))?.Name);
         }
         PointsText = $"{d.SpawnPoints?.Count ?? 0} spawn point{((d.SpawnPoints?.Count ?? 0) == 1 ? "" : "s")}";
+    }
+
+    /// <summary>In the order of the game's team list.</summary>
+    public IReadOnlyList<string> TeamChoices { get; } = new[] { "Default", "Player", "Human (with the player)", "Covenant (enemies)", "Brute", "Mule", "Spare", "Covenant player" };
+    [ObservableProperty] private int _teamIndex;
+
+    partial void OnTeamIndexChanged(int value)
+    {
+        if (value >= 0) _ = SetAsync($"Block:squads[{Index}]/ShortEnum:team", value.ToString(System.Globalization.CultureInfo.InvariantCulture), "team");
     }
 
     public int Index { get; }

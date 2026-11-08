@@ -173,6 +173,13 @@ end
 
         // ---- Campaign ----
 
+        yield return new("recipe-picture", Items, "Put your own picture on a weapon or object", new[]
+        {
+            P("1. Open the weapon or object, Look › Your picture…, and pick a PNG or JPEG. A square picture works best."),
+            P("2. The game's own objects get a painted copy in your mod; Use it › Place in map, or pick it in Player gear."),
+            Tip("Every surface shows the whole picture once, and the picture replaces the object's whole paint job: Paint… uses Reach's own materials instead."),
+        });
+
         yield return new("recipe-mission-ai", Campaign, "Change a mission's enemies", new[]
         {
             P("1. My mod › New map › Campaign mission: a full copy of a Reach mission and its scripts."),
@@ -228,6 +235,20 @@ startup mission_start:
             P("6. Mission scripts › your map's script: replace the starter with the script above. Save everything."),
             P("7. Play (F5): about 2 minutes to load m10, then walk into the volume."),
             Tip("Next: more squads and volumes, checkpoints with game_save(), Level pieces › Here to remove a building."),
+        });
+
+        yield return new("recipe-gear", Campaign, "Choose what the player starts with", new[]
+        {
+            P("1. Open a copy of a mission, Campaign bar › Player gear."),
+            P("2. Pick the two weapons (your own weapons are in the list), the armor ability and the grenades. Apply, save, then Play."),
+            Tip("A mission has several starting profiles: Apply sets them all. A script can still hand out other weapons later in the mission."),
+        });
+
+        yield return new("recipe-allies", Campaign, "Add allies that fight with you", new[]
+        {
+            P("1. Add › Squad where they should stand, then select its spawn point."),
+            P("2. Squad section › Team: Human. Change Character to a marine or Spartan if the mission has one."),
+            P("3. A script places it with ai_place(name), or Trigger volumes › When the player enters › spawn a squad."),
         });
 
         yield return new("recipe-camera-cutscene", Campaign, "A simple camera cutscene", new[]

@@ -411,7 +411,7 @@ namespace Kalo.BlamHost
                 Type = 0,
                 Name = Text(tag, e + "String:name"),
                 Position = Pad(Floats(tag.SelectField(e + "RealPoint3d:position"))),
-                Rotation = new[] { o[0], -o[1], o[2] }, // a camera point's stored pitch is positive looking down (seen in game)
+                Rotation = CameraAngles.FromTag(o[0], o[1], o[2]),
                 Scale = 1,
                 UniqueId = -1,
                 Folder = -1,
@@ -514,7 +514,7 @@ namespace Kalo.BlamHost
                     break;
                 case CampaignCategories.CutsceneCameras:
                     if (p.Position != null) SetFloats(tag.SelectField(e + "RealPoint3d:position"), p.Position);
-                    if (p.Rotation != null && p.Rotation.Length >= 3) SetFloats(tag.SelectField(e + "RealEulerAngles3d:orientation"), new[] { p.Rotation[0], -p.Rotation[1], p.Rotation[2] });
+                    if (p.Rotation != null && p.Rotation.Length >= 3) SetFloats(tag.SelectField(e + "RealEulerAngles3d:orientation"), CameraAngles.ToTag(p.Rotation[0], p.Rotation[1], p.Rotation[2]));
                     break;
                 case CampaignCategories.ScriptPoints:
                     if (p.Position != null) SetFloats(tag.SelectField(e + "RealPoint3d:position"), p.Position);

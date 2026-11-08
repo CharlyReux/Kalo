@@ -35,6 +35,18 @@
                 <TextBlock Text="Start from a Reach level, empty or full" FontSize="11.5" Foreground="{StaticResource KMuted}" />
               </StackPanel>
             </Button>
+            <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNewMissionFormCommand}" Padding="12,8">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Mod a campaign mission" FontWeight="SemiBold" />
+                <TextBlock Text="A full copy of a mission: enemies, scripts, cutscenes" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+              </StackPanel>
+            </Button>
+            <Button Classes="outline" Margin="0,0,8,8" Click="Recipes_Click" Padding="12,8">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Recipes" FontWeight="SemiBold" />
+                <TextBlock Text="Step by step: how to do common things" FontSize="11.5" Foreground="{StaticResource KMuted}" />
+              </StackPanel>
+            </Button>
             <Button Classes="outline" Margin="0,0,8,8" Command="{Binding OpenNewGametypeFormCommand}" Padding="12,8">
               <StackPanel Spacing="2">
                 <TextBlock Text="New gametype" FontWeight="SemiBold" />

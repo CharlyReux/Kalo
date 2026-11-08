@@ -433,7 +433,16 @@ public partial class MainViewModel
         IsNewMapOpen = true;
     }
 
-    [RelayCommand] private void CancelNewContent() { IsNewMapOpen = false; IsNewGametypeOpen = false; }
+    /// <summary>The new map form on a full copy of a campaign mission, the first thing to try for a mission mod.</summary>
+    [RelayCommand]
+    private void OpenNewMissionForm()
+    {
+        NewMapKind = "campaign";
+        OpenNewMapForm();
+        NewMapBase = BaseLevels.FirstOrDefault(s => s.EndsWith(@"\m10", StringComparison.OrdinalIgnoreCase)) ?? BaseLevels.FirstOrDefault();
+    }
+
+    [RelayCommand] private void CancelNewContent(){ IsNewMapOpen = false; IsNewGametypeOpen = false; }
 
     [RelayCommand]
     private async Task CreateMap()

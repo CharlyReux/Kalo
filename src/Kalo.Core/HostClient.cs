@@ -130,6 +130,9 @@ public sealed class HostClient : IAsyncDisposable
     public Task<CreateMapResult> CreateMapAsync(CreateMapParams p) => CallAsync<CreateMapResult>(Methods.CreateMap, p, TimeSpan.FromMinutes(3));
     public Task<ScriptObjectsResult> ScriptObjectsAsync(ScriptObjectsParams p) => CallAsync<ScriptObjectsResult>(Methods.ScriptObjects, p);
     public Task<ScenarioNamesResult> ScenarioNamesAsync(string path) => CallAsync<ScenarioNamesResult>(Methods.ScenarioNames, new TagPathParams { Path = path }, TimeSpan.FromMinutes(2));
+    public Task<StartingGear> StartingGearAsync(string path) => CallAsync<StartingGear>(Methods.StartingGear, new TagPathParams { Path = path });
+    public Task<StartingGear> SetStartingGearAsync(StartingGear gear) => CallAsync<StartingGear>(Methods.SetStartingGear, gear);
+    public Task<TextureShaderResult> MakeTextureShaderAsync(TextureShaderParams p) => CallAsync<TextureShaderResult>(Methods.MakeTextureShader, p);
     public Task<SquadDetail> SquadAsync(string path, int index) => CallAsync<SquadDetail>(Methods.Squad, new SquadParams { Path = path, Index = index });
     public Task<SquadOpResult> SquadOpAsync(SquadOpParams p) => CallAsync<SquadOpResult>(Methods.SquadOp, p);
     public Task<BspBoundsResult> BspBoundsAsync(string path) => CallAsync<BspBoundsResult>(Methods.BspBounds, new TagPathParams { Path = path }, TimeSpan.FromMinutes(5));

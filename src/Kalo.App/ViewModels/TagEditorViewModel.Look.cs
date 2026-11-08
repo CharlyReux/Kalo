@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Kalo.Core;
 using Kalo.Protocol;
+using SkiaSharp;
 
 namespace Kalo.App.ViewModels;
 
@@ -84,6 +85,62 @@ public partial class TagEditorViewModel
         {
             LookStatus = "Could not paint it: " + ex.Message;
         }
+    }
+
+    /// <summary>
+    /// Paints the object with a picture of the user's: fitted to a power-of-two square, made into a bitmap by HREK's tool
+    /// and a shader in the mod, then painted like a material. Every surface shows the whole picture once.
+    /// </summary>
+    public async Task PaintWithImageAsync(string file)
+    {
+        if (_main.Host == null || _main.Paths == null) return;
+        if (IsDirty) { LookStatus = "Save first: painting copies the file as it is on disk."; return; }
+        LookStatus = "Importing the picture…";
+        try
+        {
+            var (size, rgb) = await Task.Run(() => DecodeSquare(file));
+            string name = MainViewModel.Slug(System.IO.Path.GetFileNameWithoutExtension(file));
+            string folder = $@"levels\mods\{_main.ModSlugForContent}\textures";
+            string bitmap = await BitmapImport.ImportAsync(_main.Paths, folder, name, size, size, rgb);
+            await _main.EnsureMaterialsAsync();
+            var shader = await _main.Host.MakeTextureShaderAsync(new TextureShaderParams { Templates = _main.Materials.Select(m => m.Shader).ToList(), Bitmap = bitmap, NewShader = $@"{folder}\{name}.shader" });
+            string target = IsModObject ? Path : _main.NewTagPathFor(Path, System.IO.Path.GetFileNameWithoutExtension(Path) + "_" + name);
+            var r = await _main.Host.MakeVariantAsync(new MakeVariantParams { Object = Path, Shader = shader.Shader, NewObject = target });
+            IsPaintOpen = false;
+            _main.Log($"Painted {target} with the picture {System.IO.Path.GetFileName(file)} ({r.Materials} material(s)).");
+            if (IsModObject)
+            {
+                await _main.ReloadTabAsync(this);
+                LookStatus = $"Painted with {System.IO.Path.GetFileName(file)}.";
+            }
+            else
+            {
+                var copy = await _main.OpenTagAsync(target);
+                if (copy != null) { _main.OnTagSaved(copy); copy.LookStatus = $"A copy of {System.IO.Path.GetFileNameWithoutExtension(Path)} with your picture. Use it: Place in map, Add to map palette, or Use in scripts."; }
+            }
+            await _main.RefreshChangesAsync();
+        }
+        catch (Exception ex) when (ex is HostException or InvalidOperationException or IOException)
+        {
+            LookStatus = "Could not use that picture: " + ex.Message;
+        }
+    }
+
+    /// <summary>The picture as RGB bytes, resized to a square of 256, 512 or 1024 (what the game's textures use).</summary>
+    private static (int Size, byte[] Rgb) DecodeSquare(string file)
+    {
+        using var source = SKBitmap.Decode(file) ?? throw new InvalidOperationException("It isn't a picture Kalo can read (use PNG or JPEG).");
+        int longest = Math.Max(source.Width, source.Height);
+        int size = longest <= 256 ? 256 : longest <= 512 ? 512 : 1024;
+        using var square = source.Resize(new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Unpremul), SKFilterQuality.High)
+            ?? throw new InvalidOperationException("It could not be resized.");
+        var rgba = square.Bytes;
+        var rgb = new byte[size * size * 3];
+        for (int i = 0, o = 0; i + 3 < rgba.Length; i += 4)
+        {
+            rgb[o++] = rgba[i]; rgb[o++] = rgba[i + 1]; rgb[o++] = rgba[i + 2];
+        }
+        return (size, rgb);
     }
 
     /// <summary>

@@ -74,6 +74,8 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("ai-matrix", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-matrix", AiMatrix);
                 if (AppArgs.Current.TourSections?.Contains("ai-demo", StringComparer.OrdinalIgnoreCase) == true) await Section("ai-demo", AiDemoMission);
                 if (AppArgs.Current.TourSections?.Contains("cameras", StringComparer.OrdinalIgnoreCase) == true) await Section("cameras", CamerasSection);
+                if (AppArgs.Current.TourSections?.Contains("gear-team-picture", StringComparer.OrdinalIgnoreCase) == true) await Section("gear-team-picture", () => InTourModAsync(GearTeamPicture));
+                if (AppArgs.Current.TourSections?.Contains("camera-match", StringComparer.OrdinalIgnoreCase) == true) await Section("camera-match", CameraMatch);
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -2199,7 +2201,7 @@ public sealed class Tour
                 string text = script.Text;
                 script.Text = script.IsKaloScript ? text + "\nstartup kalo_tour_broken:\n    print(\"x\"\n" : text + "\r\n(script startup kalo_tour_broken\r\n    (print \"x\")\r\n";
                 script.Check();
-                Check(!script.CheckOk && script.Messages.Any(m => m.Message.Contains("never closed")), "an unclosed ( is reported: " + script.Summary);
+                Check(!script.CheckOk && script.Messages.Any(m => m.Message.Contains("never closed") || m.Message.Contains("expected , or )")), "an unclosed ( is reported: " + script.Summary);
                 script.Text = text;
                 script.Check();
                 script.IsDirty = false;
@@ -3125,6 +3127,175 @@ public sealed class Tour
             if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
             foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
         }
+    }
+
+    /// <summary>
+    /// A copy of the assault rifle painted with a picture, given to the player through Player gear, and a human squad next
+    /// to a Covenant one: in game, does the player hold it and do the two squads fight?
+    /// </summary>
+    private async Task GearTeamPicture()
+    {
+        string png = System.IO.Path.Combine(_dir, "my_skin.png");
+        using (var bitmap = new SkiaSharp.SKBitmap(700, 500))
+        {
+            for (int y = 0; y < 500; y++) for (int x = 0; x < 700; x++) bitmap.SetPixel(x, y, ((x / 100) + (y / 100)) % 2 == 0 ? new SkiaSharp.SKColor(255, 0, 180) : new SkiaSharp.SKColor(255, 230, 0));
+            using var stream = File.Create(png);
+            bitmap.Encode(stream, SkiaSharp.SKEncodedImageFormat.Png, 100);
+        }
+        var rifle = await _vm.OpenTagAsync(@"objects\weapons\rifle\assault_rifle\assault_rifle.weapon") as TagEditorViewModel;
+        if (Environment.GetEnvironmentVariable("KALO_GEAR_PLAIN") == "2") { await _vm.EnsureMaterialsAsync(); await rifle!.PaintWithCommand.ExecuteAsync(_vm.Materials[0]); } else await rifle!.PaintWithImageAsync(png);
+        Say("picture: " + rifle.LookStatus);
+        var painted = _vm.Tabs.OfType<TagEditorViewModel>().FirstOrDefault(t => t.Path.Contains(@"\mods\"));
+        if (!Check(painted != null, "the picture made a painted copy: " + painted?.Path)) return;
+        Check(File.Exists(System.IO.Path.Combine(_vm.Paths!.WorkspaceTags, $@"levels\mods\{_vm.ModSlugForContent}\textures\my_skin.bitmap")), "tool.exe made the bitmap");
+
+        var r = await _vm.CreateMapAsync("gear_test", @"levels\solo\m10\m10", false);
+        var map = r!;
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        await map.LoadGear();
+        map.GearPrimary = map.GearWeapons.FirstOrDefault(g => Environment.GetEnvironmentVariable("KALO_GEAR_PLAIN") == "1" ? g.Path.EndsWith(@"dmr\dmr.weapon", StringComparison.OrdinalIgnoreCase) : g.Path.Equals(painted!.Path, StringComparison.OrdinalIgnoreCase));
+        map.GearSecondary = map.GearWeapons.FirstOrDefault(g => g.Path.EndsWith("rocket_launcher.weapon", StringComparison.OrdinalIgnoreCase));
+        map.GearAbility = map.GearEquipment.FirstOrDefault(g => g.Path.EndsWith(@"jetpack.equipment", StringComparison.OrdinalIgnoreCase)) ?? map.GearAbility;
+        map.GearFrags = "4";
+        if (!Check(map.GearPrimary != null && map.GearSecondary != null, "Player gear lists the painted rifle and the rocket launcher")) return;
+        await map.ApplyGear();
+        Say("gear: " + map.GearStatus);
+
+        var flag = map.Items.First(i => i.PlacedName == "fl_barn_skirm_init");
+        var at = flag.Position + new Vector3(1, 0, 0.2f);
+        await _vm.Host!.SquadOpAsync(new SquadOpParams { Path = map.Path, Op = SquadOps.Create, Name = "tour_enemy", Position = new[] { at.X, at.Y, at.Z, 0f } });
+        await _vm.Host.SquadOpAsync(new SquadOpParams { Path = map.Path, Op = SquadOps.Create, Name = "tour_ally", Position = new[] { at.X + 1.5f, at.Y, at.Z, 180f } });
+        await map.SaveCommand.ExecuteAsync(null);
+        await _vm.CloseTabCommand.ExecuteAsync(map);
+        map = await _vm.OpenMapAsync(r!.Path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        var allySquad = map.Squads.First(s => s.Name == "tour_ally");
+        map.SetSelection(new[] { map.Items.Last(i => i.IsAiSpawnPoint) });
+        for (int i = 0; i < 40 && map.SquadEditor?.Name != "tour_ally"; i++) await Task.Delay(250);
+        if (!Check(map.SquadEditor?.Name == "tour_ally", "the Squad section shows tour_ally")) return;
+        Check(map.SquadEditor!.TeamIndex == 3, "a new squad shows the Covenant team");
+        map.SquadEditor.TeamIndex = 2;
+        await Pause(1500);
+        Check(map.SquadEditor?.TeamIndex == 2, "the team reads back as Human");
+        await map.SaveCommand.ExecuteAsync(null);
+        map.LookFrom(flag.Position + new Vector3(0.3f, -0.8f, 1.2f), 0, -45);
+        await Pause(1500);
+        await painted!.PlaceInMapCommand.ExecuteAsync(null);
+        Say("placed: " + painted.UseStatus);
+        var placedRifle = map.Selected ?? map.Items.Last(i => i.Label != null || true);
+        Say("selected: " + placedRifle.Display);
+        await map.RenameAsync(placedRifle, "tour_rifle");
+        map.LookFrom(flag.Position + new Vector3(-0.2f, 0, 1.6f), 0, -75);
+        await Pause(1200);
+        await map.AddCameraHereCommand.ExecuteAsync(null);
+        await map.RenameAsync(map.Selected!, "tour_look");
+        await map.SaveCommand.ExecuteAsync(null);
+        map.LookFrom(new Vector3(146f, 26f, 3.0f), 180, -5);
+        await Pause(1500);
+
+        async Task GameShot(string name)
+        {
+            string request = System.IO.Path.Combine(_dir, "request-" + name + ".txt");
+            File.WriteAllText(request, name);
+            for (int i = 0; i < 60 && File.Exists(request); i++) await Task.Delay(500);
+        }
+        var probes = new List<string>();
+        _vm.Game!.Output += line => { if (line.Contains("mods", StringComparison.OrdinalIgnoreCase) || line.Contains("my_skin", StringComparison.OrdinalIgnoreCase)) File.AppendAllText(System.IO.Path.Combine(_dir, "game.txt"), line + "\r\n"); if (line.Contains("kalo probe:") && !line.Contains("(print")) lock (probes) probes.Add(line[line.IndexOf("kalo probe:")..].Trim()); };
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _vm.Game.Loaded += () => loaded.TrySetResult();
+        await map.PlayFromCameraCommand.ExecuteAsync(null);
+        if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "the mission loaded")) return;
+        await _vm.Game.RunConsoleAsync(new[] { "(set cheat_deathless_player true)", "(ai_place tour_enemy)", "(ai_place tour_ally)", "(ai_disregard (players) true)", "(ai_magically_see tour_enemy tour_ally)", "(ai_magically_see tour_ally tour_enemy)", "(object_teleport tour_rifle fl_barn_skirm_init)" }, TimeSpan.FromSeconds(10));
+        await Task.Delay(TimeSpan.FromSeconds(4));
+        await _vm.Game.RunConsoleAsync(new[] { "(if (>= (objects_distance_to_flag tour_rifle fl_barn_skirm_init) 0) (print \"kalo probe: rifle exists\") (print \"kalo probe: rifle missing\"))", "camera_control 1", "camera_set tour_look 0" }, TimeSpan.FromSeconds(10));
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        await GameShot("rifle-look");
+        await _vm.Game.RunConsoleAsync(new[] { "camera_control 0" }, TimeSpan.FromSeconds(10));
+        await Task.Delay(TimeSpan.FromSeconds(10));
+        await GameShot("gear-held");
+        for (int round = 1; round <= 12; round++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            await _vm.Game.RunConsoleAsync(new[]
+            {
+                $"(if (> (ai_living_count tour_enemy) 0) (print \"kalo probe: r{round} enemy alive\") (print \"kalo probe: r{round} enemy dead\"))",
+                $"(if (> (ai_living_count tour_ally) 0) (print \"kalo probe: r{round} ally alive\") (print \"kalo probe: r{round} ally dead\"))",
+                $"(if (> (ai_combat_status tour_enemy) 2) (print \"kalo probe: r{round} enemy alerted\") (print \"kalo probe: r{round} enemy calm\"))",
+            }, TimeSpan.FromSeconds(10));
+        }
+        await Task.Delay(TimeSpan.FromSeconds(4));
+        lock (probes) foreach (var p in probes.Distinct()) Say(p);
+        await GameShot("gear-end");
+        _vm.StopGameCommand.Execute(null);
+        await Pause(3000);
+    }
+
+    /// <summary>Camera points against the game's debug camera (given the true direction): each pair of captures must match.</summary>
+    private async Task CameraMatch()
+    {
+        const string path = @"levels\mods\_kalo_tour\m10full\m10full.scenario";
+        _vm.RememberScenarioType(path[..^".scenario".Length], "solo");
+        var map = await _vm.OpenMapAsync(path);
+        _vm.ActiveDocument = map;
+        map.SelectedZoneSet = map.ZoneSetChoices.FirstOrDefault(z => z.Bsps != null && z.Bsps.Contains(2)) ?? map.SelectedZoneSet;
+        var until = DateTime.UtcNow.AddMinutes(4);
+        while (map.Bsp == null && DateTime.UtcNow < until) await Task.Delay(500);
+        var eye = new Vector3(140f, 30f, 8f);
+        var views = new (string Name, float Yaw, float Pitch)[] { ("m_a", 45, -40), ("m_b", 250, -40), ("m_c", 0, 50), ("m_d", 90, -75) };
+        foreach (var old in map.Items.Where(i => i.IsCamera && views.Any(v => v.Name == i.PlacedName)).OrderByDescending(i => i.Index).ToList())
+        { map.SetSelection(new[] { old }); await map.DeleteSelectedCommand.ExecuteAsync(null); }
+        foreach (var v in views)
+        {
+            map.LookFrom(eye, v.Yaw, v.Pitch);
+            await Pause(800);
+            await map.AddCameraHereCommand.ExecuteAsync(null);
+            await map.RenameAsync(map.Selected!, v.Name);
+            var c = map.Items.First(i => i.IsCamera && i.PlacedName == v.Name);
+            float dy = MathF.Abs(((c.Yaw - v.Yaw) % 360 + 540) % 360 - 180);
+            Check(dy < 0.1f && MathF.Abs(c.Pitch - v.Pitch) < 0.1f && MathF.Abs(c.Roll) < 0.1f, $"{v.Name} reads back: {c.Yaw:F1} {c.Pitch:F1} {c.Roll:F1}");
+        }
+        await map.SaveCommand.ExecuteAsync(null);
+        map.LookFrom(new Vector3(146f, 26f, 3f), 90, 0);
+        await Pause(1500);
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var game = _vm.Game!;
+        game.Loaded += () => loaded.TrySetResult();
+        await map.PlayFromCameraCommand.ExecuteAsync(null);
+        if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "the mission loaded")) return;
+        await game.RunConsoleAsync(new[] { "(set cheat_deathless_player true)", "chud_show 0" }, TimeSpan.FromSeconds(10));
+        await Task.Delay(TimeSpan.FromSeconds(6));
+        async Task Shot2(string name)
+        {
+            string request = System.IO.Path.Combine(_dir, "request-" + name + ".txt");
+            File.WriteAllText(request, name);
+            for (int i = 0; i < 60 && File.Exists(request); i++) await Task.Delay(500);
+        }
+        static string F(float x) => x.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var v in views)
+        {
+            float y = v.Yaw * MathF.PI / 180, p = v.Pitch * MathF.PI / 180;
+            var f = new Vector3(MathF.Cos(y) * MathF.Cos(p), MathF.Sin(y) * MathF.Cos(p), MathF.Sin(p));
+            var u = new Vector3(-MathF.Cos(y) * MathF.Sin(p), -MathF.Sin(y) * MathF.Sin(p), MathF.Cos(p));
+            string file = System.IO.Path.Combine(_vm.Paths!.Workspace, "camera_" + System.IO.Path.GetFileName(game.Scenario!) + ".txt");
+            File.WriteAllText(file, $"{F(eye.X)} {F(eye.Y)} {F(eye.Z)}\r\n{F(f.X)} {F(f.Y)} {F(f.Z)}\r\n{F(u.X)} {F(u.Y)} {F(u.Z)}\r\n1.361357\r\n");
+            await game.RunConsoleAsync(new[] { "debug_camera_load" }, TimeSpan.FromSeconds(10));
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            await Shot2("truth-" + v.Name);
+            await game.RunConsoleAsync(new[] { "director_debug_camera 0", "camera_control 1", "camera_set " + v.Name + " 0" }, TimeSpan.FromSeconds(10));
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            await Shot2("cam-" + v.Name);
+            await game.RunConsoleAsync(new[] { "camera_control 0" }, TimeSpan.FromSeconds(10));
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+        _vm.StopGameCommand.Execute(null);
+        await Pause(3000);
+        foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
     }
 
     /// <summary>

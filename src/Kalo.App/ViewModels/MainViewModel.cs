@@ -543,6 +543,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
 
     public void OnTagSaved(TagEditorViewModel tab)
     {
+        if (!_tagIndex.Contains(tab.Path, StringComparer.OrdinalIgnoreCase)) _tagIndex.Add(tab.Path); // new files: lists like Player gear offer them at once
         tab.DiffersFromVanilla = Baseline?.IsChanged("tags\\" + tab.Path) ?? true;
         Log($"Saved {tab.Path}." + (IsGameRunning ? " The running game should reload it." : ""));
         StatusMessage = "Saved " + tab.Title;
