@@ -89,7 +89,7 @@ public partial class TagEditorViewModel
 
     /// <summary>
     /// Paints the object with a picture of the user's: fitted to a power-of-two square, made into a bitmap by HREK's tool
-    /// and a shader in the mod, then painted like a material. Every surface shows the whole picture once.
+    /// and a shader in the mod, then painted like a material.
     /// </summary>
     public async Task PaintWithImageAsync(string file)
     {

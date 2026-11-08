@@ -73,7 +73,8 @@ public partial class MapEditorViewModel
         {
             await _main.Host.SetStartingGearAsync(new StartingGear { Path = Path, Primary = GearPrimary?.Path ?? "", Secondary = GearSecondary?.Path ?? "", Equipment = GearAbility?.Path ?? "", Frags = frags, Plasmas = plasmas });
             IsDirty = true;
-            GearStatus = "Set. Save, then Play: new weapons start full.";
+            bool copied = new[] { GearPrimary?.Path, GearSecondary?.Path }.Any(p => p != null && p.Contains(@"\mods\", StringComparison.OrdinalIgnoreCase));
+            GearStatus = copied ? "Set, but a weapon copied into your mod did not reach the player when tested: place it in the map for them to pick up." : "Set. Save, then Play: new weapons start full.";
             QueueStatusRefresh();
         }
         catch (HostException ex)

@@ -421,7 +421,9 @@ public partial class MainViewModel
     public bool NeedsBaseLevel => NewMapKind != "barebone";
 
     /// <summary>Reach levels a new map can start from: multiplayer levels, or campaign missions for a campaign map.</summary>
-    public IEnumerable<string> BaseLevels => Scenarios.Where(s => s.StartsWith(IsCampaignKind ? @"levels\solo\" : @"levels\multi\", StringComparison.OrdinalIgnoreCase));
+    public IEnumerable<string> BaseLevels => Scenarios.Where(s => IsCampaignKind
+        ? s.StartsWith(@"levels\solo\", StringComparison.OrdinalIgnoreCase) || s.StartsWith(@"levels\firefight\", StringComparison.OrdinalIgnoreCase)
+        : s.StartsWith(@"levels\multi\", StringComparison.OrdinalIgnoreCase));
 
     [RelayCommand]
     private void OpenNewMapForm()

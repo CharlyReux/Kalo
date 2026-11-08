@@ -176,8 +176,8 @@ end
         yield return new("recipe-picture", Items, "Put your own picture on a weapon or object", new[]
         {
             P("1. Open the weapon or object, Look › Your picture…, and pick a PNG or JPEG. A square picture works best."),
-            P("2. The game's own objects get a painted copy in your mod; Use it › Place in map, or pick it in Player gear."),
-            Tip("Every surface shows the whole picture once, and the picture replaces the object's whole paint job: Paint… uses Reach's own materials instead."),
+            P("2. The game's own objects get a painted copy in your mod; Use it › Place in map puts it where players can pick it up."),
+            Tip("The picture is wrapped over the object's parts, so patterns work better than logos or text. It replaces the whole paint job."),
         });
 
         yield return new("recipe-mission-ai", Campaign, "Change a mission's enemies", new[]
@@ -237,11 +237,18 @@ startup mission_start:
             Tip("Next: more squads and volumes, checkpoints with game_save(), Level pieces › Here to remove a building."),
         });
 
+        yield return new("recipe-firefight", Campaign, "Mod a Firefight map", new[]
+        {
+            P("1. My mod › New map › Campaign mission, and pick a level from levels\firefight."),
+            P("2. Change it like a mission: objects, Player gear, squads, mission scripts. Waves are squads the map's script sends in."),
+            P("3. Play (F5) starts it in Firefight mode, with its waves."),
+        });
+
         yield return new("recipe-gear", Campaign, "Choose what the player starts with", new[]
         {
             P("1. Open a copy of a mission, Campaign bar › Player gear."),
-            P("2. Pick the two weapons (your own weapons are in the list), the armor ability and the grenades. Apply, save, then Play."),
-            Tip("A mission has several starting profiles: Apply sets them all. A script can still hand out other weapons later in the mission."),
+            P("2. Pick the two weapons, the armor ability and the grenades. Apply, save, then Play."),
+            Tip("A mission has several starting profiles: Apply sets them all. Weapons copied into your mod are listed but did not reach the player when tested: place them in the map instead."),
         });
 
         yield return new("recipe-allies", Campaign, "Add allies that fight with you", new[]

@@ -680,7 +680,7 @@ public partial class MainViewModel : ObservableObject, IAsyncDisposable
     private void FindScenarios(string tagsRoot)
     {
         // Maps made in Kalo (levels\mods) first, then Reach's multiplayer maps, then the campaign missions.
-        foreach (string folder in new[] { "mods", "multi", "solo" })
+        foreach (string folder in new[] { "mods", "multi", "solo", "firefight" })
         {
             string dir = System.IO.Path.Combine(tagsRoot, "levels", folder);
             if (!Directory.Exists(dir)) continue;

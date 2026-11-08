@@ -76,6 +76,7 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("cameras", StringComparer.OrdinalIgnoreCase) == true) await Section("cameras", CamerasSection);
                 if (AppArgs.Current.TourSections?.Contains("gear-team-picture", StringComparer.OrdinalIgnoreCase) == true) await Section("gear-team-picture", () => InTourModAsync(GearTeamPicture));
                 if (AppArgs.Current.TourSections?.Contains("camera-match", StringComparer.OrdinalIgnoreCase) == true) await Section("camera-match", CameraMatch);
+                if (AppArgs.Current.TourSections?.Contains("firefight", StringComparer.OrdinalIgnoreCase) == true) await Section("firefight", () => InTourModAsync(FirefightCopy));
                 // Switching mods changes the shared workspace: never do it while someone else's Kalo is open.
                 bool otherKalo = Process.GetProcessesByName("kalo").Length > 1;
                 if (otherKalo) Say("another Kalo window is open: skipping the project and new-mod tests (they switch mods)");
@@ -3163,6 +3164,7 @@ public sealed class Tour
         if (!Check(map.GearPrimary != null && map.GearSecondary != null, "Player gear lists the painted rifle and the rocket launcher")) return;
         await map.ApplyGear();
         Say("gear: " + map.GearStatus);
+        var back = await _vm.Host!.StartingGearAsync(map.Path); Say($"read back: primary {back.Primary} secondary {back.Secondary} equipment {back.Equipment} profiles {back.Profiles}");
 
         var flag = map.Items.First(i => i.PlacedName == "fl_barn_skirm_init");
         var at = flag.Position + new Vector3(1, 0, 0.2f);
@@ -3191,7 +3193,12 @@ public sealed class Tour
         var placedRifle = map.Selected ?? map.Items.Last(i => i.Label != null || true);
         Say("selected: " + placedRifle.Display);
         await map.RenameAsync(placedRifle, "tour_rifle");
-        map.LookFrom(flag.Position + new Vector3(-0.2f, 0, 1.6f), 0, -75);
+        var rifleAt = map.Items.First(i => i.PlacedName == "tour_rifle").Position;
+        map.LookFrom(rifleAt + new Vector3(-0.1f, 0.6f, 1.0f), 0, -60);
+        await Pause(800);
+        await rifle!.PlaceInMapCommand.ExecuteAsync(null);
+        Say("vanilla at " + map.Selected?.Position + ", painted at " + rifleAt);
+        map.LookFrom(rifleAt + new Vector3(-0.5f, 0.3f, 1.3f), 0, -65);
         await Pause(1200);
         await map.AddCameraHereCommand.ExecuteAsync(null);
         await map.RenameAsync(map.Selected!, "tour_look");
@@ -3211,7 +3218,7 @@ public sealed class Tour
         _vm.Game.Loaded += () => loaded.TrySetResult();
         await map.PlayFromCameraCommand.ExecuteAsync(null);
         if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6))) == loaded.Task, "the mission loaded")) return;
-        await _vm.Game.RunConsoleAsync(new[] { "(set cheat_deathless_player true)", "(ai_place tour_enemy)", "(ai_place tour_ally)", "(ai_disregard (players) true)", "(ai_magically_see tour_enemy tour_ally)", "(ai_magically_see tour_ally tour_enemy)", "(object_teleport tour_rifle fl_barn_skirm_init)" }, TimeSpan.FromSeconds(10));
+        await _vm.Game.RunConsoleAsync(new[] { "(set cheat_deathless_player true)", "(ai_place tour_enemy)", "(ai_place tour_ally)", "(ai_disregard (players) true)", "(ai_magically_see tour_enemy tour_ally)", "(ai_magically_see tour_ally tour_enemy)", "(print \"placed\")" }, TimeSpan.FromSeconds(10));
         await Task.Delay(TimeSpan.FromSeconds(4));
         await _vm.Game.RunConsoleAsync(new[] { "(if (>= (objects_distance_to_flag tour_rifle fl_barn_skirm_init) 0) (print \"kalo probe: rifle exists\") (print \"kalo probe: rifle missing\"))", "camera_control 1", "camera_set tour_look 0" }, TimeSpan.FromSeconds(10));
         await Task.Delay(TimeSpan.FromSeconds(2));
@@ -3219,6 +3226,9 @@ public sealed class Tour
         await _vm.Game.RunConsoleAsync(new[] { "camera_control 0" }, TimeSpan.FromSeconds(10));
         await Task.Delay(TimeSpan.FromSeconds(10));
         await GameShot("gear-held");
+        await _vm.Game.RunConsoleAsync(new[] { "(unit_add_equipment (player_get 0) player_starting_profile_0 true false)" }, TimeSpan.FromSeconds(10));
+        await Task.Delay(TimeSpan.FromSeconds(4));
+        await GameShot("gear-readd");
         for (int round = 1; round <= 12; round++)
         {
             await Task.Delay(TimeSpan.FromSeconds(5));
@@ -3232,6 +3242,28 @@ public sealed class Tour
         await Task.Delay(TimeSpan.FromSeconds(4));
         lock (probes) foreach (var p in probes.Distinct()) Say(p);
         await GameShot("gear-end");
+        _vm.StopGameCommand.Execute(null);
+        await Pause(3000);
+    }
+
+    /// <summary>Can a modder copy a Firefight map and start it? What type it is, what the list offers, and a game frame.</summary>
+    private async Task FirefightCopy()
+    {
+        const string level = @"levels\firefight\ff20_courtyard\ff20_courtyard";
+        Say("type of ff20: " + await _vm.Host!.ScenarioTypeAsync(level + ".scenario"));
+        _vm.NewMapKind = "campaign"; Say("campaign list has ff20: " + _vm.BaseLevels.Any(l => l.Contains("ff20")));
+        _vm.NewMapKind = "full"; Say("remix list has ff20: " + _vm.BaseLevels.Any(l => l.Contains("ff20")));
+        var map = await _vm.CreateMapAsync("ff_test", level, false);
+        if (!Check(map != null, "a full copy of ff20")) return;
+        Say("campaign bar: " + map!.IsCampaign);
+        var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _vm.Game!.Loaded += () => loaded.TrySetResult();
+        await _vm.PlayAsync();
+        if (!Check(await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(5))) == loaded.Task, "the Firefight copy loaded")) return;
+        await Task.Delay(TimeSpan.FromSeconds(25)); Say("running: " + _vm.Game.IsRunning);
+        string request = System.IO.Path.Combine(_dir, "request-ff.txt");
+        File.WriteAllText(request, "ff");
+        for (int i = 0; i < 60 && File.Exists(request); i++) await Task.Delay(500);
         _vm.StopGameCommand.Execute(null);
         await Pause(3000);
     }

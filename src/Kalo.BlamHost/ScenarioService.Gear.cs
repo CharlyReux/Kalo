@@ -34,9 +34,6 @@ namespace Kalo.BlamHost
             EnsureStartingProfile(tag);
             var block = tag.SelectField(Profiles) as TagFieldBlock;
             if (block == null) throw new InvalidOperationException("This map has no starting profile block.");
-            AddToPalette(tag, "Block:weapon palette", p.Primary);
-            AddToPalette(tag, "Block:weapon palette", p.Secondary);
-            AddToPalette(tag, "Block:equipment palette", p.Equipment);
             for (int i = 0; i < block.Elements.Count; i++)
             {
                 string e = Profiles + "[" + i + "]/";
@@ -65,16 +62,6 @@ namespace Kalo.BlamHost
                 }
             ((TagFieldElementInteger)tag.SelectField(e + "ShortInteger:" + which + "rounds loaded")).Data = Math.Max(0, loaded);
             ((TagFieldElementInteger)tag.SelectField(e + "ShortInteger:" + which + "rounds total")).Data = Math.Max(0, total);
-        }
-
-        /// <summary>The game only loads objects a mission lists in its palettes, even for a starting weapon.</summary>
-        private static void AddToPalette(TagFile tag, string palette, string objectTag)
-        {
-            if (string.IsNullOrEmpty(objectTag) || !(tag.SelectField(palette) is TagFieldBlock block)) return;
-            for (int i = 0; i < block.Elements.Count; i++)
-                if (string.Equals(TagService.ValueOf(tag.SelectField(palette + "[" + i + "]/Reference:name")), objectTag, StringComparison.OrdinalIgnoreCase)) return;
-            block.AddElement();
-            ((TagFieldReference)tag.SelectField(palette + "[" + (block.Elements.Count - 1) + "]/Reference:name")).Path = TagService.TagPathOf(objectTag);
         }
 
         private static void SetRef(TagFile tag, string field, string value)

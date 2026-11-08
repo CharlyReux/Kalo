@@ -91,6 +91,10 @@ public partial class MainViewModel
     private List<string> CampaignPlayCommands(out string note)
     {
         var commands = new List<string>();
+        // "debug map launching: sets the next map to run in survival mode": Firefight's scripts assert without it.
+        if (SelectedScenario != null && (SelectedScenario.StartsWith(@"levels\firefight\", StringComparison.OrdinalIgnoreCase)
+            || (ModProjects?.Active?.Manifest.MapTemplates.TryGetValue(SelectedScenario + ".scenario", out var based) == true && based.StartsWith(@"levels\firefight\", StringComparison.OrdinalIgnoreCase))))
+            commands.Add("game_survival");
         string difficulty = (SelectedDifficulty ?? Difficulties[1]).Value;
         commands.Add(string.Format(DifficultyCommand, difficulty));
         if (PlayerCount > 1)
