@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 28 808 236" width="560" role="img" aria-label="Kalo">
+  <defs>
+    <!-- Brushed steel: bright top edge, darker band in the middle, light again, dark base. -->
+    <linearGradient id="steel" x1="0" y1="40" x2="0" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.18" stop-color="#d9dfe5"/>
+      <stop offset="0.48" stop-color="#8c97a2"/>
+      <stop offset="0.52" stop-color="#c3cbd2"/>
+      <stop offset="0.8" stop-color="#7c8792"/>
+      <stop offset="1" stop-color="#4e5862"/>
+    </linearGradient>
+  </defs>
+
+  <g fill="url(#steel)" stroke="#1b2128" stroke-width="3" stroke-linejoin="miter" fill-rule="evenodd">
+    <!-- K -->
+    <path d="M54 40 H94 V98 L150 40 H212 L128 120 L212 200 H150 L94 142 V200 H40 V54 Z"/>
+    <!-- A: no crossbar, flat-topped peak -->
+    <path d="M300 40 H350 L426 200 H370 L325 108 L280 200 H224 Z"/>
+    <!-- L -->
+    <path d="M450 40 H502 V156 H600 V200 H464 L450 186 Z"/>
+    <!-- O: the ring -->
+    <path d="M716 38 C774 38 818 75 818 120 C818 165 774 202 716 202 C658 202 614 165 614 120 C614 75 658 38 716 38 Z
+             M716 80 C687 80 664 98 664 120 C664 142 687 160 716 160 C745 160 768 142 768 120 C768 98 745 80 716 80 Z"/>
+  </g>
+
+  <text x="429" y="252" text-anchor="middle" fill="#8a949e" font-family="Segoe UI, Helvetica, Arial, sans-serif"
+        font-size="22" letter-spacing="9">HALO: REACH MODDING WORKBENCH</text>
+</svg>

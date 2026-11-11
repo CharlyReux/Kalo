@@ -1,45 +1,52 @@
-# Kalo
+<p align="center">
+  <img src="docs/images/kalo-logo.svg" alt="Kalo" width="520">
+</p>
 
-A modding workbench for **Halo: Reach** (Master Chief Collection), built on the official Halo: Reach Editing Kit (HREK).
+> [!WARNING]
+> **Kalo is very much a work in progress.** Things will break, change or be missing. Keep backups of anything you
+> care about, and expect rough edges.
 
-Kalo puts the editing kit behind one friendly window: make a mod, change weapons, build or remix maps, write
-gametypes and campaign missions, and try every change in the game in a few seconds.
+## Why Kalo
 
-> **Status:** work in progress. Windows only. Kalo never writes to your HREK or MCC folders: it works in its own
-> copy of the kit's files.
+I wanted to mod Halo: Reach as a hobby. The existing tools work, but they are old and not very practical to use:
+lots of separate programs, raw engine fields and command lines for things that should be a button. So I decided
+to use [Claude](https://claude.ai) to build a tool for myself, one window that makes the common things easy.
 
-## What you can do
+## Features
 
-**Multiplayer**
-- New maps from a bare platform, an empty Reach level or a full copy of one, or change Reach's own maps.
-- A 3D map editor: fly around, place, move and paint objects, build with Forge-style blocks, folders and prefabs.
-- Gametypes written in Kalo Script (readable, ReachVariantTool-like) or raw Megalo, from templates such as Slayer,
-  CTF, SWAT, Snipers, Fiesta and Gun Game. Loadouts, traits and "when a player enters this zone" actions.
-- Export a map as a Forge variant, and check whether a mod can be played in MCC without mods.
+- **A modern interface.** One window, a start page, readable labels instead of raw engine fields, search everywhere.
+- **A 3D viewport.** Fly through any map, place and move objects, build with blocks, see the level textured.
+- **Custom gametypes.** Write them in Kalo Script, a modern language for Reach's game modes, from templates such as
+  Slayer, CTF, SWAT or Gun Game.
+- **Campaign scripting.** Copy a mission and change its squads, triggers and cutscenes, with a script editor and a
+  built-in reference.
+- **Test in the game in seconds.** Play opens your map in the editing kit's test game, and saved changes reload live.
+- **Safe for your game.** Your mods live in Kalo's own workspace: the game and the editing kit are never modified.
 
-**Campaign and Firefight**
-- Copy a mission (or start an empty one) and change its squads, teams, patrol routes, vehicles and trigger volumes.
-- Edit the mission scripts, with a script reference built in.
-- Camera points for cutscenes: set them from the view, look through them, preview them in the game.
-- Choose the player's starting weapons, grenades and armor ability.
+## Screenshots
 
-**Weapons and objects**
-- Change a weapon's damage, rate of fire, magazine and more in plain words, with "hits to kill a Spartan".
-- Make a new weapon from an existing one (with its own bullet and damage), repaint it or put your own picture on it.
+**The map editor:** the level in 3D, its objects by folder, the building tools on the left.
 
-**Testing**
-- **Play (F5)** opens your map and gametype in the editing kit's test game; saved changes reload while it runs.
-- **Play here** drops you into the map where the camera is. **Clean screen** hides the engine's debug text.
-- **Play in MCC** builds a real `.map` and installs it as a local MCC mod (start MCC with mods, anti-cheat off).
+![The map editor on Sword Base](docs/images/map-editor.png)
 
-Help › Recipes walks through common tasks step by step.
+**Building and painting:** Forge blocks from the palette, a painted floor selected, its properties on the right.
+
+![Placing and painting blocks](docs/images/map-building.png)
+
+**A weapon, in plain words:** damage per hit, bullet speed and how many hits it takes to kill a Spartan.
+
+![The weapon editor](docs/images/weapon-editor.png)
+
+**Campaign scripting:** a mission's script in Kalo Script, readable and checked for errors before you play.
+
+![A campaign mission script](docs/images/campaign-script.png)
 
 ## Requirements
 
 - Windows 10 or 11, 64-bit
 - [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (and the .NET Framework 4.8 developer pack, if the build asks for it)
 - Halo: Reach Mod Tools (HREK) from Steam
-- Halo: The Master Chief Collection, for Play in MCC
+- Halo: The Master Chief Collection, to play your mods in the real game
 
 ## Build and run
 
@@ -50,26 +57,12 @@ dotnet build Kalo.sln -c Debug
 src\Kalo.App\bin\Debug\net8.0\kalo.exe
 ```
 
-Kalo looks for HREK in `D:\SteamLibrary\steamapps\common\HREK`, both to build (it links the kit's ManagedBlam)
-and to run. If yours is elsewhere, set the `KALO_HREK` environment variable before building, for example
-`setx KALO_HREK "E:\SteamLibrary\steamapps\common\HREK"` (then open a new terminal). The first start copies the kit's files into Kalo's
-workspace (`.kalo\`, several GB) and indexes them.
+Kalo looks for HREK in `D:\SteamLibrary\steamapps\common\HREK`. If yours is elsewhere, set the `KALO_HREK`
+environment variable before building, for example `setx KALO_HREK "E:\SteamLibrary\steamapps\common\HREK"`
+(then open a new terminal). The first start copies the kit's files into Kalo's workspace (`.kalo\`, several GB).
 
-Then, on the start page: create a mod (a name is enough), and pick **New map**, **Mod a campaign mission**,
-**New gametype** or **Tweak a weapon**.
-
-## Project layout
-
-| Folder | What it is |
-| --- | --- |
-| `src/Kalo.App` | The desktop app (Avalonia, .NET 8) |
-| `src/Kalo.Core` | Workspace, mod projects, scripting languages, geometry, MCC mod files |
-| `src/Kalo.BlamHost` | A .NET Framework process that talks to the editing kit's ManagedBlam |
-| `src/Kalo.Protocol` | Messages between the app and the Blam host |
-| `src/Kalo.Cli` | Command-line tools for tests and probes |
-| `src/Kalo.Spike0`, `src/Kalo.Spike1` | Early experiments, kept for reference |
-
-More detail on every panel, the experiments and the test tour: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Then create a mod on the start page (a name is enough) and pick what to make. Help › Recipes walks through common
+tasks step by step. More detail on every panel: [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Credits
 
