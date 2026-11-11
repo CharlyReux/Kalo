@@ -4,7 +4,8 @@
 
 > [!WARNING]
 > **Kalo is very much a work in progress.** Things will break, change or be missing. Keep backups of anything you
-> care about, and expect rough edges.
+> care about, and expect rough edges. Do not hesitate to give feedback or contribute: open an
+> [issue](https://github.com/CharlyReux/Kalo/issues) or a pull request.
 
 ## Why Kalo
 
