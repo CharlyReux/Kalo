@@ -3840,6 +3840,12 @@ public sealed class Tour
         Check(items.Any(i => i.Text == "ai_place"), $"autocomplete ai_pla: {string.Join(", ", items.Take(5).Select(i => i.Text))}");
         var (_, names) = doc.Complete("    ai_place(barn_sk");
         Check(names.Any(i => i.Text == "barn_skirm_init" && i.Kind == "squad"), $"autocomplete barn_sk: {string.Join(", ", names.Take(5).Select(i => i.Text + " (" + i.Kind + ")"))}");
+        // A readable part of the mission for the README: the barn skirmisher, near the top of the editor.
+        _vm.ActiveDocument = doc;
+        int barn = doc.FindDeclarationLine("barn_skirm_init_start");
+        doc.RevealLine(barn + 23);   // centred by the editor, so the script starts near the top (a blank line: nothing selected)
+        await Pause(1200);
+        Shot("mission-readable");
         // A typo: a squad that doesn't exist, a function with too few values.
         string text = doc.Text;
         doc.Text = text.Replace("ai_place(barn_skirm_init)", "ai_place(barn_skirm_typo)").Replace("wake(md_motion_tracker)", "wake()");

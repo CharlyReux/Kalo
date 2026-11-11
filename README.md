@@ -38,7 +38,8 @@ to use [Claude](https://claude.ai) to build a tool for myself, one window that m
 
 ![The weapon editor](docs/images/weapon-editor.png)
 
-**Campaign scripting:** a mission's script in Kalo Script, readable and checked for errors before you play.
+**Campaign scripting:** part of Reach's first mission in Kalo Script. A squad of Skirmishers is placed, waits until
+the player reaches the barn, then a command script sends them across the courtyard. Checked for errors before you play.
 
 ![A campaign mission script](docs/images/campaign-script.png)
 
