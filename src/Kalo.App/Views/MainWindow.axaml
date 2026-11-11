@@ -8,6 +8,7 @@
         x:Class="Kalo.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Title="Kalo"
+        Icon="/Assets/kalo.ico"
         Width="1440" Height="900" MinWidth="900" MinHeight="560"
         Background="{StaticResource KBg}">
 

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="Kalo">
+  <!-- App icon: the steel K of the README logo (kalo-logo.svg) on a dark gunmetal tile. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="256" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#323b45"/>
+      <stop offset="1" stop-color="#11151a"/>
+    </linearGradient>
+    <!-- Same brushed steel as the logo, in the K's own coordinates. -->
+    <linearGradient id="steel" x1="0" y1="40" x2="0" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.18" stop-color="#d9dfe5"/>
+      <stop offset="0.48" stop-color="#8c97a2"/>
+      <stop offset="0.52" stop-color="#c3cbd2"/>
+      <stop offset="0.8" stop-color="#7c8792"/>
+      <stop offset="1" stop-color="#4e5862"/>
+    </linearGradient>
+  </defs>
+  <rect x="6" y="6" width="244" height="244" rx="44" fill="url(#tile)" stroke="#4a5562" stroke-width="4"/>
+  <!-- The logo's K (x 40..212, y 40..200), centred on the tile. -->
+  <g transform="translate(128 128) scale(1.02) translate(-126 -120)">
+    <path d="M54 40 H94 V98 L150 40 H212 L128 120 L212 200 H150 L94 142 V200 H40 V54 Z"
+          fill="url(#steel)" stroke="#0b0e12" stroke-width="5" stroke-linejoin="miter"/>
+  </g>
+</svg>

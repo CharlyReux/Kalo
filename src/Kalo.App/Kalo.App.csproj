@@ -11,7 +11,14 @@
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- The exe's icon (desktop shortcuts, Explorer). Drawn from docs\images\kalo-icon.svg. -->
+    <ApplicationIcon>Assets\kalo.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The window's icon (title bar, taskbar). -->
+    <AvaloniaResource Include="Assets\kalo.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.2.3" />
