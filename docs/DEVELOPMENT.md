@@ -1,9 +1,8 @@
-# Kalo
+# Kalo: development notes
+
+The detailed notes kept while building Kalo: every panel, the spikes that came before the app, and the test runner. The short introduction is in the [README](../README.md).
 
 A modern modding workbench for Halo: Reach (MCC), built on top of the official Halo Reach Editing Kit (HREK).
-
-- Design doc: https://claude.ai/artifact/Fsh4bt9uP1xP8H7CMdWGQ8
-- UI mockup: https://claude.ai/artifact/7PetLn2NLhZ1LxxBweqAe6
 
 Status: **working draft** of the app: tag editor with blocks and references, 3D map editor, gametype script
 editor, mod projects, Play with hot reload. The spikes before it were
