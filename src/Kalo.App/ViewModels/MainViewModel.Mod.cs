@@ -272,7 +272,7 @@ public partial class MainViewModel
 
     private static readonly (string Name, string Glyph, string Hint)[] GroupInfo =
     {
-        ("Maps", "\uE909", "New map…"),
+        ("Maps", "\uE909", "New map, or change an existing one…"),
         ("Gametypes", "\uE943", "New gametype…"),
         ("Mission scripts", "\uE8A5", "New campaign map…"),
         ("Painted blocks", "\uE771", "Paint blocks in a map…"),
@@ -430,9 +430,31 @@ public partial class MainViewModel
     {
         ShowModTab();
         IsNewGametypeOpen = false;
+        MapChoiceNew = true;
         NewMapBase ??= BaseLevels.FirstOrDefault(s => s.EndsWith("20_sword_slayer")) ?? BaseLevels.FirstOrDefault();
         OnPropertyChanged(nameof(BaseLevels));
+        OnPropertyChanged(nameof(ExistingMaps));
+        ExistingMap ??= ExistingMaps.FirstOrDefault();
         IsNewMapOpen = true;
+    }
+
+    // The form's first choice: a separate new map, or Reach's own map changed in this mod.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MapChoiceExisting))]
+    private bool _mapChoiceNew = true;
+    public bool MapChoiceExisting { get => !MapChoiceNew; set { if (value) MapChoiceNew = false; } }
+    [ObservableProperty] private string? _existingMap;
+
+    /// <summary>The game's own maps and missions (not the ones made in mods).</summary>
+    public IEnumerable<string> ExistingMaps => Scenarios.Where(s => !s.StartsWith(@"levels\mods\", StringComparison.OrdinalIgnoreCase));
+
+    [RelayCommand]
+    private async Task OpenExistingMap()
+    {
+        if (ExistingMap == null) return;
+        string scenario = ExistingMap;
+        SelectedScenario = scenario;
+        if (await OpenMapAsync(scenario + ".scenario") != null) IsNewMapOpen = false;
     }
 
     /// <summary>The new map form on a full copy of a campaign mission, the first thing to try for a mission mod.</summary>

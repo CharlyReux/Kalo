@@ -29,7 +29,41 @@
         <!-- New map form -->
         <Border IsVisible="{Binding IsNewMapOpen}" Background="{StaticResource KBg}" BorderBrush="{StaticResource KAccent}" BorderThickness="1" CornerRadius="4" Padding="8">
           <StackPanel Spacing="6">
-            <TextBlock Text="NEW MAP" Classes="header" />
+            <TextBlock Text="ADD A MAP TO YOUR MOD" Classes="header" />
+            <RadioButton GroupName="mapchoice" IsChecked="{Binding MapChoiceNew}" FontSize="12.5">
+              <StackPanel>
+                <TextBlock Text="Make a new map" FontWeight="SemiBold" />
+                <TextBlock TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource KMuted}" Text="A separate map with its own name. The level you start from stays as it is." />
+              </StackPanel>
+            </RadioButton>
+            <RadioButton GroupName="mapchoice" IsChecked="{Binding MapChoiceExisting}" FontSize="12.5">
+              <StackPanel>
+                <TextBlock Text="Change an existing map" FontWeight="SemiBold" />
+                <TextBlock TextWrapping="Wrap" FontSize="11.5" Foreground="{StaticResource KMuted}" Text="Edit one of Reach's own maps or missions. What you save changes that map in this mod." />
+              </StackPanel>
+            </RadioButton>
+            <Border Height="1" Background="{StaticResource KAccent}" Opacity="0.35" Margin="0,2" />
+
+            <!-- Change an existing map -->
+            <StackPanel Spacing="6" IsVisible="{Binding MapChoiceExisting}">
+              <TextBlock Text="Map to change" Foreground="{StaticResource KMuted}" FontSize="11.5" />
+              <ComboBox ItemsSource="{Binding ExistingMaps}" SelectedItem="{Binding ExistingMap}" HorizontalAlignment="Stretch" FontSize="12">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="sys:String">
+                    <TextBlock Text="{Binding}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource KFaint}"
+                         Text="Your installed game is never touched, and Remove from mod puts the map back as it was." />
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Classes="primary" Content="Open map" Command="{Binding OpenExistingMapCommand}" />
+                <Button Classes="tool" Content="Cancel" Command="{Binding CancelNewContentCommand}" />
+              </StackPanel>
+            </StackPanel>
+
+            <!-- Make a new map -->
+            <StackPanel Spacing="6" IsVisible="{Binding MapChoiceNew}">
             <TextBox Classes="compact" Watermark="Map name" Text="{Binding NewMapName}" />
             <RadioButton GroupName="maptemplate" IsChecked="{Binding NewMapBarebone}" FontSize="12">
               <TextBlock TextWrapping="Wrap" Text="Barebone: one platform with spawn points on an open floor. Build the rest with blocks." />
@@ -61,6 +95,7 @@
             <StackPanel Orientation="Horizontal" Spacing="6">
               <Button Classes="primary" Content="Create map" Command="{Binding CreateMapCommand}" />
               <Button Classes="tool" Content="Cancel" Command="{Binding CancelNewContentCommand}" />
+            </StackPanel>
             </StackPanel>
           </StackPanel>
         </Border>

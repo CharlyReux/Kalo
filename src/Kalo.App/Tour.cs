@@ -2021,6 +2021,21 @@ public sealed class Tour
             // New map: the Sword Slayer level with only its spawn points.
             _vm.OpenNewMapFormCommand.Execute(null);
             Check(_vm.IsNewMapOpen && _vm.BaseLevels.Any(), $"New map form offers {_vm.BaseLevels.Count()} Reach levels");
+            Check(_vm.MapChoiceNew && !_vm.MapChoiceExisting, "the + form starts on Make a new map");
+            _vm.MapChoiceExisting = true;
+            Check(!_vm.MapChoiceNew && _vm.ExistingMaps.Any(s => s.EndsWith(@"\m10", StringComparison.OrdinalIgnoreCase)) && _vm.ExistingMaps.Any(s => s.StartsWith(@"levels\multi\", StringComparison.OrdinalIgnoreCase))
+                && !_vm.ExistingMaps.Any(s => s.StartsWith(@"levels\mods\", StringComparison.OrdinalIgnoreCase)), $"Change an existing map lists Reach's own {_vm.ExistingMaps.Count()} maps and missions, none from mods");
+            await Task.Delay(400);
+            Shot("map-choice-existing");
+            _vm.MapChoiceNew = true;
+            await Task.Delay(400);
+            Shot("map-choice-new");
+            _vm.MapChoiceExisting = true;
+            _vm.ExistingMap = @"levels\multi\20_sword_slayer\20_sword_slayer";
+            await _vm.OpenExistingMapCommand.ExecuteAsync(null);
+            Check(!_vm.IsNewMapOpen && _vm.Tabs.Any(t => t.Path.Equals(@"levels\multi\20_sword_slayer\20_sword_slayer.scenario", StringComparison.OrdinalIgnoreCase)), "Open map opens the game's own map and closes the form");
+            _vm.OpenNewMapFormCommand.Execute(null);
+            Check(_vm.MapChoiceNew, "the + form goes back to Make a new map");
             var map = await _vm.CreateMapAsync("Tour Arena", @"levels\multi\20_sword_slayer\20_sword_slayer", empty: true);
             Check(map != null && map.Path.StartsWith(@"levels\mods\kalo_tour_mod\tour_arena\"), "created levels\\mods\\kalo_tour_mod\\tour_arena");
             if (map != null)
