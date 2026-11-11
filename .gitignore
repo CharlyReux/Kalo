@@ -9,8 +9,8 @@ obj/
 # Kalo workspaces (copies of HREK tags/data, many GB)
 .kalo/
 
-# Screenshots and large probe outputs
-spike-results/*.png
+# Reports from the early experiments (machine-specific)
+spike-results/
 
 # Mod projects and exported mods are user data
 projects/

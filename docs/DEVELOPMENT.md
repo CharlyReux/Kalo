@@ -16,7 +16,7 @@ throwaway command-line probes:
 ## Running Kalo
 
 ```powershell
-cd D:\charl\Documents\Perso\Halo\Kalo
+cd Kalo   # the folder you cloned
 dotnet build Kalo.sln
 src\Kalo.App\bin\Debug\net8.0\kalo.exe
 ```
@@ -228,7 +228,7 @@ Visual Studio 2022 Community / JetBrains Rider later, when the real UI work star
 Then create the local Git repository:
 
 ```powershell
-cd D:\charl\Documents\Perso\Halo\Kalo
+cd Kalo   # the folder you cloned
 git init
 git add .
 git commit -m "Spike 0: ManagedBlam and tool.exe probe"
@@ -298,7 +298,7 @@ Claude can write files in this folder but cannot run programs. The runner closes
 leave the window open, and Claude can build Kalo, run tests and take screenshots on its own.
 
 ```powershell
-cd D:\charl\Documents\Perso\Halo\Kalo
+cd Kalo   # the folder you cloned
 powershell -ExecutionPolicy Bypass -File tools\kalo-runner.ps1
 ```
 

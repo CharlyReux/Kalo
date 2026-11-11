@@ -254,7 +254,7 @@ public sealed class Tour
             if (Directory.Exists(folder)) Directory.Delete(folder, true);
             if (variant == "ulcopy")
             {
-                // Charly's map, copied (his file is not touched): opening it applies the fixes, then play it.
+                // A tester's map, copied (their file is not touched): opening it applies the fixes, then play it.
                 const string ul = @"levels\mods\test_project\ul\ul.scenario";
                 Directory.CreateDirectory(folder);
                 await _vm.Host!.OpenTagAsync(ul);
@@ -410,7 +410,7 @@ public sealed class Tour
             string tag = variant == "packing" ? @"objects\gear\human\military\crate_packing\crate_packing.crate" : block;
             var at = variant == "packing" ? new Vector3(64.64f, 139.29f, 42.92f) : new Vector3(64.23f, 138.6f, 42.92f);
             var obj = await map.AddTagAtAsync(tag, at);
-            Check(obj != null, $"placed {System.IO.Path.GetFileName(tag)} at Charly's spot");
+            Check(obj != null, $"placed {System.IO.Path.GetFileName(tag)} at the tester's spot");
             if (obj != null && variant == "q0")
                 await _vm.Host.SetFieldAsync(path, $"Block:crates[{obj.Index}]/Struct:multiplayer data[0]/CharInteger:quota maximum", "0");
             if (variant == "nopalette")
@@ -641,7 +641,7 @@ public sealed class Tour
             var until = DateTime.UtcNow.AddMinutes(3);
             while ((map.Bsp == null || map.ModelVersion == 0) && DateTime.UtcNow < until) await Task.Delay(500);
             Check(map.Items.Count(i => i.Tag.Contains("respawn_point")) == 4 && map.Items.Any(i => i.Tag.Contains("ff_plat")), $"it has the platform and spawns ({map.Items.Count} objects)");
-            // What Charly reported: start location moved, a weapon and a vehicle added, a scaled block, a weapon tag edit.
+            // What a tester reported: start location moved, a weapon and a vehicle added, a scaled block, a weapon tag edit.
             var start = map.Items.FirstOrDefault(i => i.Category == StartLocations.Category);
             Check(start != null, "the start location is listed as an object");
             if (start != null)
