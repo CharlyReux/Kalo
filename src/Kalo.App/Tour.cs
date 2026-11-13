@@ -1026,6 +1026,27 @@ public sealed class Tour
         float t = Kalo.App.Viewport.MapViewport.ClosestOnAxis(Vector3.Zero, Vector3.UnitX, new Vector3(5, -10, 0), Vector3.UnitY);
         Check(MathF.Abs(t - 5) < 1e-4f, $"arrow handle math: closest point on the x axis is 5 ({t})");
 
+        // Rotate mode: the ring (and a drag on the object) turns around the vertical axis only, pitch and roll stay.
+        Check(!map.RotateMode && map.MoveMode, "the map starts in Move mode");
+        map.SetRotateModeCommand.Execute("1");
+        Check(map.RotateMode && !map.MoveMode, "the Rotate button switches the handles to the ring");
+        var spun = map.Selected!;
+        var (yaw0, pitchStart, rollStart) = (spun.Yaw, spun.Pitch, spun.Roll);
+        spun.SetRotationLocal(40, 90, 25);
+        Check(spun.GimbalLocked, "pitch 90 is reported as gimbal lock (yaw and roll turn it the same way)");
+        await Pause(900);
+        Shot("map-rotate-mode");
+        var yaws = map.Selection.ToDictionary(i => i, i => i.Yaw);
+        float pitch0 = spun.Pitch, roll0 = spun.Roll;
+        map.RotateSelectionLocal(yaws, 30f);
+        Check(MathF.Abs(spun.Yaw - ((yaws[spun] + 30f) % 360f)) < 0.01f && spun.Pitch == pitch0 && spun.Roll == roll0, $"turning 30 degrees changes the yaw only: {spun.Yaw} {spun.Pitch} {spun.Roll}");
+        spun.SetRotationLocal(40, 30, 25);
+        Check(!spun.GimbalLocked, "no gimbal lock warning at pitch 30");
+        spun.SetRotationLocal(yaw0, pitchStart, rollStart);
+        map.SetRotateModeCommand.Execute("0");
+        Check(map.MoveMode, "the Move button brings the arrows back");
+        await map.CommitMoveAsync(spun);
+
         // Multi-selection: move two weapons together.
         var others = map.Items.Where(i => i.Category == "weapons" && !map.IsSelected(i)).Take(2).ToList();
         if (others.Count == 2)

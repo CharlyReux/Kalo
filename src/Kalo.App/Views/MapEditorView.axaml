@@ -340,6 +340,11 @@
         <Border Background="#CC232427" BorderBrush="{StaticResource KBorder}" BorderThickness="1" CornerRadius="6" Padding="3"
                 HorizontalAlignment="Right">
           <StackPanel Orientation="Horizontal" Spacing="2">
+            <Button Classes="seg" Classes.on="{Binding MoveMode}" Content="Move" Command="{Binding SetRotateModeCommand}" CommandParameter="0"
+                    ToolTip.Tip="Drag the arrows (or the object) to move the selection" />
+            <Button Classes="seg" Classes.on="{Binding RotateMode}" Content="Rotate" Command="{Binding SetRotateModeCommand}" CommandParameter="1"
+                    ToolTip.Tip="Drag the ring, or the object itself, to turn the selection around the vertical axis (Ctrl snaps to 15°). Pitch and roll stay in the inspector." />
+            <Border Width="1" Background="{StaticResource KBorder}" Margin="3,2" />
             <Button Classes="seg" Classes.on="{Binding IsWireframe}" Content="Wireframe" Command="{Binding SetShadingCommand}" CommandParameter="Wireframe"
                     ToolTip.Tip="Edges only, see through everything (Z cycles the modes)" />
             <Button Classes="seg" Classes.on="{Binding IsSolid}" Content="Solid" Command="{Binding SetShadingCommand}" CommandParameter="Solid"

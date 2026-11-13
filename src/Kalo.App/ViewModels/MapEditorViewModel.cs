@@ -97,6 +97,20 @@ public partial class MapEditorViewModel : DocumentViewModel
     [RelayCommand]
     private void FrameAll() => FrameAllRequested?.Invoke();
 
+    // ---- what the mouse does to the selection ------------------------------------------------------
+
+    /// <summary>False: the handles move the selection (three arrows). True: they turn it (a ring around the vertical axis).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MoveMode))]
+    private bool _rotateMode;
+
+    public bool MoveMode => !RotateMode;
+
+    partial void OnRotateModeChanged(bool value) => SceneChanged?.Invoke();
+
+    [RelayCommand]
+    private void SetRotateMode(string on) => RotateMode = on == "1";
+
     // ---- viewport shading (like Blender's: wireframe, solid, material preview) ---------------------
 
     /// <summary>The last shading picked, used for the next map opened.</summary>
@@ -966,7 +980,13 @@ public partial class PlacementItem : ObservableObject
     [ObservableProperty] private string _y = "";
     [ObservableProperty] private string _z = "";
     [ObservableProperty] private string _yawText = "";
-    [ObservableProperty] private string _pitchText = "";
+    [ObservableProperty][NotifyPropertyChangedFor(nameof(GimbalLocked))] private string _pitchText = "";
+
+    /// <summary>
+    /// Pitch at ±90°: the object's forward axis points straight up or down, so yaw and roll then turn it the same way
+    /// (a limit of angles in three steps, in the game as well). The Rotate button turns it around the vertical axis instead.
+    /// </summary>
+    public bool GimbalLocked => MathF.Abs(MathF.Abs(Pitch) % 180f - 90f) < 0.5f;
     [ObservableProperty] private string _rollText = "";
 
     partial void OnXChanged(string value) => FromText();

@@ -164,8 +164,9 @@ void main() {
     private double _lastFrame;
     private bool _cameraPlaced;
 
-    private enum Drag { None, Look, Pan, Move, Axis, Turn }
+    private enum Drag { None, Look, Pan, Move, Axis, Turn, Spin }
     private Drag _drag;
+    private float _spinDegrees;            // Rotate mode, dragging the object itself: turn so far (horizontal mouse travel)
     private Point _last;
     private PlacementItem? _dragItem;
     private Vector3 _grabOffset;
@@ -664,10 +665,13 @@ void main() {
             gl.BindVertexArray(_gizmoVao);
             gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(GizmoScale(selected)) * Matrix4x4.CreateTranslation(selected.Position));
             var colors = new[] { new Vector3(0.95f, 0.3f, 0.3f), new Vector3(0.35f, 0.85f, 0.35f), new Vector3(0.35f, 0.55f, 1f), new Vector3(1f, 0.8f, 0.3f) };
+            bool rotating = map.RotateMode;
             for (int part = 0; part < 4; part++)
             {
+                // Move mode shows the three arrows, Rotate mode only the ring around the vertical axis.
+                if ((part == 3) != rotating) continue;
                 var c = colors[part];
-                float k = part == _hoverPart || (part < 3 && _drag == Drag.Axis && _axis == Axes[part]) || (part == 3 && _drag == Drag.Turn) ? 1.25f : 0.85f;
+                float k = part == _hoverPart || (part < 3 && _drag == Drag.Axis && _axis == Axes[part]) || (part == 3 && _drag is Drag.Turn or Drag.Spin) ? 1.25f : 0.85f;
                 gl.Uniform4(_uColor, Math.Min(1, c.X * k), Math.Min(1, c.Y * k), Math.Min(1, c.Z * k), 1f);
                 if (part < 3) gl.DrawArrays(Gl.LINES, part * 2, 2);
                 else gl.DrawArrays(Gl.LINES, 6, RingSegments * 2);
@@ -825,7 +829,8 @@ void main() {
         if (origin == null) return -1;
         int best = -1;
         double bestDistance = 8;
-        for (int a = 0; a < 3; a++)
+        bool rotating = Map!.RotateMode;
+        for (int a = 0; a < 3 && !rotating; a++)
         {
             var tip = ToScreen(sel.Position + Axes[a] * s);
             if (tip == null) continue;
@@ -833,7 +838,7 @@ void main() {
             if (dist < bestDistance) { bestDistance = dist; best = a; }
         }
         Point? prev = null;
-        for (int i = 0; i <= RingSegments; i++)
+        for (int i = 0; i <= RingSegments && rotating; i++)
         {
             float t = i * MathF.Tau / RingSegments;
             var q = ToScreen(sel.Position + new Vector3(MathF.Cos(t), MathF.Sin(t), 0) * (s * 0.75f));
@@ -1082,7 +1087,16 @@ void main() {
                     if (shift && hit != null) _shiftToggle = hit;
                     if (hit == null || !map.IsSelected(hit)) map.Selected = hit;
                     else if (map.Selected != hit) map.MakePrimary(hit); // keep the group
-                    if (hit != null)
+                    if (hit != null && map.RotateMode)
+                    {
+                        // Rotate mode: dragging the object turns it (the object never slides by accident).
+                        _drag = Drag.Spin;
+                        _dragItem = hit;
+                        _spinDegrees = 0;
+                        _moved = false;
+                        RememberSelection(map);
+                    }
+                    else if (hit != null)
                     {
                         _drag = Drag.Move;
                         _dragItem = hit;
@@ -1169,6 +1183,15 @@ void main() {
                 _moved = true;
                 break;
             }
+            case Drag.Spin when Map != null:
+            {
+                // Dragging right turns clockwise seen from above (a yaw is counter-clockwise), half a degree per pixel.
+                _spinDegrees -= (float)dx * 0.5f;
+                float delta = e.KeyModifiers.HasFlag(KeyModifiers.Control) ? MathF.Round(_spinDegrees / 15f) * 15f : _spinDegrees;
+                Map.RotateSelectionLocal(_startYaws, delta);
+                _moved |= dx != 0;
+                break;
+            }
         }
         RequestNextFrameRendering();
     }
@@ -1176,7 +1199,7 @@ void main() {
     protected override async void OnPointerReleased(PointerReleasedEventArgs e)
     {
         base.OnPointerReleased(e);
-        bool edited = (_drag is Drag.Move or Drag.Axis or Drag.Turn) && _moved;
+        bool edited = (_drag is Drag.Move or Drag.Axis or Drag.Turn or Drag.Spin) && _moved;
         if (!_moved && _shiftToggle != null && Map != null && Map.IsSelected(_shiftToggle)) Map.ToggleSelection(_shiftToggle);
         _shiftToggle = null;
         _drag = Drag.None;
