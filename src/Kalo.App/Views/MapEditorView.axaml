@@ -343,7 +343,7 @@
             <Button Classes="seg" Classes.on="{Binding MoveMode}" Content="Move" Command="{Binding SetRotateModeCommand}" CommandParameter="0"
                     ToolTip.Tip="Drag the arrows (or the object) to move the selection" />
             <Button Classes="seg" Classes.on="{Binding RotateMode}" Content="Rotate" Command="{Binding SetRotateModeCommand}" CommandParameter="1"
-                    ToolTip.Tip="Drag the ring, or the object itself, to turn the selection around the vertical axis (Ctrl snaps to 15°). Pitch and roll stay in the inspector." />
+                    ToolTip.Tip="Drag a ring to turn the selection around that axis (red x, green y, blue z); a group turns together around its middle. Dragging the object itself turns it around the vertical axis. Ctrl snaps to 15°." />
             <Border Width="1" Background="{StaticResource KBorder}" Margin="3,2" />
             <Button Classes="seg" Classes.on="{Binding IsWireframe}" Content="Wireframe" Command="{Binding SetShadingCommand}" CommandParameter="Wireframe"
                     ToolTip.Tip="Edges only, see through everything (Z cycles the modes)" />

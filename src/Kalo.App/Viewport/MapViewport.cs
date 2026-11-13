@@ -176,7 +176,8 @@ void main() {
     private const int RingSegments = 48;
     private int _hoverPart = -1;           // 0..2 axis, 3 ring
     private Vector3 _axis, _axisOrigin;
-    private float _axisT0, _turnAngle0;
+    private float _axisT0, _turnLast, _turnTotal;   // arrow drag start; ring drag: last angle and the turn so far
+    private Vector3 _turnAxis = Vector3.UnitZ;      // ring and spin drags: the world axis being turned around
     private Dictionary<PlacementItem, Vector3> _startPositions = new();
     private Dictionary<PlacementItem, (float Yaw, float Pitch, float Roll)> _startAngles = new();
 
@@ -663,18 +664,32 @@ void main() {
                 gl.DrawArrays(Gl.LINES, 0, 24);
             }
             gl.BindVertexArray(_gizmoVao);
-            gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(GizmoScale(selected)) * Matrix4x4.CreateTranslation(selected.Position));
-            var colors = new[] { new Vector3(0.95f, 0.3f, 0.3f), new Vector3(0.35f, 0.85f, 0.35f), new Vector3(0.35f, 0.55f, 1f), new Vector3(1f, 0.8f, 0.3f) };
-            bool rotating = map.RotateMode;
-            for (int part = 0; part < 4; part++)
+            var colors = new[] { new Vector3(0.95f, 0.3f, 0.3f), new Vector3(0.35f, 0.85f, 0.35f), new Vector3(0.35f, 0.55f, 1f) };
+            if (!map.RotateMode)
             {
-                // Move mode shows the three arrows, Rotate mode only the ring around the vertical axis.
-                if ((part == 3) != rotating) continue;
-                var c = colors[part];
-                float k = part == _hoverPart || (part < 3 && _drag == Drag.Axis && _axis == Axes[part]) || (part == 3 && _drag is Drag.Turn or Drag.Spin) ? 1.25f : 0.85f;
-                gl.Uniform4(_uColor, Math.Min(1, c.X * k), Math.Min(1, c.Y * k), Math.Min(1, c.Z * k), 1f);
-                if (part < 3) gl.DrawArrays(Gl.LINES, part * 2, 2);
-                else gl.DrawArrays(Gl.LINES, 6, RingSegments * 2);
+                // Move mode: the three arrows.
+                gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(GizmoScale(selected.Position)) * Matrix4x4.CreateTranslation(selected.Position));
+                for (int part = 0; part < 3; part++)
+                {
+                    var c = colors[part];
+                    float k = part == _hoverPart || (_drag == Drag.Axis && _axis == Axes[part]) ? 1.25f : 0.85f;
+                    gl.Uniform4(_uColor, Math.Min(1, c.X * k), Math.Min(1, c.Y * k), Math.Min(1, c.Z * k), 1f);
+                    gl.DrawArrays(Gl.LINES, part * 2, 2);
+                }
+            }
+            else
+            {
+                // Rotate mode: a ring around each axis (red x, green y, blue z), centered on the middle of the selection.
+                Vector3 pivot = map.RotationPivot;
+                float gs = GizmoScale(pivot);
+                for (int a = 0; a < 3; a++)
+                {
+                    gl.UniformMatrix(_uModel, Matrix4x4.CreateScale(gs) * RingBasis[a] * Matrix4x4.CreateTranslation(pivot));
+                    var c = colors[a];
+                    float k = _hoverPart == 3 + a || (_drag == Drag.Turn && _turnAxis == Axes[a]) || (_drag == Drag.Spin && a == 2) ? 1.25f : 0.85f;
+                    gl.Uniform4(_uColor, Math.Min(1, c.X * k), Math.Min(1, c.Y * k), Math.Min(1, c.Z * k), 1f);
+                    gl.DrawArrays(Gl.LINES, 6, RingSegments * 2);
+                }
             }
             gl.Enable(Gl.DEPTH_TEST);
         }
@@ -800,7 +815,23 @@ void main() {
     private static readonly Vector3[] Axes = { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ };
 
     /// <summary>Handles keep the same size on screen: about 15% of the distance to the camera.</summary>
-    private float GizmoScale(PlacementItem item) => Math.Max(0.2f, Vector3.Distance(_eye, item.Position) * 0.15f);
+    private float GizmoScale(Vector3 at) => Math.Max(0.2f, Vector3.Distance(_eye, at) * 0.15f);
+
+    /// <summary>The ring (drawn flat around z) turned to lie around each axis: x, y, z (rows: where the ring's own axes go).</summary>
+    private static readonly Matrix4x4[] RingBasis =
+    {
+        new(0, 1, 0, 0,  0, 0, 1, 0,  1, 0, 0, 0,  0, 0, 0, 1),
+        new(0, 0, 1, 0,  1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 0, 1),
+        Matrix4x4.Identity,
+    };
+
+    /// <summary>A point of the ring around an axis, unit radius (the same circle RingBasis gives the drawn ring).</summary>
+    private static Vector3 RingPoint(int axis, float t) => axis switch
+    {
+        0 => new Vector3(0, MathF.Cos(t), MathF.Sin(t)),
+        1 => new Vector3(MathF.Sin(t), 0, MathF.Cos(t)),
+        _ => new Vector3(MathF.Cos(t), MathF.Sin(t), 0),
+    };
 
     private Point? ToScreen(Vector3 p)
     {
@@ -819,35 +850,43 @@ void main() {
         return Math.Sqrt(dx * dx + dy * dy);
     }
 
-    /// <summary>Which handle is under the mouse: 0/1/2 = x/y/z arrow, 3 = turn ring, -1 = none.</summary>
+    /// <summary>Which handle is under the mouse: 0/1/2 = x/y/z arrow (Move), 3/4/5 = ring around x/y/z (Rotate), -1 = none.</summary>
     private int HandleAt(Point mouse)
     {
-        var sel = Map?.Selected;
-        if (sel == null) return -1;
-        float s = GizmoScale(sel);
-        var origin = ToScreen(sel.Position);
-        if (origin == null) return -1;
+        var map = Map;
+        var sel = map?.Selected;
+        if (map == null || sel == null) return -1;
         int best = -1;
         double bestDistance = 8;
-        bool rotating = Map!.RotateMode;
-        for (int a = 0; a < 3 && !rotating; a++)
+        if (!map.RotateMode)
         {
-            var tip = ToScreen(sel.Position + Axes[a] * s);
-            if (tip == null) continue;
-            double dist = SegmentDistance(mouse, origin.Value, tip.Value);
-            if (dist < bestDistance) { bestDistance = dist; best = a; }
-        }
-        Point? prev = null;
-        for (int i = 0; i <= RingSegments && rotating; i++)
-        {
-            float t = i * MathF.Tau / RingSegments;
-            var q = ToScreen(sel.Position + new Vector3(MathF.Cos(t), MathF.Sin(t), 0) * (s * 0.75f));
-            if (q != null && prev != null)
+            float s = GizmoScale(sel.Position);
+            var origin = ToScreen(sel.Position);
+            if (origin == null) return -1;
+            for (int a = 0; a < 3; a++)
             {
-                double dist = SegmentDistance(mouse, prev.Value, q.Value);
-                if (dist < bestDistance) { bestDistance = dist; best = 3; }
+                var tip = ToScreen(sel.Position + Axes[a] * s);
+                if (tip == null) continue;
+                double dist = SegmentDistance(mouse, origin.Value, tip.Value);
+                if (dist < bestDistance) { bestDistance = dist; best = a; }
             }
-            prev = q;
+            return best;
+        }
+        Vector3 pivot = map.RotationPivot;
+        float radius = GizmoScale(pivot) * 0.75f;
+        for (int a = 0; a < 3; a++)
+        {
+            Point? prev = null;
+            for (int i = 0; i <= RingSegments; i++)
+            {
+                var q = ToScreen(pivot + RingPoint(a, i * MathF.Tau / RingSegments) * radius);
+                if (q != null && prev != null)
+                {
+                    double dist = SegmentDistance(mouse, prev.Value, q.Value);
+                    if (dist < bestDistance) { bestDistance = dist; best = 3 + a; }
+                }
+                prev = q;
+            }
         }
         return best;
     }
@@ -862,10 +901,28 @@ void main() {
         return MathF.Abs(denom) < 1e-6f ? 0 : (b * e - c * dd) / denom;
     }
 
-    private float TurnAngle(Vector3 center, Vector3 o, Vector3 d)
+    /// <summary>
+    /// Where the mouse ray is around a ring, in degrees (right-hand rule about the axis): the angle, in the plane through
+    /// <paramref name="center"/> across the axis, of the point under the mouse. Null when the ray runs along that plane.
+    /// </summary>
+    private static float? TurnAngle(Vector3 center, Vector3 axis, Vector3 o, Vector3 d)
     {
-        var hit = HitPlane(o, d, center, Vector3.UnitZ) ?? center + Vector3.UnitX;
-        return MathF.Atan2(hit.Y - center.Y, hit.X - center.X) * 180f / MathF.PI;
+        if (MathF.Abs(Vector3.Dot(Vector3.Normalize(d), axis)) < 0.04f) return null;
+        if (HitPlane(o, d, center, axis) is not { } hit) return null;
+        Vector3 u = axis == Vector3.UnitZ ? Vector3.UnitX : axis == Vector3.UnitX ? Vector3.UnitY : Vector3.UnitZ;
+        Vector3 v = Vector3.Cross(axis, u);
+        Vector3 r = hit - center;
+        return MathF.Atan2(Vector3.Dot(r, v), Vector3.Dot(r, u)) * 180f / MathF.PI;
+    }
+
+    /// <summary>The turn so far in a ring drag: the angle moves are added up, so crossing ±180 degrees does not jump.</summary>
+    private float AddTurn(float angle)
+    {
+        float step = angle - _turnLast;
+        step -= 360f * MathF.Round(step / 360f);
+        _turnLast = angle;
+        _turnTotal += step;
+        return _turnTotal;
     }
 
     private void RememberSelection(MapEditorViewModel map)
@@ -1067,8 +1124,10 @@ void main() {
                 else
                 {
                     _drag = Drag.Turn;
-                    _axisOrigin = sel.Position;
-                    _turnAngle0 = TurnAngle(_axisOrigin, o, d);
+                    _turnAxis = Axes[handle - 3];
+                    _axisOrigin = map.RotationPivot;     // a group turns around its middle
+                    _turnLast = TurnAngle(_axisOrigin, _turnAxis, o, d) ?? 0;
+                    _turnTotal = 0;
                 }
             }
             else
@@ -1092,6 +1151,8 @@ void main() {
                         // Rotate mode: dragging the object turns it (the object never slides by accident).
                         _drag = Drag.Spin;
                         _dragItem = hit;
+                        _turnAxis = Vector3.UnitZ;
+                        _axisOrigin = map.RotationPivot;
                         _spinDegrees = 0;
                         _moved = false;
                         RememberSelection(map);
@@ -1177,9 +1238,11 @@ void main() {
             case Drag.Turn when Map != null:
             {
                 var (o, d) = Ray(pos);
-                float delta = TurnAngle(_axisOrigin, o, d) - _turnAngle0;
+                // Looking along the ring's plane the mouse says nothing about the angle: wait for a better view.
+                if (TurnAngle(_axisOrigin, _turnAxis, o, d) is not { } angle) break;
+                float delta = AddTurn(angle);
                 if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) delta = MathF.Round(delta / 15f) * 15f;
-                Map.RotateSelectionLocal(_startAngles, delta);
+                Map.RotateSelectionLocal(_startPositions, _startAngles, _axisOrigin, _turnAxis, delta);
                 _moved = true;
                 break;
             }
@@ -1188,7 +1251,7 @@ void main() {
                 // Dragging right turns clockwise seen from above (a yaw is counter-clockwise), half a degree per pixel.
                 _spinDegrees -= (float)dx * 0.5f;
                 float delta = e.KeyModifiers.HasFlag(KeyModifiers.Control) ? MathF.Round(_spinDegrees / 15f) * 15f : _spinDegrees;
-                Map.RotateSelectionLocal(_startAngles, delta);
+                Map.RotateSelectionLocal(_startPositions, _startAngles, _axisOrigin, Vector3.UnitZ, delta);
                 _moved |= dx != 0;
                 break;
             }

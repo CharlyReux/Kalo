@@ -466,7 +466,7 @@
                   </Grid>
                   <TextBlock IsVisible="{Binding ActiveMap.Selected.GimbalLocked, FallbackValue=False}" TextWrapping="Wrap" FontSize="11" Margin="0,4,0,0"
                              Foreground="{StaticResource KMuted}"
-                             Text="Pitch is at 90°, the object points straight up or down: yaw and roll now turn it the same way (a limit of these three angles). Use Rotate on the map view to turn it around the vertical axis." />
+                             Text="Pitch is at 90°, the object points straight up or down: yaw and roll now turn it the same way (a limit of these three angles). Use Rotate on the map view: its rings turn the object around the world axes." />
 
                   <WrapPanel Margin="0,4,0,0">
                     <Button Classes="outline" Content="Frame" Margin="0,0,6,6" Command="{Binding ActiveMap.FocusSelectedCommand, FallbackValue={x:Null}}" />

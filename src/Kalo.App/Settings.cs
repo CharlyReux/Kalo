@@ -150,7 +150,7 @@ public sealed class AppSettings
     public string MapHint()
     {
         string K(string a) => GestureText(a);
-        return $"Right-drag look · {K("forward")}{K("left")}{K("back")}{K("right")}/{K("down")}{K("up")} fly (Shift faster) · click select · drag move (Shift up/down, Ctrl snap) · Rotate button: drag to turn · " +
+        return $"Right-drag look · {K("forward")}{K("left")}{K("back")}{K("right")}/{K("down")}{K("up")} fly (Shift faster) · click select · drag move (Shift up/down, Ctrl snap) · Rotate button: drag a ring to turn · " +
                $"{K("turn")} turn · {K("duplicate")} duplicate · {K("delete")} delete · {K("frameSelection")} frame · {K("shading")} shading · double-click a list row to go to it";
     }
 }

@@ -99,7 +99,7 @@ public partial class MapEditorViewModel : DocumentViewModel
 
     // ---- what the mouse does to the selection ------------------------------------------------------
 
-    /// <summary>False: the handles move the selection (three arrows). True: they turn it (a ring around the vertical axis).</summary>
+    /// <summary>False: the handles move the selection (three arrows). True: they turn it (a ring around each axis).</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(MoveMode))]
     private bool _rotateMode;
@@ -282,12 +282,34 @@ public partial class MapEditorViewModel : DocumentViewModel
         SceneChanged?.Invoke();
     }
 
-    /// <summary>Turns every selected object around the vertical axis by delta degrees from where it was when the drag started.</summary>
-    public void RotateSelectionLocal(IReadOnlyDictionary<PlacementItem, (float Yaw, float Pitch, float Roll)> start, float delta)
+    /// <summary>
+    /// The point a group of selected objects turns around: the middle of their positions (a single object turns around its
+    /// own position).
+    /// </summary>
+    public Vector3 RotationPivot
     {
-        foreach (var (item, angles) in start)
+        get
         {
-            var (yaw, pitch, roll) = PlacementItem.TurnedAboutVertical(angles, delta);
+            if (_selection.Count == 0) return Vector3.Zero;
+            var sum = Vector3.Zero;
+            foreach (var item in _selection) sum += item.Position;
+            return sum / _selection.Count;
+        }
+    }
+
+    /// <summary>
+    /// Turns the selection as one body around a world axis through <paramref name="pivot"/> by <paramref name="degrees"/>
+    /// (right-hand rule), from where the objects were when the drag started: each object orbits the pivot and turns by the
+    /// same amount, so a group keeps its shape.
+    /// </summary>
+    public void RotateSelectionLocal(IReadOnlyDictionary<PlacementItem, Vector3> startPositions,
+        IReadOnlyDictionary<PlacementItem, (float Yaw, float Pitch, float Roll)> startAngles, Vector3 pivot, Vector3 axis, float degrees)
+    {
+        var turn = Matrix4x4.CreateFromAxisAngle(axis, degrees * MathF.PI / 180f);
+        foreach (var (item, angles) in startAngles)
+        {
+            if (startPositions.TryGetValue(item, out var origin)) item.SetPositionLocal(pivot + Vector3.Transform(origin - pivot, turn));
+            var (yaw, pitch, roll) = PlacementItem.TurnedAbout(angles, axis, degrees);
             item.SetRotationLocal(yaw, pitch, roll);
         }
         SceneChanged?.Invoke();
@@ -600,12 +622,11 @@ public partial class MapEditorViewModel : DocumentViewModel
     public async Task RotateSelectedAsync(float degrees)
     {
         using var edit = await EditAsync("turn", CampaignScope(_selection));
-        foreach (var item in _selection.ToList())
-        {
-            var (yaw, pitch, roll) = PlacementItem.TurnedAboutVertical((item.Yaw, item.Pitch, item.Roll), degrees);
-            item.SetRotationLocal(yaw, pitch, roll);
-            await CommitMoveAsync(item);
-        }
+        // The whole selection turns together around its middle (one object: around itself).
+        var items = _selection.ToList();
+        RotateSelectionLocal(items.ToDictionary(i => i, i => i.Position), items.ToDictionary(i => i, i => (i.Yaw, i.Pitch, i.Roll)),
+            RotationPivot, Vector3.UnitZ, degrees);
+        foreach (var item in items) await CommitMoveAsync(item);
     }
 
     /// <summary>The selection as (category, index), highest index first, so earlier operations do not shift later ones.</summary>
@@ -996,12 +1017,16 @@ public partial class PlacementItem : ObservableObject
         return (((yaw * asDegrees) % 360f + 360f) % 360f, -MathF.Asin(sinT) * asDegrees, roll * asDegrees);
     }
 
-    /// <summary>The angles that turn an object by <paramref name="degrees"/> (counter-clockwise from above) around the vertical axis, keeping its tilt.</summary>
-    public static (float Yaw, float Pitch, float Roll) TurnedAboutVertical((float Yaw, float Pitch, float Roll) a, float degrees)
+    /// <summary>The angles that turn an object by <paramref name="degrees"/> (right-hand rule) around a world axis, keeping the rest of its orientation.</summary>
+    public static (float Yaw, float Pitch, float Roll) TurnedAbout((float Yaw, float Pitch, float Roll) a, Vector3 axis, float degrees)
     {
-        if (a.Pitch == 0 && a.Roll == 0) return (((a.Yaw + degrees) % 360f + 360f) % 360f, 0, 0);
-        return AnglesOf(RotationOf(a.Yaw, a.Pitch, a.Roll) * Matrix4x4.CreateRotationZ(Deg(degrees)));
+        if (axis == Vector3.UnitZ && a.Pitch == 0 && a.Roll == 0) return (((a.Yaw + degrees) % 360f + 360f) % 360f, 0, 0);
+        return AnglesOf(RotationOf(a.Yaw, a.Pitch, a.Roll) * Matrix4x4.CreateFromAxisAngle(axis, Deg(degrees)));
     }
+
+    /// <summary>The angles that turn an object around the vertical axis (counter-clockwise from above), keeping its tilt.</summary>
+    public static (float Yaw, float Pitch, float Roll) TurnedAboutVertical((float Yaw, float Pitch, float Roll) a, float degrees) =>
+        TurnedAbout(a, Vector3.UnitZ, degrees);
 
     /// <summary>Unit cube (−1..1) → the object's bounding box in the world.</summary>
     public Matrix4x4 BoxMatrix

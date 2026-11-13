@@ -1037,12 +1037,14 @@ public sealed class Tour
         Check(spun.GimbalLocked, "pitch 90 is reported as gimbal lock (yaw and roll turn it the same way)");
         await Pause(900);
         Shot("map-rotate-mode");
+        await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "rotate-single.png"));
         // Turning around the vertical axis keeps the tilt: the new rotation is the old one followed by a turn about z.
         foreach (var (y, p, r) in new[] { (40f, 30f, 25f), (200f, -50f, -70f), (10f, 90f, 25f), (0f, 0f, 0f) })
         {
             spun.SetRotationLocal(y, p, r);
             var turnFrom = map.Selection.ToDictionary(i => i, i => (i.Yaw, i.Pitch, i.Roll));
-            map.RotateSelectionLocal(turnFrom, 30f);
+            var posFrom = map.Selection.ToDictionary(i => i, i => i.Position);
+            map.RotateSelectionLocal(posFrom, turnFrom, map.RotationPivot, Vector3.UnitZ, 30f);
             var expected = PlacementItem.RotationOf(y, p, r) * System.Numerics.Matrix4x4.CreateRotationZ(30f * MathF.PI / 180f);
             var got = PlacementItem.RotationOf(spun.Yaw, spun.Pitch, spun.Roll);
             float worst = 0;
@@ -1083,6 +1085,34 @@ public sealed class Tour
             map.MoveSelectionLocal(origins, new Vector3(0, 2f, 0));
             await map.CommitSelectionAsync();
             Check(origins.All(kv => MathF.Abs(kv.Key.Position.Y - (kv.Value.Y + 2f)) < 0.01f), "both moved 2 units together");
+            map.SetRotateModeCommand.Execute("1");
+            map.FrameAllCommand.Execute(null);
+            await Pause(1500);
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "rotate-group.png"));
+            // Rotate mode on a group: the two objects turn together around their middle (positions orbit, angles turn alike).
+            var pair = map.Selection.ToList();
+            var angles0 = pair.ToDictionary(i => i, i => (i.Yaw, i.Pitch, i.Roll));
+            var pos0 = pair.ToDictionary(i => i, i => i.Position);
+            Vector3 pivot0 = map.RotationPivot;
+            float gap0 = Vector3.Distance(pair[0].Position, pair[1].Position);
+            foreach (var axis in new[] { Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ })
+            {
+                map.RotateSelectionLocal(pos0, angles0, pivot0, axis, 90f);
+                float gap = Vector3.Distance(pair[0].Position, pair[1].Position);
+                float centreMoved = Vector3.Distance(map.RotationPivot, pivot0);
+                var turned = System.Numerics.Matrix4x4.CreateFromAxisAngle(axis, MathF.PI / 2);
+                bool bodyTurned = pair.All(i =>
+                {
+                    var want = PlacementItem.RotationOf(angles0[i].Yaw, angles0[i].Pitch, angles0[i].Roll) * turned;
+                    var got = PlacementItem.RotationOf(i.Yaw, i.Pitch, i.Roll);
+                    return MathF.Abs(want.M11 - got.M11) + MathF.Abs(want.M12 - got.M12) + MathF.Abs(want.M13 - got.M13) + MathF.Abs(want.M21 - got.M21) + MathF.Abs(want.M22 - got.M22) + MathF.Abs(want.M23 - got.M23) + MathF.Abs(want.M31 - got.M31) + MathF.Abs(want.M32 - got.M32) + MathF.Abs(want.M33 - got.M33) < 0.01f
+                        && Vector3.Distance(i.Position, pivot0 + Vector3.Transform(pos0[i] - pivot0, turned)) < 0.01f;
+                });
+                Check(gap0 < 0.001f || (MathF.Abs(gap - gap0) < 0.01f && centreMoved < 0.01f && bodyTurned), $"a group turned 90 degrees around {(axis == Vector3.UnitX ? "x" : axis == Vector3.UnitY ? "y" : "z")} keeps its shape and middle (gap {gap0:F2} -> {gap:F2}, middle moved {centreMoved:F3}, objects turned with it: {bodyTurned})");
+            }
+            map.RotateSelectionLocal(pos0, angles0, pivot0, Vector3.UnitZ, 0f);
+            Check(pair.All(i => Vector3.Distance(i.Position, pos0[i]) < 0.001f), "turning back to 0 degrees puts both objects back");
+            await map.CommitSelectionAsync();
             int before = map.Items.Count;
             await map.DuplicateSelectedCommand.ExecuteAsync(null);
             Check(map.Items.Count == before + 2, $"duplicating the selection added 2 objects ({map.Items.Count - before})");
