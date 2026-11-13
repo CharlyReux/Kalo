@@ -178,7 +178,7 @@ void main() {
     private Vector3 _axis, _axisOrigin;
     private float _axisT0, _turnAngle0;
     private Dictionary<PlacementItem, Vector3> _startPositions = new();
-    private Dictionary<PlacementItem, float> _startYaws = new();
+    private Dictionary<PlacementItem, (float Yaw, float Pitch, float Roll)> _startAngles = new();
 
     public MapViewport()
     {
@@ -871,7 +871,7 @@ void main() {
     private void RememberSelection(MapEditorViewModel map)
     {
         _startPositions = map.Selection.ToDictionary(i => i, i => i.Position);
-        _startYaws = map.Selection.ToDictionary(i => i, i => i.Yaw);
+        _startAngles = map.Selection.ToDictionary(i => i, i => (i.Yaw, i.Pitch, i.Roll));
     }
 
     // ---- picking ---------------------------------------------------------------------------------
@@ -1179,7 +1179,7 @@ void main() {
                 var (o, d) = Ray(pos);
                 float delta = TurnAngle(_axisOrigin, o, d) - _turnAngle0;
                 if (e.KeyModifiers.HasFlag(KeyModifiers.Control)) delta = MathF.Round(delta / 15f) * 15f;
-                Map.RotateSelectionLocal(_startYaws, delta);
+                Map.RotateSelectionLocal(_startAngles, delta);
                 _moved = true;
                 break;
             }
@@ -1188,7 +1188,7 @@ void main() {
                 // Dragging right turns clockwise seen from above (a yaw is counter-clockwise), half a degree per pixel.
                 _spinDegrees -= (float)dx * 0.5f;
                 float delta = e.KeyModifiers.HasFlag(KeyModifiers.Control) ? MathF.Round(_spinDegrees / 15f) * 15f : _spinDegrees;
-                Map.RotateSelectionLocal(_startYaws, delta);
+                Map.RotateSelectionLocal(_startAngles, delta);
                 _moved |= dx != 0;
                 break;
             }

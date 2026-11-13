@@ -65,6 +65,7 @@ public sealed class Tour
                 if (AppArgs.Current.TourSections?.Contains("loadouts", StringComparer.OrdinalIgnoreCase) == true) await Section("loadouts", LoadoutsSection);
                 if (AppArgs.Current.TourSections?.Contains("templates", StringComparer.OrdinalIgnoreCase) == true) await Section("templates", TemplatesSection);
                 if (AppArgs.Current.TourSections?.Contains("zones-play", StringComparer.OrdinalIgnoreCase) == true) await Section("zones-play", ZonesPlay);
+                if (AppArgs.Current.TourSections?.Contains("wall-rot", StringComparer.OrdinalIgnoreCase) == true) await Section("wall-rot", WallRot);
                 if (AppArgs.Current.TourSections?.Contains("volumes-play", StringComparer.OrdinalIgnoreCase) == true) await Section("volumes-play", VolumesPlay);
                 if (AppArgs.Current.TourSections?.Contains("new-weapon", StringComparer.OrdinalIgnoreCase) == true) await Section("new-weapon", NewWeapon);
                 if (AppArgs.Current.TourSections?.Contains("weapon-play", StringComparer.OrdinalIgnoreCase) == true) await Section("weapon-play", WeaponPlay);
@@ -1036,12 +1037,36 @@ public sealed class Tour
         Check(spun.GimbalLocked, "pitch 90 is reported as gimbal lock (yaw and roll turn it the same way)");
         await Pause(900);
         Shot("map-rotate-mode");
-        var yaws = map.Selection.ToDictionary(i => i, i => i.Yaw);
-        float pitch0 = spun.Pitch, roll0 = spun.Roll;
-        map.RotateSelectionLocal(yaws, 30f);
-        Check(MathF.Abs(spun.Yaw - ((yaws[spun] + 30f) % 360f)) < 0.01f && spun.Pitch == pitch0 && spun.Roll == roll0, $"turning 30 degrees changes the yaw only: {spun.Yaw} {spun.Pitch} {spun.Roll}");
+        // Turning around the vertical axis keeps the tilt: the new rotation is the old one followed by a turn about z.
+        foreach (var (y, p, r) in new[] { (40f, 30f, 25f), (200f, -50f, -70f), (10f, 90f, 25f), (0f, 0f, 0f) })
+        {
+            spun.SetRotationLocal(y, p, r);
+            var turnFrom = map.Selection.ToDictionary(i => i, i => (i.Yaw, i.Pitch, i.Roll));
+            map.RotateSelectionLocal(turnFrom, 30f);
+            var expected = PlacementItem.RotationOf(y, p, r) * System.Numerics.Matrix4x4.CreateRotationZ(30f * MathF.PI / 180f);
+            var got = PlacementItem.RotationOf(spun.Yaw, spun.Pitch, spun.Roll);
+            float worst = 0;
+            foreach (var (a, b) in new[] { (expected.M11, got.M11), (expected.M12, got.M12), (expected.M13, got.M13), (expected.M21, got.M21), (expected.M22, got.M22), (expected.M23, got.M23), (expected.M31, got.M31), (expected.M32, got.M32), (expected.M33, got.M33) })
+                worst = MathF.Max(worst, MathF.Abs(a - b));
+            Check(worst < 0.001f, $"turning ({y}, {p}, {r}) by 30 degrees about the vertical axis keeps the tilt: now ({spun.Yaw:F1}, {spun.Pitch:F1}, {spun.Roll:F1}), off by {worst:F5}");
+        }
         spun.SetRotationLocal(40, 30, 25);
         Check(!spun.GimbalLocked, "no gimbal lock warning at pitch 30");
+        // The order the game applies them in (a forge wall, 10 wide, 0.5 thick along y, 12 tall, tried in the game): which of
+        // these lie flat (the thin side vertical) and which stand.
+        foreach (var (y, p, r, flat) in new[] { (0f, 0f, 0f, false), (90f, 0f, 90f, false), (0f, 90f, 0f, false), (90f, 90f, 0f, true), (0f, 0f, 90f, true), (0f, 90f, 90f, true), (0f, 45f, 0f, false), (45f, 0f, 0f, false) })
+        {
+            float up = MathF.Abs(Vector3.TransformNormal(Vector3.UnitY, PlacementItem.RotationOf(y, p, r)).Z);
+            Check(flat ? up > 0.99f : up < 0.01f, $"a wall at yaw {y}, pitch {p}, roll {r} {(flat ? "lies flat" : "stands")} as in the game (thin side vertical: {up:F2})");
+        }
+        // The angles read back from a rotation build the same rotation (including a pitch of 90).
+        foreach (var (y, p, r) in new[] { (30f, 40f, 50f), (250f, -20f, -130f), (90f, 90f, 0f), (0f, -90f, 0f) })
+        {
+            var m = PlacementItem.RotationOf(y, p, r);
+            var (y2, p2, r2) = PlacementItem.AnglesOf(m);
+            var m2 = PlacementItem.RotationOf(y2, p2, r2);
+            Check(MathF.Abs(m.M11 - m2.M11) + MathF.Abs(m.M22 - m2.M22) + MathF.Abs(m.M33 - m2.M33) + MathF.Abs(m.M12 - m2.M12) + MathF.Abs(m.M31 - m2.M31) < 0.003f, $"angles read back from ({y}, {p}, {r}): ({y2:F1}, {p2:F1}, {r2:F1})");
+        }
         spun.SetRotationLocal(yaw0, pitchStart, rollStart);
         map.SetRotateModeCommand.Execute("0");
         Check(map.MoveMode, "the Move button brings the arrows back");
@@ -1512,6 +1537,98 @@ public sealed class Tour
             }
             Say($"holding the game for {_hold:F0} s");
             await Task.Delay(TimeSpan.FromSeconds(_hold));
+            _vm.StopGameCommand.Execute(null);
+            await Task.Delay(3000);
+        }
+        finally
+        {
+            if (_vm.Game?.IsRunning == true) _vm.Game.Stop();
+            foreach (var t in _vm.Tabs.ToList()) { t.IsDirty = false; await _vm.CloseTabCommand.ExecuteAsync(t); }
+            await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            var p = projects.Find(TourMod);
+            if (p != null) projects.Delete(p);
+            _vm.RefreshProjects();
+            if (previous != null)
+            {
+                await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == previous));
+                Check(projects.ActiveName == previous, $"'{previous}' is active again");
+            }
+            try { File.Delete(marker); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// How the game reads (yaw, pitch, roll) for a placed object: a forge wall (10 wide, 0.5 thick, 12 tall) at several
+    /// rotations in a row, looked at from the front with the debug camera; the runner takes the game screenshots. Opt-in.
+    /// </summary>
+    private async Task WallRot()
+    {
+        var projects = _vm.ModProjects!;
+        string marker = System.IO.Path.Combine(_vm.Paths!.KaloData, "tour-previous-project.txt");
+        string? interrupted = File.Exists(marker) ? File.ReadAllText(marker).Trim() : null;
+        foreach (var old in projects.List().Where(x => x.Name == TourMod).ToList())
+        {
+            if (projects.ActiveName == old.Name) await _vm.SwitchProjectCommand.ExecuteAsync(null);
+            projects.Delete(old);
+        }
+        _vm.RefreshProjects();
+        if (projects.ActiveName == null && !string.IsNullOrEmpty(interrupted) && projects.Find(interrupted) != null)
+            await _vm.SwitchProjectCommand.ExecuteAsync(_vm.Projects.FirstOrDefault(x => x.Name == interrupted));
+        string? previous = projects.ActiveName;
+        File.WriteAllText(marker, previous ?? "");
+        _vm.NewModName = TourMod;
+        await _vm.CreateModCommand.ExecuteAsync(null);
+        try
+        {
+            string level = Environment.GetEnvironmentVariable("KALO_WALL_LEVEL") ?? @"levels\multi\forge_halo\forge_halo";
+            var map = await _vm.CreateMapAsync("Wall Test", level, empty: true);
+            if (!Check(map != null, "created an empty copy of " + level)) return;
+            var until = DateTime.UtcNow.AddMinutes(3);
+            while (map!.Bsp == null && DateTime.UtcNow < until) await Task.Delay(300);
+            var anchorItem = map.Items.FirstOrDefault(i => i.Tag.Contains("respawn_point"));
+            Vector3 anchor = anchorItem?.Position ?? map.Spawn?.Position ?? (map.Bsp != null ? (map.Bsp.Min + map.Bsp.Max) / 2 : Vector3.Zero);
+            float lift = float.TryParse(Environment.GetEnvironmentVariable("KALO_WALL_LIFT"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var l) ? l : 16f;
+            var center = anchor + new Vector3(0, 0, lift);
+            Say($"anchor {anchor}, row centre {center}");
+            var rots = Environment.GetEnvironmentVariable("KALO_WALL_SET") == "2"
+                ? new (float Yaw, float Pitch, float Roll)[] { (0, 90, 90), (0, 0, 45), (0, 0, -45), (30, 45, 60), (60, -30, 45), (0, -45, 0), (0, 0, 0) }
+                : new (float Yaw, float Pitch, float Roll)[] { (0, 0, 0), (90, 0, 90), (0, 90, 0), (90, 90, 0), (0, 0, 90), (0, 45, 0), (45, 0, 0) };
+            for (int i = 0; i < rots.Length; i++)
+            {
+                var item = await map.AddTagAtAsync(@"objects\levels\forge\ff_arena_wall\ff_arena_wall.crate", center + new Vector3((i - 3) * 13f, 0, 0));
+                if (!Check(item != null, $"placed wall {i}")) return;
+                item!.SetRotationLocal(rots[i].Yaw, rots[i].Pitch, rots[i].Roll);
+                await map.CommitMoveAsync(item);
+                Say($"wall {i}: yaw {item.Yaw} pitch {item.Pitch} roll {item.Roll} at {item.Position}");
+            }
+            await map.SaveCommand.ExecuteAsync(null);
+            // What the editor shows from the same camera, for comparison with the game.
+            map.LookFrom(center + new Vector3(0, -70, 0), 90, 0);
+            await Pause(2500);
+            Shot("wall-editor");
+            await map.CaptureViewAsync(System.IO.Path.Combine(_dir, "wall-editor-view.png"));
+            if (Environment.GetEnvironmentVariable("KALO_WALL_NOGAME") == "1") return;
+
+            var loaded = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _vm.Game!.Loaded += () => loaded.TrySetResult();
+            _vm.Game.Exited += _ => loaded.TrySetException(new Exception("the game exited while loading"));
+            await _vm.PlayCommand.ExecuteAsync(null);
+            if (!Check(_vm.IsGameRunning, "Play started the game")) return;
+            var done = await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(6)));
+            if (!Check(done == loaded.Task && loaded.Task.IsCompletedSuccessfully, "the game loaded the map")) return;
+            await Task.Delay(TimeSpan.FromSeconds(25));
+            static string F(float x) => x.ToString("0.######", System.Globalization.CultureInfo.InvariantCulture);
+            string cameraFile = System.IO.Path.Combine(_vm.Paths!.Workspace, "camera_" + System.IO.Path.GetFileName(_vm.Game.Scenario!) + ".txt");
+            var eye = center + new Vector3(0, -70, 0);
+            File.WriteAllText(cameraFile, $"{F(eye.X)} {F(eye.Y)} {F(eye.Z)}\r\n0 1 0\r\n0 0 1\r\n1.361357\r\n");
+            await _vm.Game.RunConsoleAsync(new[] { "chud_show 0", "debug_camera_load" }, TimeSpan.FromSeconds(10));
+            for (int shot = 1; shot <= 3; shot++)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3));
+                string request = System.IO.Path.Combine(_dir, $"request-wall-game{shot}.txt");
+                File.WriteAllText(request, "wall-game" + shot);
+                for (int i = 0; i < 60 && File.Exists(request); i++) await Task.Delay(500);
+            }
             _vm.StopGameCommand.Execute(null);
             await Task.Delay(3000);
         }

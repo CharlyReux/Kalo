@@ -282,9 +282,14 @@ public partial class MapEditorViewModel : DocumentViewModel
         SceneChanged?.Invoke();
     }
 
-    public void RotateSelectionLocal(IReadOnlyDictionary<PlacementItem, float> startYaw, float delta)
+    /// <summary>Turns every selected object around the vertical axis by delta degrees from where it was when the drag started.</summary>
+    public void RotateSelectionLocal(IReadOnlyDictionary<PlacementItem, (float Yaw, float Pitch, float Roll)> start, float delta)
     {
-        foreach (var (item, yaw) in startYaw) item.SetRotationLocal(yaw + delta, item.Pitch, item.Roll);
+        foreach (var (item, angles) in start)
+        {
+            var (yaw, pitch, roll) = PlacementItem.TurnedAboutVertical(angles, delta);
+            item.SetRotationLocal(yaw, pitch, roll);
+        }
         SceneChanged?.Invoke();
     }
 
@@ -597,7 +602,8 @@ public partial class MapEditorViewModel : DocumentViewModel
         using var edit = await EditAsync("turn", CampaignScope(_selection));
         foreach (var item in _selection.ToList())
         {
-            item.SetRotationLocal(item.Yaw + degrees, item.Pitch, item.Roll);
+            var (yaw, pitch, roll) = PlacementItem.TurnedAboutVertical((item.Yaw, item.Pitch, item.Roll), degrees);
+            item.SetRotationLocal(yaw, pitch, roll);
             await CommitMoveAsync(item);
         }
     }
@@ -918,7 +924,6 @@ public partial class PlacementItem : ObservableObject
         ? Matrix4x4.CreateScale(Vector3.Max((Model.Max - Model.Min) * 0.5f, new Vector3(0.02f))) * Matrix4x4.CreateTranslation(Model.Center) * ModelMatrix
         : BoxMatrix;
 
-    /// <summary>Halo euler angles (degrees): roll about x, then pitch about y (positive = nose up), then yaw about z.</summary>
     // ---- objective zone (multiplayer boundary) ----
 
     /// <summary>0 none, 1 sphere, 2 cylinder, 3 box.</summary>
@@ -959,8 +964,44 @@ public partial class PlacementItem : ObservableObject
     /// <summary>Object space (rotation + position, no scale) → world: zones are drawn in it.</summary>
     public Matrix4x4 PoseMatrix => RotationMatrix * Matrix4x4.CreateTranslation(Position);
 
-    private Matrix4x4 RotationMatrix =>
-        Matrix4x4.CreateRotationX(Deg(Roll)) * Matrix4x4.CreateRotationY(-Deg(Pitch)) * Matrix4x4.CreateRotationZ(Deg(Yaw));
+    private Matrix4x4 RotationMatrix => RotationOf(Yaw, Pitch, Roll);
+
+    /// <summary>
+    /// How the game turns a placed object by its (yaw, pitch, roll) in degrees: yaw around the vertical axis first, then
+    /// pitch (positive = nose up) around the world's y axis, then roll around the world's x axis. Checked in the game with
+    /// a forge wall at fourteen angles (before this the editor applied them in the opposite order, so any object with
+    /// yaw and another angle together was drawn differently). System.Numerics rows: the first factor is applied first.
+    /// </summary>
+    public static Matrix4x4 RotationOf(float yaw, float pitch, float roll) =>
+        Matrix4x4.CreateRotationZ(Deg(yaw)) * Matrix4x4.CreateRotationY(-Deg(pitch)) * Matrix4x4.CreateRotationX(Deg(roll));
+
+    /// <summary>The (yaw, pitch, roll) in degrees that build the rotation (the inverse of <see cref="RotationOf"/>).</summary>
+    public static (float Yaw, float Pitch, float Roll) AnglesOf(Matrix4x4 m)
+    {
+        float sinT = Math.Clamp(m.M31, -1f, 1f);       // sin(-pitch)
+        float cosT = MathF.Sqrt(Math.Max(0f, 1f - sinT * sinT));
+        float yaw, roll;
+        if (cosT > 1e-4f)
+        {
+            yaw = MathF.Atan2(-m.M21, m.M11);
+            roll = MathF.Atan2(-m.M32, m.M33);
+        }
+        else
+        {
+            // Pitch ±90: yaw and roll turn the same way, so all of it goes to yaw.
+            yaw = MathF.Atan2(m.M12, m.M22);
+            roll = 0;
+        }
+        float asDegrees = 180f / MathF.PI;
+        return (((yaw * asDegrees) % 360f + 360f) % 360f, -MathF.Asin(sinT) * asDegrees, roll * asDegrees);
+    }
+
+    /// <summary>The angles that turn an object by <paramref name="degrees"/> (counter-clockwise from above) around the vertical axis, keeping its tilt.</summary>
+    public static (float Yaw, float Pitch, float Roll) TurnedAboutVertical((float Yaw, float Pitch, float Roll) a, float degrees)
+    {
+        if (a.Pitch == 0 && a.Roll == 0) return (((a.Yaw + degrees) % 360f + 360f) % 360f, 0, 0);
+        return AnglesOf(RotationOf(a.Yaw, a.Pitch, a.Roll) * Matrix4x4.CreateRotationZ(Deg(degrees)));
+    }
 
     /// <summary>Unit cube (−1..1) → the object's bounding box in the world.</summary>
     public Matrix4x4 BoxMatrix
