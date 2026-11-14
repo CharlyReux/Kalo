@@ -942,12 +942,17 @@ void main() {
         return (_eye, dir);
     }
 
+    /// <summary>
+    /// The object under the mouse: the nearest one whose model the ray really hits. Markers and objects without a model
+    /// are picked by their small sphere; if the ray hits no model at all (a very thin object, say), the nearest
+    /// bounding sphere of a model object is the fallback. (Spheres alone made big neighbours steal the clicks.)
+    /// </summary>
     private PlacementItem? Pick(Vector3 o, Vector3 d)
     {
         var map = Map;
         if (map == null) return null;
-        PlacementItem? best = null;
-        float bestT = float.MaxValue;
+        PlacementItem? best = null, fallback = null;
+        float bestT = float.MaxValue, fallbackT = float.MaxValue;
         foreach (var item in map.VisibleItems)
         {
             Vector3 c = item.Center;
@@ -958,9 +963,34 @@ void main() {
             if (disc < 0) continue;
             float t = -b - MathF.Sqrt(disc);
             if (t < 0) t = -b + MathF.Sqrt(disc);
-            if (t >= 0 && t < bestT) { bestT = t; best = item; }
+            if (t < 0) continue;
+            if (item.Model is { TriangleCount: > 0 } model && Matrix4x4.Invert(item.ModelMatrix, out var inv))
+            {
+                if (t < fallbackT) { fallbackT = t; fallback = item; }
+                Vector3 lo = Vector3.Transform(o, inv);
+                Vector3 ld = Vector3.Normalize(Vector3.TransformNormal(d, inv));
+                if (HitMesh(model, lo, ld) is not { } tl) continue;
+                float tw = Vector3.Distance(o, Vector3.Transform(lo + ld * tl, item.ModelMatrix));
+                if (tw < bestT) { bestT = tw; best = item; }
+            }
+            else if (t < bestT) { bestT = t; best = item; }
         }
-        return best;
+        return best ?? fallback;
+    }
+
+    /// <summary>For the tour: what a click on the screen point of a world point would pick.</summary>
+    public PlacementItem? PickToward(Vector3 world) => Pick(_eye, Vector3.Normalize(world - _eye));
+
+    /// <summary>For the tour: the camera position.</summary>
+    public Vector3 EyePosition => _eye;
+
+    /// <summary>Distance along the ray (o, d) to the object's model, in world units; null when the ray misses its shape.</summary>
+    public static float? DistanceToModel(PlacementItem item, Vector3 o, Vector3 d)
+    {
+        if (item.Model is not { TriangleCount: > 0 } model || !Matrix4x4.Invert(item.ModelMatrix, out var inv)) return null;
+        Vector3 lo = Vector3.Transform(o, inv);
+        Vector3 ld = Vector3.Normalize(Vector3.TransformNormal(d, inv));
+        return HitMesh(model, lo, ld) is { } tl ? Vector3.Distance(o, Vector3.Transform(lo + ld * tl, item.ModelMatrix)) : null;
     }
 
     /// <summary>Nearest hit on the level geometry (Möller–Trumbore), for placing new objects.</summary>

@@ -1007,6 +1007,22 @@ public sealed class Tour
             bool reaches = hit is Avalonia.Visual v && (ReferenceEquals(v, viewport) || Avalonia.VisualTree.VisualExtensions.GetVisualAncestors(v).Contains(viewport));
             Check(reaches, $"the mouse reaches the 3D view (hit: {hit?.GetType().Name ?? "nothing"})");
             Check(viewport.Focusable, "the 3D view can take keyboard focus (WASD)");
+            // Clicking an object picks the object whose shape is under the mouse, not a bigger neighbour's bounding sphere:
+            // aim at a point on each object's model; what is picked must have its own model under that aim, at least as near.
+            Vector3 eye = viewport.EyePosition;
+            int aimed = 0, sameItem = 0, stolen = 0;
+            foreach (var item in map.VisibleItems.Where(i => i.Model is { TriangleCount: > 0 }).Take(120))
+            {
+                Vector3 toward = Vector3.Normalize(item.Center - eye);
+                if (Kalo.App.Viewport.MapViewport.DistanceToModel(item, eye, toward) is not { } dist) continue;
+                Vector3 target = eye + toward * dist;
+                aimed++;
+                var picked = viewport.PickToward(target);
+                if (ReferenceEquals(picked, item)) { sameItem++; continue; }
+                float? pickedDist = picked == null ? null : Kalo.App.Viewport.MapViewport.DistanceToModel(picked, eye, Vector3.Normalize(target - eye));
+                if (pickedDist == null || pickedDist.Value > dist + 0.05f) stolen++;
+            }
+            Check(aimed > 5 && stolen == 0, $"a click on an object's shape picks it or something really in front of it ({aimed} aimed, {sameItem} picked that object, {aimed - sameItem - stolen} picked a nearer object, {stolen} stolen by a bounding sphere)");
         }
         Say("holding the overview for 20 s");
         await Task.Delay(TimeSpan.FromSeconds(20));
